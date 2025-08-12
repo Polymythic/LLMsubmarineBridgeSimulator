@@ -32,6 +32,12 @@ class Acoustics(BaseModel):
     thermocline_on: bool = True
     # Additional noise injected into bearing measurement sigma (degradation effects)
     bearing_noise_extra: float = 0.0
+    # Task-driven modifiers
+    passive_snr_penalty_db: float = 0.0
+    hydro_bearing_bias_deg: float = 0.0
+    active_range_noise_add_m: float = 0.0
+    active_bearing_noise_extra: float = 0.0
+    thermocline_bias: float = 0.0  # >0 worsens propagation model
 
 
 class PowerAllocations(BaseModel):
@@ -95,6 +101,7 @@ class MaintenanceTask(BaseModel):
     id: str
     station: Literal["helm", "sonar", "weapons", "engineering"]
     system: Literal["rudder", "sonar", "tubes", "ballast"]
+    key: str
     title: str
     stage: Literal["normal", "degraded", "damaged", "failed"] = "normal"
     progress: float = 0.0  # 0..1

@@ -100,17 +100,63 @@ class Simulation:
         self._captain_consent = consent
 
     def _spawn_task_for(self, station: str, now_s: float) -> None:
-        titles = {
-            "helm": ("rudder", "Rudder Lubricate"),
-            "sonar": ("sonar", "Array Recalibration"),
-            "weapons": ("tubes", "Tube Seal Inspection"),
-            "engineering": ("ballast", "Ballast Valve Service"),
+        # Richer task catalog per station
+        catalog = {
+            "helm": [
+                ("rudder", "helm.rudder.lube", "Rudder Lubricate"),
+                ("rudder", "helm.rudder.linkage", "Rudder Linkage Adjust"),
+                ("ballast", "helm.depth.sensor", "Depth/Pressure Sensor Recal"),
+                ("ballast", "helm.pressure.sensor", "Hull Pressure Transducer Test"),
+                ("ballast", "helm.salinity.sensor", "Salinity Sensor Clean"),
+                ("ballast", "helm.temp.sensor", "Thermocline Temp Probe Cal"),
+                ("rudder", "helm.gyro.align", "Gyro Alignment Check"),
+                ("rudder", "helm.gps.sync", "GPS Time/Almanac Sync"),
+                ("rudder", "helm.heading.encoder", "Heading Encoder Verify"),
+                ("rudder", "helm.hydraulics.filter", "Hydraulics Filter Replace"),
+            ],
+            "sonar": [
+                ("sonar", "sonar.hydro.cal", "Hydrophone Calibration"),
+                ("sonar", "sonar.hydro.servo", "Hydrophone Servo Grease"),
+                ("sonar", "sonar.passive.dsp", "Passive DSP Self-Test"),
+                ("sonar", "sonar.ping.tx", "Ping Transmit Chain Test"),
+                ("sonar", "sonar.ping.rx", "Ping Response Chain Test"),
+                ("sonar", "sonar.preamp", "Preamp Gain Trim"),
+                ("sonar", "sonar.array.cable", "Array Cable Continuity"),
+                ("sonar", "sonar.cooling.loop", "Cooling Loop Flush"),
+                ("sonar", "sonar.beamformer", "Beamformer Rebalance"),
+                ("sonar", "sonar.clock", "ADC Clock Discipline"),
+            ],
+            "weapons": [
+                ("tubes", "weap.tube.seal", "Tube Seal Inspection"),
+                ("tubes", "weap.tube.purge", "Tube Purge Cycle"),
+                ("tubes", "weap.tube.door", "Door Actuator Lube"),
+                ("tubes", "weap.tube.bore", "Bore Clean & Inspect"),
+                ("tubes", "weap.fire.ctrl", "Fire Control Align"),
+                ("tubes", "weap.wire.handler", "Wire Guide Service"),
+                ("tubes", "weap.gyros.spinup", "Gyro Spinup Test"),
+                ("tubes", "weap.seeker.bench", "Seeker Bench Check"),
+                ("tubes", "weap.power.bus", "Weapons Bus Check"),
+                ("tubes", "weap.cooling.pump", "Cooling Pump Service"),
+            ],
+            "engineering": [
+                ("ballast", "eng.ballast.valve", "Ballast Valve Service"),
+                ("ballast", "eng.pump.impeller", "Pump Impeller Inspect"),
+                ("ballast", "eng.scrubber", "Air Scrubber Replace"),
+                ("ballast", "eng.heat.xchg", "Heat Exchanger Clean"),
+                ("ballast", "eng.reactor.coolant", "Coolant Chemistry Check"),
+                ("ballast", "eng.generator", "Generator Bearing Lube"),
+                ("ballast", "eng.battery.cell", "Battery Cell Test"),
+                ("ballast", "eng.hvac.filter", "HVAC Filter Replace"),
+                ("ballast", "eng.busbars", "Busbar Tightening"),
+                ("ballast", "eng.pipe.leak", "Pipe Leak Inspection"),
+            ],
         }
-        system, title = titles.get(station, ("rudder", "Maintenance"))
+        choices = catalog.get(station, [("rudder", "misc.task", "Maintenance")])
+        system, key, title = random.choice(choices)
         base_deadline = random.uniform(25.0, 45.0)
         tid = f"{station}-{int(now_s*1000)%100000}-{random.randint(100,999)}"
         self._active_tasks[station] = MaintenanceTask(
-            id=tid, station=station, system=system, title=title,
+            id=tid, station=station, system=system, key=key, title=title,
             stage="normal", progress=0.0, base_deadline_s=base_deadline, time_remaining_s=base_deadline, created_at=now_s
         )
 
@@ -125,11 +171,19 @@ class Simulation:
             ship.hull.turn_rate_max = 7.0 * factor
             if stage == "failed":
                 ship.systems.rudder_ok = False
+            # Additional helm-related effects keyed to tasks
+            if stage in ("degraded", "damaged", "failed"):
+                # Depth/pressure sensors affect cavitation/thermocline modeling indirectly; here we bias thermocline and cav warn
+                ship.acoustics.thermocline_on = True
         elif station == "sonar":
             extra = {"normal": 0.0, "degraded": 3.0, "damaged": 7.0, "failed": 12.0}[stage]
             ship.acoustics.bearing_noise_extra = extra
             if stage == "failed":
                 ship.systems.sonar_ok = False
+            if stage in ("degraded", "damaged", "failed"):
+                ship.acoustics.passive_snr_penalty_db = 3.0 if stage == "degraded" else (6.0 if stage == "damaged" else 10.0)
+                ship.acoustics.active_range_noise_add_m = 50.0 if stage == "degraded" else (120.0 if stage == "damaged" else 250.0)
+                ship.acoustics.active_bearing_noise_extra = 0.5 if stage == "degraded" else (1.5 if stage == "damaged" else 3.0)
         elif station == "weapons":
             mult = {"normal": 1.0, "degraded": 1.4, "damaged": 1.8, "failed": 2.5}[stage]
             ship.weapons.time_penalty_multiplier = mult

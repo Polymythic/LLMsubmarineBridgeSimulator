@@ -36,7 +36,9 @@ def passive_contacts(self_ship: Ship, others: List[Ship]) -> List[TelemetryConta
         src_lvl = other.acoustics.source_level_by_speed.get(speed_key, 110.0)
         tl = 20 * math.log10(max(1.0, rng))
         ambient = 60.0
-        snr = max(0.0, src_lvl - tl - ambient)
+        # Apply passive SNR penalty from degraded systems
+        penalty = getattr(self_ship.acoustics, "passive_snr_penalty_db", 0.0)
+        snr = max(0.0, src_lvl - tl - ambient - penalty)
         strength = max(0.0, min(1.0, snr / 30.0))
         # Bearing error grows as target slows (harder to localize) and with ownship degradation
         sigma = max(1.0, 10.0 - other.kin.speed * 0.3 + self_ship.acoustics.bearing_noise_extra)
@@ -86,8 +88,11 @@ def active_ping(self_ship: Ship, others: List[Ship]) -> List[Tuple[str, float, f
         rng = math.hypot(dx, dy)
         # Compass bearing: 0=N, 90=E, 180=S, 270=W
         brg = normalize_angle_deg(math.degrees(math.atan2(dx, dy)))
-        rng_noise = max(1.0, rng + random.gauss(0, rng * 0.02 + 5.0))
-        brg_noise = normalize_angle_deg(brg + random.gauss(0, 1.5))
+        base_rng_noise = max(1.0, rng + random.gauss(0, rng * 0.02 + 5.0))
+        rng_noise = base_rng_noise + getattr(self_ship.acoustics, "active_range_noise_add_m", 0.0)
+        brg_noise = normalize_angle_deg(
+            brg + random.gauss(0, 1.5 + max(0.0, getattr(self_ship.acoustics, "active_bearing_noise_extra", 0.0)))
+        )
         # Simple active strength model: stronger when closer; clamp 0..1
         strength = max(0.0, min(1.0, 1.0 / (1.0 + (rng_noise / 2000.0))))
         out.append((other.id, rng_noise, brg_noise, strength))

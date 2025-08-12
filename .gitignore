@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual env
+.venv/
+venv/
+ENV/
+
+# OS
+.DS_Store
+
+# Local DB
+sub-bridge.db
+
+# Node/build (future frontend)
+node_modules/
+dist/
+build/
+.cache/

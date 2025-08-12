@@ -42,7 +42,7 @@
 - **HTTP**: `GET /captain`, `/helm`, `/sonar`, `/weapons`, `/engineering` serve the SPA for each station; `/` is home.
 - **WebSocket**: `/ws/<station>` for commands and telemetry.
   - Client→Server topics (examples):
-    - `helm.order`, `sonar.ping`, `weapons.tube.load`, `weapons.tube.flood`, `weapons.tube.doors`, `weapons.fire`, `engineering.reactor.set`, `engineering.pump.toggle`, `captain.periscope.raise`, `captain.radio.raise`.
+    - `helm.order`, `sonar.ping`, `weapons.tube.load`, `weapons.tube.flood`, `weapons.tube.doors`, `weapons.fire`, `engineering.reactor.set`, `engineering.pump.toggle`, `engineering.power.allocate`, `captain.periscope.raise`, `captain.radio.raise`, `debug.restart`.
   - Server→Client: station-filtered telemetry at 20 Hz + discrete events.
 
 ### Authoritative Sim Loop (20 Hz)
@@ -123,7 +123,9 @@
   "data":{
     "ownship":{"heading":266.2,"orderedHeading":270,"speed":11.2,"depth":98,"cavitation":false},
     "contacts":[{"id":"C1","bearing":143,"strength":0.62,"classifiedAs":"SSN?","confidence":0.41}],
-    "events":[]
+    "events":[],
+    "pingResponses":[{"id":"red-01","bearing":145.2,"range_est":3200.0,"strength":0.42,"at":"2025-08-12T14:22:05Z"}],
+    "lastPingAt":"2025-08-12T14:22:05Z"
   }
 }
 ```

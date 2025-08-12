@@ -275,4 +275,27 @@ class Simulation:
         if topic == "captain.radio.raise":
             self._radio_raised = bool(data.get("raised", True))
             return None
+        if topic == "debug.restart":
+            # Reset mission state: clear world, torpedoes, orders, ping state
+            self.world = World()
+            own = Ship(
+                id="ownship",
+                side="BLUE",
+                kin=Kinematics(depth=100.0, heading=270.0, speed=8.0),
+                hull=Hull(),
+                acoustics=Acoustics(),
+                weapons=WeaponsSuite(),
+                reactor=Reactor(output_mw=60.0, max_mw=100.0),
+                damage=DamageState(),
+            )
+            self.world.add_ship(own)
+            self.ordered = {"heading": own.kin.heading, "speed": own.kin.speed, "depth": own.kin.depth}
+            self._pump_fwd = False
+            self._pump_aft = False
+            self._periscope_raised = False
+            self._radio_raised = False
+            self._captain_consent = False
+            self._last_ping_responses = []
+            self._last_ping_at = None
+            return None
         return None

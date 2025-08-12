@@ -16,6 +16,17 @@
 <body>
   <div class="panel">
     <h2>Debug</h2>
+    <div class="row" style="align-items:center">
+      <button id="restart" title="Reset mission state to defaults">Restart Mission</button>
+      <div>
+        <label for="mission">Mission:</label>
+        <select id="mission" title="Select mission scenario">
+          <option value="patrol">Patrol - Blue vs Single Red</option>
+          <option value="ambush">Ambush - Two Reds Ahead</option>
+          <option value="convoy">Convoy Escort</option>
+        </select>
+      </div>
+    </div>
     <div class="row">
       <div class="col">
         <canvas id="map" width="720" height="420" title="Ownship-centered truth positions"></canvas>
@@ -89,6 +100,7 @@
     }
 
     ws.onmessage = (ev) => { try { const m = JSON.parse(ev.data); if (m.topic === 'telemetry') { ownEl.textContent = `hdg ${m.data.ownship.heading.toFixed(0)} spd ${m.data.ownship.speed.toFixed(1)} dpt ${m.data.ownship.depth.toFixed(0)}`; render(m.data); } } catch(e){} };
+    document.getElementById('restart').onclick = () => { ws.send(JSON.stringify({topic:'debug.restart', data:{}})); };
   </script>
 </body>
 </html>

@@ -327,7 +327,23 @@ class Simulation:
         }
 
         tel_all = dict(base)
-        tel_captain = {**base, "periscopeRaised": self._periscope_raised, "radioRaised": self._radio_raised, "mission": {"title": self.mission_brief["title"], "objective": self.mission_brief["objective"], "roe": self.mission_brief["roe"]}, "comms": getattr(self, "_captain_comms", [])}
+        # Station status aggregation for captain dashboard
+        def station_status(station: str, ok_flag: bool) -> str:
+            if not ok_flag:
+                return "Failed"
+            t = self._active_tasks.get(station)
+            if t is None:
+                return "OK"
+            return "Degraded" if t.stage in ("degraded", "damaged") else "OK"
+
+        station_statuses = {
+            "helm": station_status("helm", own.systems.rudder_ok),
+            "sonar": station_status("sonar", own.systems.sonar_ok),
+            "weapons": station_status("weapons", own.systems.tubes_ok),
+            "engineering": station_status("engineering", own.systems.ballast_ok),
+        }
+
+        tel_captain = {**base, "periscopeRaised": self._periscope_raised, "radioRaised": self._radio_raised, "mission": {"title": self.mission_brief["title"], "objective": self.mission_brief["objective"], "roe": self.mission_brief["roe"]}, "comms": getattr(self, "_captain_comms", []), "stationStatus": station_statuses}
         tel_helm = {**base, "cavitationSpeedWarn": speed > 25.0, "thermocline": own.acoustics.thermocline_on, "task": (None if self._active_tasks['helm'] is None else self._active_tasks['helm'].__dict__)}
         # Prepare recent active ping responses list (bearing, range_est, strength, time)
         # For now, only generate on demand when 'sonar.ping' happens; UI will render as DEMON dots

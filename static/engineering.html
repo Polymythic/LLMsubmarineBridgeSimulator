@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Engineering</title>
+  <style>
+    body { background:#0B1020; color:#D7E3FF; font-family: ui-sans-serif, system-ui, -apple-system; }
+    .panel { background:#11172B; border:1px solid #1B2440; padding:16px; margin:12px; border-radius:8px; }
+    input[type=range] { width:100%; }
+    button { margin-top:12px; padding:8px 12px; background:#26406E; border:none; color:#D7E3FF; border-radius:6px; }
+    .row { display:flex; gap:12px; }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <h2>Engineering</h2>
+    <div>Reactor MW <span id="mwv">60</span> / <span id="mwmax">100</span></div>
+    <input id="mw" type="range" min="0" max="100" step="1" value="60" />
+    <button id="set">Set</button>
+    <div class="row">
+      <button id="pumpF">Toggle Pump FWD</button>
+      <button id="pumpA">Toggle Pump AFT</button>
+    </div>
+    <pre id="telemetry"></pre>
+  </div>
+  <script>
+    const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/engineering');
+    const tel = document.getElementById('telemetry');
+    const mw = document.getElementById('mw');
+    const mwv = document.getElementById('mwv');
+    const mwmax = document.getElementById('mwmax');
+    mw.oninput = () => mwv.textContent = mw.value;
+    ws.onmessage = (ev) => { try { const m = JSON.parse(ev.data); if (m.topic === 'telemetry') { tel.textContent = JSON.stringify(m.data, null, 2); mwv.textContent = (m.data.reactor?.output_mw ?? 0).toFixed(0); mw.value = (m.data.reactor?.output_mw ?? 0); mwmax.textContent = (m.data.reactor?.max_mw ?? 0).toFixed(0); } } catch(e){} };
+    document.getElementById('set').onclick = () => ws.send(JSON.stringify({topic:'engineering.reactor.set', data:{mw: parseFloat(mw.value)}}));
+    document.getElementById('pumpF').onclick = () => ws.send(JSON.stringify({topic:'engineering.pump.toggle', data:{pump:'fwd', enabled:true}}));
+    document.getElementById('pumpA').onclick = () => ws.send(JSON.stringify({topic:'engineering.pump.toggle', data:{pump:'aft', enabled:true}}));
+  </script>
+</body>
+</html>

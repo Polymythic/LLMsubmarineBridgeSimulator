@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sonar</title>
+  <style>
+    body { background:#0B1020; color:#D7E3FF; font-family: ui-sans-serif, system-ui, -apple-system; }
+    .panel { background:#11172B; border:1px solid #1B2440; padding:16px; margin:12px; border-radius:8px; }
+    button { margin-top:12px; padding:8px 12px; background:#26406E; border:none; color:#D7E3FF; border-radius:6px; }
+    ul { list-style:none; padding-left:0; }
+    li { margin:4px 0; }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <h2>Sonar</h2>
+    <button id="ping">Active Ping</button>
+    <div>Ping cooldown: <span id="cd">0</span>s</div>
+    <h3>Contacts</h3>
+    <ul id="contacts"></ul>
+    <pre id="telemetry"></pre>
+  </div>
+  <script>
+    const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/sonar');
+    const tel = document.getElementById('telemetry');
+    const cd = document.getElementById('cd');
+    const list = document.getElementById('contacts');
+    ws.onmessage = (ev) => {
+      try {
+        const m = JSON.parse(ev.data);
+        if (m.topic === 'telemetry') {
+          tel.textContent = JSON.stringify(m.data, null, 2);
+          cd.textContent = (m.data.pingCooldown || 0).toFixed(1);
+          list.innerHTML = '';
+          (m.data.contacts || []).forEach(c => {
+            const li = document.createElement('li');
+            li.textContent = `ID ${c.id} brg ${c.bearing.toFixed(0)}° str ${c.strength.toFixed(2)} conf ${c.confidence.toFixed(2)}`;
+            list.appendChild(li);
+          });
+        }
+      } catch(e){}
+    };
+    document.getElementById('ping').onclick = () => { ws.send(JSON.stringify({topic:'sonar.ping', data:{array:'bow'}})); };
+  </script>
+</body>
+</html>

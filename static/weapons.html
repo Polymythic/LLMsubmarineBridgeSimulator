@@ -1,0 +1,65 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Weapons</title>
+  <style>
+    body { background:#0B1020; color:#D7E3FF; font-family: ui-sans-serif, system-ui, -apple-system; }
+    .panel { background:#11172B; border:1px solid #1B2440; padding:16px; margin:12px; border-radius:8px; }
+    label { display:block; margin-top:8px; }
+    input { width:100%; background:#0F162A; color:#D7E3FF; border:1px solid #1B2440; padding:8px; }
+    button { margin-top:12px; padding:8px 12px; background:#26406E; border:none; color:#D7E3FF; border-radius:6px; }
+    .tubes { display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:8px; }
+    .tube { padding:8px; border:1px solid #1B2440; border-radius:6px; background:#0F162A; }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <h2>Weapons</h2>
+    <div id="consent"></div>
+    <div class="tubes" id="tubes"></div>
+    <label>Tube <input id="tube" type="number" min="1" max="6" value="1"></label>
+    <div>
+      <button id="load">Load</button>
+      <button id="flood">Flood</button>
+      <button id="doors">Open Doors</button>
+    </div>
+    <label>Bearing <input id="bearing" type="number" min="0" max="359" value="270"></label>
+    <label>Run Depth <input id="rdepth" type="number" min="0" max="600" value="120"></label>
+    <button id="fire">Fire</button>
+    <pre id="telemetry"></pre>
+  </div>
+  <script>
+    const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/weapons');
+    const tel = document.getElementById('telemetry');
+    const tubes = document.getElementById('tubes');
+    const consent = document.getElementById('consent');
+    ws.onmessage = (ev) => {
+      try {
+        const m = JSON.parse(ev.data);
+        if (m.topic === 'telemetry') {
+          tel.textContent = JSON.stringify(m.data, null, 2);
+          consent.textContent = m.data.consentRequired ? `Captain consent ${m.data.captainConsent ? 'GRANTED' : 'REQUIRED'}` : 'Consent not required';
+          tubes.innerHTML = '';
+          (m.data.tubes || []).forEach(t => {
+            const div = document.createElement('div');
+            div.className = 'tube';
+            div.textContent = `Tube ${t.idx}: ${t.state} ${t.weapon ? '('+t.weapon.name+')' : ''}`;
+            tubes.appendChild(div);
+          });
+        }
+      } catch(e){}
+    };
+    const tube = () => parseInt(document.getElementById('tube').value, 10);
+    document.getElementById('load').onclick = () => ws.send(JSON.stringify({topic:'weapons.tube.load', data:{tube: tube(), weapon:'Mk48'}}));
+    document.getElementById('flood').onclick = () => ws.send(JSON.stringify({topic:'weapons.tube.flood', data:{tube: tube()}}));
+    document.getElementById('doors').onclick = () => ws.send(JSON.stringify({topic:'weapons.tube.doors', data:{tube: tube(), open:true}}));
+    document.getElementById('fire').onclick = () => {
+      const bearing = parseFloat(document.getElementById('bearing').value);
+      const run_depth = parseFloat(document.getElementById('rdepth').value);
+      ws.send(JSON.stringify({topic:'weapons.fire', data:{tube: tube(), bearing, run_depth}}));
+    };
+  </script>
+</body>
+</html>

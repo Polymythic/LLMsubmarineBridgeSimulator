@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Helm</title>
+  <style>
+    body { background:#0B1020; color:#D7E3FF; font-family: ui-sans-serif, system-ui, -apple-system; }
+    .panel { background:#11172B; border:1px solid #1B2440; padding:16px; margin:12px; border-radius:8px; }
+    label { display:block; margin-top:8px; }
+    input { width:100%; background:#0F162A; color:#D7E3FF; border:1px solid #1B2440; padding:8px; }
+    button { margin-top:12px; padding:8px 12px; background:#26406E; border:none; color:#D7E3FF; border-radius:6px; }
+    .row { display:flex; gap:12px; }
+    .col { flex:1; }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <h2>Helm</h2>
+    <div class="row">
+      <div class="col"><label>Heading (deg)<input id="heading" type="number" min="0" max="359" value="270"></label></div>
+      <div class="col"><label>Speed (kn)<input id="speed" type="number" min="0" max="30" value="8"></label></div>
+      <div class="col"><label>Depth (m)<input id="depth" type="number" min="0" max="600" value="100"></label></div>
+    </div>
+    <button id="send">Order</button>
+    <pre id="telemetry"></pre>
+  </div>
+  <script>
+    const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/helm');
+    const tel = document.getElementById('telemetry');
+    ws.onmessage = (ev) => { try { const m = JSON.parse(ev.data); if (m.topic === 'telemetry') tel.textContent = JSON.stringify(m.data, null, 2); } catch(e){} };
+    document.getElementById('send').onclick = () => {
+      const heading = parseFloat(document.getElementById('heading').value);
+      const speed = parseFloat(document.getElementById('speed').value);
+      const depth = parseFloat(document.getElementById('depth').value);
+      ws.send(JSON.stringify({topic:'helm.order', data:{heading, speed, depth}}));
+    };
+  </script>
+</body>
+</html>

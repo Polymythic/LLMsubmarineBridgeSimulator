@@ -1,0 +1,41 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Captain</title>
+  <style>
+    body { background:#0B1020; color:#D7E3FF; font-family: ui-sans-serif, system-ui, -apple-system; }
+    .panel { background:#11172B; border:1px solid #1B2440; padding:16px; margin:12px; border-radius:8px; }
+    button { margin-top:12px; padding:8px 12px; background:#26406E; border:none; color:#D7E3FF; border-radius:6px; }
+    .row { display:flex; gap:12px; align-items:center; }
+    .pip { width:10px; height:10px; border-radius:50%; display:inline-block; margin-left:6px; }
+    .on { background:#8BE28B; box-shadow:0 0 8px rgba(139,226,139,0.6); }
+    .off { background:#E26969; box-shadow:0 0 8px rgba(226,105,105,0.6); }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <h2>Captain</h2>
+    <div class="row">
+      <button id="consent">Toggle Fire Consent</button>
+      <span>Periscope <span id="periscope" class="pip off"></span></span>
+      <button id="periscopeBtn">Raise/Lower</button>
+      <span>Radio <span id="radio" class="pip off"></span></span>
+      <button id="radioBtn">Raise/Lower</button>
+    </div>
+    <pre id="telemetry"></pre>
+  </div>
+  <script>
+    const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/captain');
+    const tel = document.getElementById('telemetry');
+    const per = document.getElementById('periscope');
+    const rad = document.getElementById('radio');
+    function setPip(el, val){ el.className = 'pip ' + (val ? 'on' : 'off'); }
+    ws.onmessage = (ev) => { try { const m = JSON.parse(ev.data); if (m.topic === 'telemetry') { tel.textContent = JSON.stringify(m.data, null, 2); setPip(per, !!m.data.periscopeRaised); setPip(rad, !!m.data.radioRaised); } } catch(e){} };
+    document.getElementById('consent').onclick = () => { ws.send(JSON.stringify({topic:'captain.consent', data:{consent:true}})); setTimeout(()=>ws.send(JSON.stringify({topic:'captain.consent', data:{consent:false}})), 3000); };
+    document.getElementById('periscopeBtn').onclick = () => { const next = per.classList.contains('off'); ws.send(JSON.stringify({topic:'captain.periscope.raise', data:{raised: next}})); };
+    document.getElementById('radioBtn').onclick = () => { const next = rad.classList.contains('off'); ws.send(JSON.stringify({topic:'captain.radio.raise', data:{raised: next}})); };
+  </script>
+</body>
+</html>

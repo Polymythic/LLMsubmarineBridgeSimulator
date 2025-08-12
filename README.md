@@ -42,6 +42,9 @@ A cooperative, local-multiplayer submarine bridge simulator. Five players occupy
 - Maintenance/failure model: low maintenance degrades or disables systems; recovery requires sustained Engineering allocation.
 - Active sonar pings: cooldown-limited, with responses rendered and listed; trigger counter-detection events.
 
+### Bearings
+- The sim uses compass bearings: 0°=North, 90°=East, 180°=South, 270°=West. If ownship is at (0,0) heading 000 and another ship is at (x>0, y=0), its true bearing is ~090.
+
 ## Debug and Missions
 - Debug view provides a live truth map of entities.
 - Restart Mission button resets world state.

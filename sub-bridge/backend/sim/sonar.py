@@ -83,7 +83,8 @@ def active_ping(self_ship: Ship, others: List[Ship]) -> List[Tuple[str, float, f
         dx = other.kin.x - self_ship.kin.x
         dy = other.kin.y - self_ship.kin.y
         rng = math.hypot(dx, dy)
-        brg = normalize_angle_deg(math.degrees(math.atan2(dy, dx)))
+        # Compass bearing: 0=N, 90=E, 180=S, 270=W
+        brg = normalize_angle_deg(math.degrees(math.atan2(dx, dy)))
         rng_noise = max(1.0, rng + random.gauss(0, rng * 0.02 + 5.0))
         brg_noise = normalize_angle_deg(brg + random.gauss(0, 1.5))
         # Simple active strength model: stronger when closer; clamp 0..1

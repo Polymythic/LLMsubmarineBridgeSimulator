@@ -33,7 +33,13 @@ class Simulation:
         self._last_snapshot = 0.0
         self._last_ai = 0.0
         self._transient_events = []  # cleared every tick
+        self._last_ping_responses = []
+        self._last_ping_at = None
+        self._init_default_world()
 
+    def _init_default_world(self) -> None:
+        # Clear existing world and set to original game state
+        self.world = World()
         own = Ship(
             id="ownship",
             side="BLUE",
@@ -58,6 +64,15 @@ class Simulation:
         self.world.add_ship(own)
         self.world.add_ship(red)
         self.ordered = {"heading": own.kin.heading, "speed": own.kin.speed, "depth": own.kin.depth}
+        # Reset toggles and ping state
+        self._pump_fwd = False
+        self._pump_aft = False
+        self._periscope_raised = False
+        self._radio_raised = False
+        self._captain_consent = False
+        self._last_ping_responses = []
+        self._last_ping_at = None
+        self.active_ping_state = ActivePingState(cooldown_s=12.0)
 
     def stop(self) -> None:
         self._stop.set()
@@ -276,26 +291,7 @@ class Simulation:
             self._radio_raised = bool(data.get("raised", True))
             return None
         if topic == "debug.restart":
-            # Reset mission state: clear world, torpedoes, orders, ping state
-            self.world = World()
-            own = Ship(
-                id="ownship",
-                side="BLUE",
-                kin=Kinematics(depth=100.0, heading=270.0, speed=8.0),
-                hull=Hull(),
-                acoustics=Acoustics(),
-                weapons=WeaponsSuite(),
-                reactor=Reactor(output_mw=60.0, max_mw=100.0),
-                damage=DamageState(),
-            )
-            self.world.add_ship(own)
-            self.ordered = {"heading": own.kin.heading, "speed": own.kin.speed, "depth": own.kin.depth}
-            self._pump_fwd = False
-            self._pump_aft = False
-            self._periscope_raised = False
-            self._radio_raised = False
-            self._captain_consent = False
-            self._last_ping_responses = []
-            self._last_ping_at = None
+            # Reset to original game state
+            self._init_default_world()
             return None
         return None

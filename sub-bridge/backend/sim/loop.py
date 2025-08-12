@@ -2,6 +2,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+import math
 from typing import Dict, Optional
 from ..bus import BUS
 from ..config import CONFIG
@@ -13,7 +14,6 @@ from .sonar import passive_contacts, ActivePingState, active_ping
 from .weapons import try_load_tube, try_flood_tube, try_set_doors, try_fire, step_torpedo, step_tubes
 from .ai_tools import LocalAIStub
 from .damage import step_damage, step_engineering
-import math
 
 
 class Simulation:
@@ -129,6 +129,8 @@ class Simulation:
             "ownship": {
                 "heading": heading,
                 "orderedHeading": self.ordered["heading"],
+                "orderedSpeed": self.ordered["speed"],
+                "orderedDepth": self.ordered["depth"],
                 "speed": speed,
                 "depth": depth,
                 "cavitation": cav,
@@ -138,12 +140,16 @@ class Simulation:
 
         tel_all = dict(base)
         tel_captain = {**base, "periscopeRaised": self._periscope_raised, "radioRaised": self._radio_raised}
-        tel_helm = {**base, "cavitationSpeedWarn": speed > 25.0}
+        tel_helm = {**base, "cavitationSpeedWarn": speed > 25.0, "thermocline": own.acoustics.thermocline_on}
         tel_sonar = {**base, "contacts": [c.dict() for c in contacts], "pingCooldown": max(0.0, self.active_ping_state.timer)}
         tel_weapons = {**base, "tubes": [t.dict() for t in own.weapons.tubes], "consentRequired": CONFIG.require_captain_consent, "captainConsent": self._captain_consent}
         tel_engineering = {**base, "reactor": own.reactor.dict(), "pumps": {"fwd": self._pump_fwd, "aft": self._pump_aft}, "damage": own.damage.dict()}
 
-        # Debug payload: ownship and all ships truth data
+        def bearings_to(sx: float, sy: float) -> Dict[str, float]:
+            brg_true = (math.degrees(math.atan2(sy - own.kin.y, sx - own.kin.x)) % 360.0)
+            brg_rel = (brg_true - own.kin.heading + 360.0) % 360.0
+            return {"bearing_true": brg_true, "bearing_rel": brg_rel, "heading_to_face": brg_true}
+
         debug_payload = {
             "ownship": {
                 "x": own.kin.x, "y": own.kin.y, "depth": own.kin.depth,
@@ -154,7 +160,7 @@ class Simulation:
                     "id": s.id, "side": s.side,
                     "x": s.kin.x, "y": s.kin.y, "depth": s.kin.depth,
                     "heading": s.kin.heading, "speed": s.kin.speed,
-                    "bearing_from_own": ((math.degrees(math.atan2(s.kin.y - own.kin.y, s.kin.x - own.kin.x)) % 360.0) if True else 0.0),
+                    **bearings_to(s.kin.x, s.kin.y),
                     "range_from_own": (( ( (s.kin.x - own.kin.x)**2 + (s.kin.y - own.kin.y)**2 ) ** 0.5 )),
                 }
                 for s in self.world.all_ships() if s.id != own.id

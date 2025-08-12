@@ -32,6 +32,7 @@ class Simulation:
         self._stop = asyncio.Event()
         self._last_snapshot = 0.0
         self._last_ai = 0.0
+        self._transient_events = []  # cleared every tick
 
         own = Ship(
             id="ownship",
@@ -123,6 +124,13 @@ class Simulation:
         step_engineering(own, dt)
 
         self.active_ping_state.tick(dt)
+        # Acoustic noise budget and detectability
+        noise_from_speed = min(100.0, (speed / max(1.0, own.hull.max_speed)) * 70.0)
+        noise_cav = 30.0 if cav else 0.0
+        noise_pumps = 10.0 if (self._pump_fwd or self._pump_aft) else 0.0
+        noise_masts = (10.0 if self._periscope_raised else 0.0) + (10.0 if self._radio_raised else 0.0)
+        noise_budget = max(0.0, min(100.0, noise_from_speed + noise_cav + noise_pumps + noise_masts))
+        detectability = noise_budget / 100.0
         contacts = passive_contacts(own, [s for s in self.world.all_ships() if s.id != own.id])
 
         base = {
@@ -135,7 +143,8 @@ class Simulation:
                 "depth": depth,
                 "cavitation": cav,
             },
-            "events": [],
+            "acoustics": {"noiseBudget": noise_budget, "detectability": detectability, "emconRisk": ("high" if noise_budget >= 75 else "med" if noise_budget >= 40 else "low")},
+            "events": list(self._transient_events),
         }
 
         tel_all = dict(base)
@@ -176,6 +185,9 @@ class Simulation:
         await BUS.publish("tick:engineering", {"topic": "telemetry", "data": tel_engineering})
         await BUS.publish("tick:debug", {"topic": "telemetry", "data": debug_payload})
 
+        # Clear transient events after publishing
+        self._transient_events.clear()
+
         self._last_snapshot += dt
         if self._last_snapshot >= CONFIG.snapshot_s:
             self._last_snapshot = 0.0
@@ -191,6 +203,8 @@ class Simulation:
         if topic == "sonar.ping":
             if self.active_ping_state.start():
                 _ = active_ping(own, [s for s in self.world.all_ships() if s.id != own.id])
+                # Active ping raises EMCON risk; emit counter-detected event for UI
+                self._transient_events.append({"type": "counterDetected", "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
                 return None
             return "Ping on cooldown"
         if topic == "weapons.tube.load":

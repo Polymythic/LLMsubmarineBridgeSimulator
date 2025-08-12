@@ -24,6 +24,10 @@
       <span title="Radio mast raised increases EMCON risk">Radio <span id="radio" class="pip off"></span></span>
       <button id="radioBtn" title="Raise/lower radio mast">Raise/Lower</button>
     </div>
+    <div class="row">
+      <div class="pill">EMCON: <span id="emcon">low</span></div>
+      <div class="pill">Noise: <span id="noise">0</span></div>
+    </div>
     <pre id="telemetry" title="Captain telemetry and events"></pre>
   </div>
   <script>
@@ -31,8 +35,10 @@
     const tel = document.getElementById('telemetry');
     const per = document.getElementById('periscope');
     const rad = document.getElementById('radio');
+    const emcon = document.getElementById('emcon');
+    const noise = document.getElementById('noise');
     function setPip(el, val){ el.className = 'pip ' + (val ? 'on' : 'off'); }
-    ws.onmessage = (ev) => { try { const m = JSON.parse(ev.data); if (m.topic === 'telemetry') { tel.textContent = JSON.stringify(m.data, null, 2); setPip(per, !!m.data.periscopeRaised); setPip(rad, !!m.data.radioRaised); } } catch(e){} };
+    ws.onmessage = (ev) => { try { const m = JSON.parse(ev.data); if (m.topic === 'telemetry') { tel.textContent = JSON.stringify(m.data, null, 2); setPip(per, !!m.data.periscopeRaised); setPip(rad, !!m.data.radioRaised); if (m.data.acoustics){ emcon.textContent = m.data.acoustics.emconRisk || 'low'; noise.textContent = (m.data.acoustics.noiseBudget || 0).toFixed(0);} } } catch(e){} };
     document.getElementById('consent').onclick = () => { ws.send(JSON.stringify({topic:'captain.consent', data:{consent:true}})); setTimeout(()=>ws.send(JSON.stringify({topic:'captain.consent', data:{consent:false}})), 3000); };
     document.getElementById('periscopeBtn').onclick = () => { const next = per.classList.contains('off'); ws.send(JSON.stringify({topic:'captain.periscope.raise', data:{raised: next}})); };
     document.getElementById('radioBtn').onclick = () => { const next = rad.classList.contains('off'); ws.send(JSON.stringify({topic:'captain.radio.raise', data:{raised: next}})); };

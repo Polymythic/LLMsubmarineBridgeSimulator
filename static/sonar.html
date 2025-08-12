@@ -24,6 +24,7 @@
       <div class="col">
         <button id="ping" title="Send an active ping; reveals ownship and returns noisy range+bearing">Active Ping</button>
         <div title="Ping cooldown in seconds">Ping cooldown: <span id="cd">0</span>s</div>
+        <div class="label" title="Current EMCON risk from acoustics">EMCON: <span id="emcon">low</span></div>
         <h3>Contacts</h3>
         <ul id="contacts" title="Bearing-only passive contacts"></ul>
       </div>
@@ -40,6 +41,7 @@
     const tel = document.getElementById('telemetry');
     const cd = document.getElementById('cd');
     const list = document.getElementById('contacts');
+    const emcon = document.getElementById('emcon');
 
     const legend = document.getElementById('legend');
     const lctx = legend.getContext('2d');
@@ -104,6 +106,7 @@
         if (m.topic === 'telemetry') {
           tel.textContent = JSON.stringify(m.data, null, 2);
           cd.textContent = (m.data.pingCooldown || 0).toFixed(1);
+          if (m.data.acoustics) { emcon.textContent = (m.data.acoustics.emconRisk || 'low'); }
           list.innerHTML = '';
           (m.data.contacts || []).forEach(c => { const li = document.createElement('li'); li.title = 'Passive contact; bearing-only with noisy measurement.'; li.textContent = `ID ${c.id} brg ${c.bearing.toFixed(0)}° str ${c.strength.toFixed(2)} conf ${c.confidence.toFixed(2)}`; list.appendChild(li); });
           drawWaterfall(m.data.contacts || []);

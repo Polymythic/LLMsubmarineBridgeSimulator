@@ -17,6 +17,9 @@ def angle_diff(a: float, b: float) -> float:
 
 
 def passive_contacts(self_ship: Ship, others: List[Ship]) -> List[TelemetryContact]:
+    # Sonar failure disables passive contact generation
+    if getattr(self_ship, "systems", None) is not None and not self_ship.systems.sonar_ok:
+        return []
     contacts: List[TelemetryContact] = []
     for other in others:
         if other.id == self_ship.id:

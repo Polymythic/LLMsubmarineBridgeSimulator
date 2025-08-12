@@ -49,9 +49,11 @@ def integrate_kinematics(
     step = clamp(dz, -max_depth_rate * dt, max_depth_rate * dt)
     kin.depth = max(0.0, kin.depth + step)
 
+    # Move using compass convention (0°=North, 90°=East):
+    # x increases to the East → sin(heading), y increases to the North → cos(heading)
     sog_mps = kin.speed * KNOTS_TO_MPS
-    kin.x += math.cos(kin.heading * DEG_TO_RAD) * sog_mps * dt
-    kin.y += math.sin(kin.heading * DEG_TO_RAD) * sog_mps * dt
+    kin.x += math.sin(kin.heading * DEG_TO_RAD) * sog_mps * dt
+    kin.y += math.cos(kin.heading * DEG_TO_RAD) * sog_mps * dt
 
     cav = kin.speed > cavitation_speed_for_depth(kin.depth)
     return cav, kin.heading, kin.speed, kin.depth

@@ -129,7 +129,10 @@ def step_torpedo(t: dict, world, dt: float, on_event: Optional[Callable[[str, di
             t["spoofed_timer"] = 3.0
             if on_event:
                 on_event("torpedo.spoofed", {"seconds": t["spoofed_timer"]})
-        desired = math.degrees(math.atan2(target.kin.y - t["y"], target.kin.x - t["x"])) % 360.0
+        # Compute desired heading using compass bearing (0°=N, 90°=E)
+        dx = target.kin.x - t["x"]
+        dy = target.kin.y - t["y"]
+        desired = (math.degrees(math.atan2(dx, dy)) % 360.0)
         dh = ((desired - t["heading"] + 540) % 360) - 180
         # If spoofed, add jitter and reduce turn authority
         if t.get("spoofed_timer", 0.0) > 0.0:
@@ -139,9 +142,11 @@ def step_torpedo(t: dict, world, dt: float, on_event: Optional[Callable[[str, di
             max_turn = 20.0 * dt
         t["heading"] = (t["heading"] + max(-max_turn, min(max_turn, dh))) % 360
 
+    # Move torpedo using compass convention (0°=N, 90°=E)
     mps = t["speed"] * 0.514444
-    t["x"] += math.cos(math.radians(t["heading"])) * mps * dt
-    t["y"] += math.sin(math.radians(t["heading"])) * mps * dt
+    heading_rad = math.radians(t["heading"])
+    t["x"] += math.sin(heading_rad) * mps * dt
+    t["y"] += math.cos(heading_rad) * mps * dt
     t["run_time"] += dt
 
 
@@ -154,7 +159,8 @@ def _nearest_target(t: dict, world):
         dx = ship.kin.x - t["x"]
         dy = ship.kin.y - t["y"]
         rng = math.hypot(dx, dy)
-        bearing = (math.degrees(math.atan2(dy, dx)) % 360.0)
+        # Compass bearing from torpedo to target
+        bearing = (math.degrees(math.atan2(dx, dy)) % 360.0)
         off = abs(((bearing - t["heading"] + 540) % 360) - 180)
         if off <= t["seeker_cone"] / 2 and rng < nearest_d:
             nearest_d = rng

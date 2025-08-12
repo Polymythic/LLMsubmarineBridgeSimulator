@@ -1,6 +1,6 @@
 from __future__ import annotations
 import math
-from typing import Optional
+from typing import Optional, Callable
 from ..models import Ship, Tube, TorpedoDef
 
 
@@ -10,7 +10,6 @@ def step_tubes(ship: Ship, dt: float) -> None:
         if t.timer_s > 0.0:
             t.timer_s = max(0.0, t.timer_s - dt)
             if t.timer_s == 0.0 and t.next_state is not None:
-                # Transition completes
                 t.state = t.next_state
                 t.next_state = None
 
@@ -76,6 +75,7 @@ def try_fire(ship: Ship, tube_idx: int, bearing_deg: float, run_depth: float):
         "target_id": None,
         "name": tube.weapon.name,
         "seeker_cone": tube.weapon.seeker_cone_deg,
+        "side": ship.side,
     }
     tube.weapon = None
     tube.state = "Empty"
@@ -84,12 +84,29 @@ def try_fire(ship: Ship, tube_idx: int, bearing_deg: float, run_depth: float):
     return torp
 
 
-def step_torpedo(t: dict, world, dt: float) -> None:
+def step_torpedo(t: dict, world, dt: float, on_event: Optional[Callable[[str, dict], None]] = None) -> None:
     dx = t["x"] - world.ships["ownship"].kin.x
     dy = t["y"] - world.ships["ownship"].kin.y
     dist_from_shooter = math.hypot(dx, dy)
     if not t["armed"] and dist_from_shooter >= t["enable_range_m"]:
         t["armed"] = True
+        if on_event:
+            on_event("torpedo.armed", {"name": t["name"]})
+
+    # Detonation check against opposing ships
+    for ship in world.all_ships():
+        if ship.side == t.get("side"):
+            continue
+        rng = math.hypot(ship.kin.x - t["x"], ship.kin.y - t["y"])
+        if t["armed"] and rng < 30.0:  # proximity fuze
+            # Apply damage
+            ship.damage.hull = min(1.0, ship.damage.hull + 0.5)
+            ship.damage.flooding_rate = min(10.0, ship.damage.flooding_rate + 2.0)
+            if on_event:
+                on_event("torpedo.detonated", {"target": ship.id, "range_m": rng})
+            # Mark torp as expired
+            t["run_time"] = t["max_run_time"] + 1.0
+            return
 
     target = _nearest_target(t, world)
     if target is not None and t["armed"]:
@@ -108,7 +125,7 @@ def _nearest_target(t: dict, world):
     nearest = None
     nearest_d = 1e12
     for ship in world.all_ships():
-        if ship.id.startswith("own"):
+        if ship.side == t.get("side"):
             continue
         dx = ship.kin.x - t["x"]
         dy = ship.kin.y - t["y"]

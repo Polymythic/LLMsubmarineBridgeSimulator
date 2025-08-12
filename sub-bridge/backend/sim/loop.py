@@ -12,6 +12,7 @@ from .physics import integrate_kinematics
 from .sonar import passive_contacts, ActivePingState, active_ping
 from .weapons import try_load_tube, try_flood_tube, try_set_doors, try_fire, step_torpedo, step_tubes
 from .ai_tools import LocalAIStub
+from .damage import step_damage, step_engineering
 
 
 class Simulation:
@@ -108,15 +109,22 @@ class Simulation:
             if ship.id == "ownship":
                 continue
             if CONFIG.enemy_static:
-                # Keep red static; no integration
                 continue
             integrate_kinematics(ship, ship.kin.heading, ship.kin.speed, ship.kin.depth, dt)
 
+        # Torpedo step with callbacks for detonation events
         if self.world.torpedoes:
             for t in list(self.world.torpedoes):
-                step_torpedo(t, self.world, dt)
+                def _on_event(name: str, payload: dict) -> None:
+                    insert_event(self.engine, self.run_id, name, json.dumps(payload))
+                step_torpedo(t, self.world, dt, on_event=_on_event)
                 if t["run_time"] > t["max_run_time"]:
                     self.world.torpedoes.remove(t)
+
+        # Damage and engineering steps
+        pump_effect = 2.0 if (self._pump_fwd or self._pump_aft) else 0.0
+        step_damage(own, dt, pump_effect=pump_effect)
+        step_engineering(own, dt)
 
         self.active_ping_state.tick(dt)
         contacts = passive_contacts(own, [s for s in self.world.all_ships() if s.id != own.id])
@@ -137,7 +145,7 @@ class Simulation:
         tel_helm = {**base, "cavitationSpeedWarn": speed > 25.0}
         tel_sonar = {**base, "contacts": [c.dict() for c in contacts], "pingCooldown": max(0.0, self.active_ping_state.timer)}
         tel_weapons = {**base, "tubes": [t.dict() for t in own.weapons.tubes], "consentRequired": CONFIG.require_captain_consent, "captainConsent": self._captain_consent}
-        tel_engineering = {**base, "reactor": own.reactor.dict(), "pumps": {"fwd": self._pump_fwd, "aft": self._pump_aft}}
+        tel_engineering = {**base, "reactor": own.reactor.dict(), "pumps": {"fwd": self._pump_fwd, "aft": self._pump_aft}, "damage": own.damage.dict()}
 
         await BUS.publish("tick:all", {"topic": "telemetry", "data": tel_all})
         await BUS.publish("tick:captain", {"topic": "telemetry", "data": tel_captain})
@@ -192,6 +200,9 @@ class Simulation:
                 self._pump_fwd = state
             elif name == "aft":
                 self._pump_aft = state
+            return None
+        if topic == "engineering.reactor.scram":
+            own.reactor.scrammed = bool(data.get("scrammed", True))
             return None
         if topic == "captain.consent":
             self.set_captain_consent(bool(data.get("consent", False)))

@@ -12,6 +12,7 @@
     button { margin-top:12px; padding:8px 12px; background:#26406E; border:none; color:#D7E3FF; border-radius:6px; }
     .row { display:flex; gap:12px; }
     .col { flex:1; }
+    .pill { padding:4px 8px; border-radius:12px; background:#0F162A; border:1px solid #1B2440; }
   </style>
 </head>
 <body>
@@ -22,13 +23,19 @@
       <div class="col"><label>Speed (kn)<input id="speed" type="number" min="0" max="30" value="8"></label></div>
       <div class="col"><label>Depth (m)<input id="depth" type="number" min="0" max="600" value="100"></label></div>
     </div>
+    <div class="row">
+      <div class="pill" id="cav">Cavitation: NO</div>
+      <div class="pill" id="therm">Thermocline: ON</div>
+    </div>
     <button id="send">Order</button>
     <pre id="telemetry"></pre>
   </div>
   <script>
     const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/helm');
     const tel = document.getElementById('telemetry');
-    ws.onmessage = (ev) => { try { const m = JSON.parse(ev.data); if (m.topic === 'telemetry') tel.textContent = JSON.stringify(m.data, null, 2); } catch(e){} };
+    const cav = document.getElementById('cav');
+    const therm = document.getElementById('therm');
+    ws.onmessage = (ev) => { try { const m = JSON.parse(ev.data); if (m.topic === 'telemetry') { tel.textContent = JSON.stringify(m.data, null, 2); cav.textContent = 'Cavitation: ' + (m.data.ownship?.cavitation ? 'YES' : 'NO'); therm.textContent = 'Thermocline: ' + ((m.data.thermocline ?? true) ? 'ON' : 'OFF'); } } catch(e){} };
     document.getElementById('send').onclick = () => {
       const heading = parseFloat(document.getElementById('heading').value);
       const speed = parseFloat(document.getElementById('speed').value);

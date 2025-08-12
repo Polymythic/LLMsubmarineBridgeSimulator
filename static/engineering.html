@@ -1,0 +1,63 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Engineering</title>
+  <style>
+    body { background:#0B1020; color:#D7E3FF; font-family: ui-sans-serif, system-ui, -apple-system; }
+    .panel { background:#11172B; border:1px solid #1B2440; padding:16px; margin:12px; border-radius:8px; }
+    input[type=range] { width:100%; }
+    button { margin-top:12px; padding:8px 12px; background:#26406E; border:none; color:#D7E3FF; border-radius:6px; }
+    .row { display:flex; gap:12px; flex-wrap:wrap; }
+    .pill { padding:4px 8px; border-radius:12px; background:#0F162A; border:1px solid #1B2440; }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <h2>Engineering</h2>
+    <div title="Reactor output and SCRAM state">Reactor MW <span id="mwv">60</span> / <span id="mwmax">100</span> <span class="pill" id="scramState">SCRAM: OFF</span></div>
+    <input id="mw" type="range" min="0" max="100" step="1" value="60" title="Adjust reactor power (MW)" />
+    <div class="row">
+      <button id="set" title="Set reactor power to slider value">Set MW</button>
+      <button id="scram" title="Trip reactor SCRAM (emergency shutdown)">Toggle SCRAM</button>
+      <button id="pumpF" title="Toggle forward pump to reduce flooding">Toggle Pump FWD</button>
+      <button id="pumpA" title="Toggle aft pump to reduce flooding">Toggle Pump AFT</button>
+    </div>
+    <div class="row">
+      <div class="pill" title="Battery state of charge">Battery: <span id="bat">100</span>%</div>
+      <div class="pill" title="Flooding rate; pumps reduce this">Flooding rate: <span id="flood">0</span></div>
+      <div class="pill" title="Overall hull damage fraction">Hull dmg: <span id="hull">0</span></div>
+    </div>
+    <pre id="telemetry" title="Engineering telemetry and events"></pre>
+  </div>
+  <script>
+    const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/engineering');
+    const tel = document.getElementById('telemetry');
+    const mw = document.getElementById('mw');
+    const mwv = document.getElementById('mwv');
+    const mwmax = document.getElementById('mwmax');
+    const bat = document.getElementById('bat');
+    const flood = document.getElementById('flood');
+    const hull = document.getElementById('hull');
+    const scramState = document.getElementById('scramState');
+    mw.oninput = () => mwv.textContent = mw.value;
+    ws.onmessage = (ev) => {
+      try { const m = JSON.parse(ev.data); if (m.topic === 'telemetry') {
+        tel.textContent = JSON.stringify(m.data, null, 2);
+        mwv.textContent = (m.data.reactor?.output_mw ?? 0).toFixed(0);
+        mw.value = (m.data.reactor?.output_mw ?? 0);
+        mwmax.textContent = (m.data.reactor?.max_mw ?? 0).toFixed(0);
+        bat.textContent = (m.data.reactor?.battery_pct ?? 0).toFixed(0);
+        flood.textContent = (m.data.damage?.flooding_rate ?? 0).toFixed(1);
+        hull.textContent = (m.data.damage?.hull ?? 0).toFixed(2);
+        const s = !!m.data.reactor?.scrammed; scramState.textContent = `SCRAM: ${s ? 'ON' : 'OFF'}`;
+      }} catch(e){}
+    };
+    document.getElementById('set').onclick = () => ws.send(JSON.stringify({topic:'engineering.reactor.set', data:{mw: parseFloat(mw.value)}}));
+    document.getElementById('scram').onclick = () => ws.send(JSON.stringify({topic:'engineering.reactor.scram', data:{scrammed:true}}));
+    document.getElementById('pumpF').onclick = () => ws.send(JSON.stringify({topic:'engineering.pump.toggle', data:{pump:'fwd', enabled:true}}));
+    document.getElementById('pumpA').onclick = () => ws.send(JSON.stringify({topic:'engineering.pump.toggle', data:{pump:'aft', enabled:true}}));
+  </script>
+</body>
+</html>

@@ -1,0 +1,112 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Helm</title>
+  <style>
+    body { background:#0B1020; color:#D7E3FF; font-family: ui-sans-serif, system-ui, -apple-system; }
+    .panel { background:#11172B; border:1px solid #1B2440; padding:16px; margin:12px; border-radius:8px; }
+    label { display:block; margin-top:8px; }
+    input { width:100%; background:#0F162A; color:#D7E3FF; border:1px solid #1B2440; padding:8px; }
+    button { margin-top:12px; padding:8px 12px; background:#26406E; border:none; color:#D7E3FF; border-radius:6px; }
+    .row { display:flex; gap:12px; flex-wrap:wrap; }
+    .col { flex:1; min-width:260px; }
+    .pill { padding:4px 8px; border-radius:12px; background:#0F162A; border:1px solid #1B2440; }
+    svg { width:100%; height:220px; }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <h2>Helm</h2>
+    <div class="row">
+      <div class="col">
+        <svg id="hdgDial" viewBox="0 0 300 300" title="Heading dial (drag to set)"></svg>
+        <div class="row">
+          <div class="pill" id="cav" title="Cavitation increases detectability and noise">Cavitation: NO</div>
+          <div class="pill" id="therm" title="Thermocline may attenuate sound; affects detection">Thermocline: ON</div>
+        </div>
+      </div>
+      <div class="col">
+        <svg id="depthLadder" viewBox="0 0 120 300" title="Depth ladder"></svg>
+      </div>
+      <div class="col">
+        <svg id="speedTele" viewBox="0 0 120 300" title="Speed telegraph"></svg>
+      </div>
+    </div>
+    <div class="row">
+      <div class="col"><label title="Ordered heading in degrees (0=North)">Heading (deg)<input id="heading" type="number" min="0" max="359" value="270"></label></div>
+      <div class="col"><label title="Ordered speed in knots">Speed (kn)<input id="speed" type="number" min="0" max="30" value="8"></label></div>
+      <div class="col"><label title="Ordered keel depth in meters">Depth (m)<input id="depth" type="number" min="0" max="600" value="100"></label></div>
+    </div>
+    <button id="send" title="Send helm order to the sim loop">Order</button>
+    <pre id="telemetry" title="Ownship state and events"></pre>
+  </div>
+  <script>
+    const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/helm');
+    const tel = document.getElementById('telemetry');
+    const cav = document.getElementById('cav');
+    const therm = document.getElementById('therm');
+    const hdgDial = document.getElementById('hdgDial');
+    const depthLadder = document.getElementById('depthLadder');
+    const speedTele = document.getElementById('speedTele');
+
+    function drawDial(svg, hdg, ordered){
+      svg.innerHTML = '';
+      const NS = 'http://www.w3.org/2000/svg';
+      const r = 120, cx = 150, cy = 150;
+      const circle = document.createElementNS(NS, 'circle');
+      circle.setAttribute('cx', cx); circle.setAttribute('cy', cy); circle.setAttribute('r', r);
+      circle.setAttribute('fill', '#0F162A'); circle.setAttribute('stroke', '#1B2440');
+      svg.appendChild(circle);
+      // Ticks every 30°, majors every 90°
+      for (let a=0;a<360;a+=30){
+        const ang = (a-90) * Math.PI/180; const len = (a%90===0)?16:8; const col = (a%90===0)?'#6E84C8':'#3A4674';
+        const x1 = cx + Math.cos(ang)*(r-10), y1 = cy + Math.sin(ang)*(r-10);
+        const x2 = cx + Math.cos(ang)*(r-10-len), y2 = cy + Math.sin(ang)*(r-10-len);
+        const line = document.createElementNS(NS,'line');
+        line.setAttribute('x1',x1); line.setAttribute('y1',y1); line.setAttribute('x2',x2); line.setAttribute('y2',y2);
+        line.setAttribute('stroke', col); svg.appendChild(line);
+        if (a%90===0){ const t = document.createElementNS(NS,'text'); t.setAttribute('x', cx + Math.cos(ang)*(r-34)); t.setAttribute('y', cy + Math.sin(ang)*(r-34)); t.setAttribute('fill','#89B4FA'); t.setAttribute('font-size','12'); t.setAttribute('text-anchor','middle'); t.setAttribute('dominant-baseline','middle'); t.textContent = String(a); svg.appendChild(t);}      }
+      // Actual heading bug
+      const bugA = (hdg-90)*Math.PI/180; const bugX = cx + Math.cos(bugA)*(r-28); const bugY = cy + Math.sin(bugA)*(r-28);
+      const bug = document.createElementNS(NS,'circle'); bug.setAttribute('cx',bugX); bug.setAttribute('cy',bugY); bug.setAttribute('r','6'); bug.setAttribute('fill','#6EE7A7'); svg.appendChild(bug);
+      // Ordered heading bug
+      const obA = (ordered-90)*Math.PI/180; const obX = cx + Math.cos(obA)*(r-16); const obY = cy + Math.sin(obA)*(r-16);
+      const ob = document.createElementNS(NS,'circle'); ob.setAttribute('cx',obX); ob.setAttribute('cy',obY); ob.setAttribute('r','5'); ob.setAttribute('fill','#EAB308'); svg.appendChild(ob);
+    }
+
+    function drawLadder(svg, depth, ordered){
+      svg.innerHTML = '';
+      const NS='http://www.w3.org/2000/svg';
+      const w=120,h=300; const max=600; const scale = h/max;
+      const bg = document.createElementNS(NS,'rect'); bg.setAttribute('x',0); bg.setAttribute('y',0); bg.setAttribute('width',w); bg.setAttribute('height',h); bg.setAttribute('fill','#0F162A'); bg.setAttribute('stroke','#1B2440'); svg.appendChild(bg);
+      for (let d=0; d<=max; d+=50){
+        const y = h - d*scale; const major = (d%100===0);
+        const line = document.createElementNS(NS,'line'); line.setAttribute('x1',10); line.setAttribute('x2', major?90:60); line.setAttribute('y1',y); line.setAttribute('y2',y); line.setAttribute('stroke', major?'#6E84C8':'#3A4674'); svg.appendChild(line);
+        if (major){ const t=document.createElementNS(NS,'text'); t.setAttribute('x', 100); t.setAttribute('y', y); t.setAttribute('fill','#89B4FA'); t.setAttribute('font-size','12'); t.textContent=String(d); svg.appendChild(t);}      }
+      // Actual marker
+      const ay = h - depth*scale; const a = document.createElementNS(NS,'rect'); a.setAttribute('x',4); a.setAttribute('y', ay-2); a.setAttribute('width', 8); a.setAttribute('height',4); a.setAttribute('fill','#6EE7A7'); svg.appendChild(a);
+      // Ordered marker
+      const oy = h - ordered*scale; const o = document.createElementNS(NS,'rect'); o.setAttribute('x',4); o.setAttribute('y', oy-2); o.setAttribute('width', 8); o.setAttribute('height',4); o.setAttribute('fill','#EAB308'); svg.appendChild(o);
+    }
+
+    function drawTele(svg, speed, ordered){
+      svg.innerHTML='';
+      const NS='http://www.w3.org/2000/svg'; const w=120,h=300; const max=30; const scale = h/max;
+      const bg = document.createElementNS(NS,'rect'); bg.setAttribute('x',0); bg.setAttribute('y',0); bg.setAttribute('width',w); bg.setAttribute('height',h); bg.setAttribute('fill','#0F162A'); bg.setAttribute('stroke','#1B2440'); svg.appendChild(bg);
+      for (let s=0; s<=max; s+=5){ const y=h - s*scale; const line=document.createElementNS(NS,'line'); line.setAttribute('x1',10); line.setAttribute('x2',80); line.setAttribute('y1',y); line.setAttribute('y2',y); line.setAttribute('stroke','#3A4674'); svg.appendChild(line); const t=document.createElementNS(NS,'text'); t.setAttribute('x',90); t.setAttribute('y',y); t.setAttribute('fill','#89B4FA'); t.setAttribute('font-size','12'); t.textContent=String(s); svg.appendChild(t);}      const ay=h - speed*scale; const a=document.createElementNS(NS,'rect'); a.setAttribute('x',4); a.setAttribute('y', ay-2); a.setAttribute('width', 8); a.setAttribute('height',4); a.setAttribute('fill','#6EE7A7'); svg.appendChild(a); const oy=h - ordered*scale; const o=document.createElementNS(NS,'rect'); o.setAttribute('x',4); o.setAttribute('y', oy-2); o.setAttribute('width', 8); o.setAttribute('height',4); o.setAttribute('fill','#EAB308'); svg.appendChild(o);
+    }
+
+    ws.onmessage = (ev) => { try { const m = JSON.parse(ev.data); if (m.topic === 'telemetry') { const d=m.data; tel.textContent = JSON.stringify(d, null, 2); cav.textContent = 'Cavitation: ' + (d.ownship?.cavitation ? 'YES' : 'NO'); therm.textContent = 'Thermocline: ' + ((d.thermocline ?? true) ? 'ON' : 'OFF'); drawDial(hdgDial, d.ownship.heading, d.ownship.orderedHeading); drawLadder(depthLadder, d.ownship.depth, d.ownship.orderedDepth); drawTele(speedTele, d.ownship.speed, d.ownship.orderedSpeed); } } catch(e){} };
+
+    // Keep simple inputs for ordering
+    document.getElementById('send').onclick = () => {
+      const heading = parseFloat(document.getElementById('heading').value);
+      const speed = parseFloat(document.getElementById('speed').value);
+      const depth = parseFloat(document.getElementById('depth').value);
+      ws.send(JSON.stringify({topic:'helm.order', data:{heading, speed, depth}}));
+    };
+  </script>
+</body>
+</html>

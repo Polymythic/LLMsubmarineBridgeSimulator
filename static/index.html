@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sub Bridge - Home</title>
+  <style>
+    body { background:#0B1020; color:#D7E3FF; font-family: ui-sans-serif, system-ui, -apple-system; }
+    a { color:#89B4FA; text-decoration:none; }
+    .card { background:#11172B; border:1px solid #1B2440; padding:16px; margin:12px; border-radius:8px; box-shadow:0 0 12px rgba(0,0,0,0.4); }
+    .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px; }
+    h1 { font-family: ui-monospace, Menlo, monospace; }
+  </style>
+</head>
+<body>
+  <h1>Submarine Bridge Simulator</h1>
+  <div class="grid">
+    <div class="card"><a href="/captain" title="Captain: consent, periscope, radio mast, ROE overview">Captain</a></div>
+    <div class="card"><a href="/helm" title="Helm: heading, speed, depth orders; cavitation and thermocline indicators">Helm</a></div>
+    <div class="card"><a href="/sonar" title="Sonar: passive bearings, active ping, waterfall display">Sonar</a></div>
+    <div class="card"><a href="/weapons" title="Weapons: tube management, fire solution, interlocks">Weapons</a></div>
+    <div class="card"><a href="/engineering" title="Engineering: reactor output, SCRAM, pumps, battery">Engineering</a></div>
+  </div>
+</body>
+</html>

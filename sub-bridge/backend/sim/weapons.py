@@ -4,37 +4,57 @@ from typing import Optional
 from ..models import Ship, Tube, TorpedoDef
 
 
-def step_tubes(weapons, dt: float) -> None:
-    pass
+def step_tubes(ship: Ship, dt: float) -> None:
+    ws = ship.weapons
+    for t in ws.tubes:
+        if t.timer_s > 0.0:
+            t.timer_s = max(0.0, t.timer_s - dt)
+            if t.timer_s == 0.0 and t.next_state is not None:
+                # Transition completes
+                t.state = t.next_state
+                t.next_state = None
 
 
 def try_load_tube(ship: Ship, tube_idx: int, weapon_name: str = "Mk48") -> bool:
+    ws = ship.weapons
     tube = _get_tube(ship, tube_idx)
     if tube is None or tube.state != "Empty" or ship.weapons.torpedoes_stored <= 0:
         return False
+    if tube.timer_s > 0.0:
+        return False
     tube.weapon = TorpedoDef(name=weapon_name)
-    tube.state = "Loaded"
+    tube.next_state = "Loaded"
+    tube.timer_s = ws.reload_time_s
     ship.weapons.torpedoes_stored -= 1
     return True
 
 
 def try_flood_tube(ship: Ship, tube_idx: int) -> bool:
+    ws = ship.weapons
     tube = _get_tube(ship, tube_idx)
     if tube is None or tube.state != "Loaded":
         return False
-    tube.state = "Flooded"
+    if tube.timer_s > 0.0:
+        return False
+    tube.next_state = "Flooded"
+    tube.timer_s = ws.flood_time_s
     return True
 
 
 def try_set_doors(ship: Ship, tube_idx: int, open_state: bool) -> bool:
+    ws = ship.weapons
     tube = _get_tube(ship, tube_idx)
     if tube is None:
         return False
+    if tube.timer_s > 0.0:
+        return False
     if open_state and tube.state == "Flooded":
-        tube.state = "DoorsOpen"
+        tube.next_state = "DoorsOpen"
+        tube.timer_s = ws.doors_time_s
         return True
     if not open_state and tube.state == "DoorsOpen":
-        tube.state = "Flooded"
+        tube.next_state = "Flooded"
+        tube.timer_s = ws.doors_time_s
         return True
     return False
 
@@ -59,6 +79,8 @@ def try_fire(ship: Ship, tube_idx: int, bearing_deg: float, run_depth: float):
     }
     tube.weapon = None
     tube.state = "Empty"
+    tube.timer_s = 0.0
+    tube.next_state = None
     return torp
 
 

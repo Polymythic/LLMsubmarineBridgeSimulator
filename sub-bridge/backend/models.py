@@ -44,12 +44,16 @@ class Tube(BaseModel):
     idx: int
     state: Literal["Empty", "Loaded", "Flooded", "DoorsOpen"] = "Empty"
     weapon: Optional[TorpedoDef] = None
+    timer_s: float = 0.0
+    next_state: Optional[Literal["Loaded", "Flooded", "DoorsOpen"]] = None
 
 
 class WeaponsSuite(BaseModel):
     tube_count: int = 6
     torpedoes_stored: int = 6
     reload_time_s: float = 45.0
+    flood_time_s: float = 8.0
+    doors_time_s: float = 3.0
     tubes: List[Tube] = Field(default_factory=lambda: [Tube(idx=i) for i in range(1, 7)])
 
 

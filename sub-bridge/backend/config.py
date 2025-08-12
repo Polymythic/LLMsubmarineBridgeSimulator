@@ -32,6 +32,8 @@ class Config:
     require_captain_consent: bool = _get_env_bool("REQUIRE_CAPTAIN_CONSENT", True)
     sqlite_path: str = os.getenv("SQLITE_PATH", "./sub-bridge.db")
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
+    use_enemy_ai: bool = _get_env_bool("USE_ENEMY_AI", False)
+    enemy_static: bool = _get_env_bool("ENEMY_STATIC", True)
 
 
 CONFIG = Config()

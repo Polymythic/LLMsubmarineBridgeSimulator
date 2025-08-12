@@ -10,7 +10,7 @@ from ..storage import init_engine, create_run, insert_snapshot, insert_event
 from .ecs import World
 from .physics import integrate_kinematics
 from .sonar import passive_contacts, ActivePingState, active_ping
-from .weapons import try_load_tube, try_flood_tube, try_set_doors, try_fire, step_torpedo
+from .weapons import try_load_tube, try_flood_tube, try_set_doors, try_fire, step_torpedo, step_tubes
 from .ai_tools import LocalAIStub
 
 
@@ -76,17 +76,19 @@ class Simulation:
     async def tick(self, dt: float) -> None:
         own = self.world.get_ship("ownship")
 
-        self._last_ai += dt
-        if self._last_ai >= CONFIG.ai_poll_s:
-            self._last_ai = 0.0
-            for ship in self.world.all_ships():
-                if ship.side == "RED":
-                    tool = self.ai.propose_orders(ship)
-                    insert_event(self.engine, self.run_id, "ai_tool", json.dumps(tool))
-                    args = tool.get("arguments", {})
-                    ship.kin.heading = args.get("heading", ship.kin.heading)
-                    ship.kin.speed = args.get("speed", ship.kin.speed)
-                    ship.kin.depth = args.get("depth", ship.kin.depth)
+        # Enemy AI proposals (optional)
+        if CONFIG.use_enemy_ai:
+            self._last_ai += dt
+            if self._last_ai >= CONFIG.ai_poll_s:
+                self._last_ai = 0.0
+                for ship in self.world.all_ships():
+                    if ship.side == "RED":
+                        tool = self.ai.propose_orders(ship)
+                        insert_event(self.engine, self.run_id, "ai_tool", json.dumps(tool))
+                        args = tool.get("arguments", {})
+                        ship.kin.heading = args.get("heading", ship.kin.heading)
+                        ship.kin.speed = args.get("speed", ship.kin.speed)
+                        ship.kin.depth = args.get("depth", ship.kin.depth)
 
         ballast_boost = self._pump_fwd or self._pump_aft
         cav, heading, speed, depth = integrate_kinematics(
@@ -98,8 +100,15 @@ class Simulation:
             ballast_boost=ballast_boost,
         )
 
+        # Step weapons tube timers
+        step_tubes(own, dt)
+
+        # Move RED ships if not static testing
         for ship in self.world.all_ships():
             if ship.id == "ownship":
+                continue
+            if CONFIG.enemy_static:
+                # Keep red static; no integration
                 continue
             integrate_kinematics(ship, ship.kin.heading, ship.kin.speed, ship.kin.depth, dt)
 
@@ -123,7 +132,6 @@ class Simulation:
             "events": [],
         }
 
-        # Station-scoped augmentation
         tel_all = dict(base)
         tel_captain = {**base, "periscopeRaised": self._periscope_raised, "radioRaised": self._radio_raised}
         tel_helm = {**base, "cavitationSpeedWarn": speed > 25.0}

@@ -25,6 +25,7 @@
         <button id="ping" title="Send an active ping; reveals ownship and returns noisy range+bearing">Active Ping</button>
         <div title="Ping cooldown in seconds">Ping cooldown: <span id="cd">0</span>s</div>
         <div class="label" title="Current EMCON risk from acoustics">EMCON: <span id="emcon">low</span></div>
+        <div class="label" id="task" title="Current maintenance task for Sonar, if any"></div>
         <h3>Contacts</h3>
         <ul id="contacts" title="Bearing-only passive contacts"></ul>
         <h3>Ping Responses</h3>
@@ -122,6 +123,7 @@
           tel.textContent = JSON.stringify(m.data, null, 2);
           cd.textContent = (m.data.pingCooldown || 0).toFixed(1);
           if (m.data.acoustics) { emcon.textContent = (m.data.acoustics.emconRisk || 'low'); }
+          const t = m.data.task; const taskEl = document.getElementById('task'); if (t) { taskEl.textContent = `${t.title} [${t.stage}] ${(t.progress*100).toFixed(0)}% | ${t.time_remaining_s.toFixed(0)}s`; } else { taskEl.textContent = 'No active task'; }
           list.innerHTML = '';
           (m.data.contacts || []).forEach(c => { const li = document.createElement('li'); li.title = 'Passive contact; bearing-only with noisy measurement.'; li.textContent = `ID ${c.id} brg ${c.bearing.toFixed(0)}° str ${c.strength.toFixed(2)} conf ${c.confidence.toFixed(2)}`; list.appendChild(li); });
           prList.innerHTML = '';

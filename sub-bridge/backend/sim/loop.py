@@ -4,9 +4,10 @@ import json
 import time
 import math
 from typing import Dict, Optional
+import random
 from ..bus import BUS
 from ..config import CONFIG
-from ..models import Ship, Kinematics, Hull, Acoustics, WeaponsSuite, Reactor, DamageState
+from ..models import Ship, Kinematics, Hull, Acoustics, WeaponsSuite, Reactor, DamageState, MaintenanceTask
 from ..storage import init_engine, create_run, insert_snapshot, insert_event
 from .ecs import World
 from .physics import integrate_kinematics
@@ -36,6 +37,9 @@ class Simulation:
         self._last_ping_responses = []
         self._last_ping_at = None
         self._init_default_world()
+        # Station task state
+        self._active_tasks: Dict[str, Optional[MaintenanceTask]] = {s: None for s in ["helm", "sonar", "weapons", "engineering"]}
+        self._task_spawn_timers: Dict[str, float] = {s: 0.0 for s in ["helm", "sonar", "weapons", "engineering"]}
 
     def _init_default_world(self) -> None:
         # Clear existing world and set to original game state
@@ -79,6 +83,86 @@ class Simulation:
 
     def set_captain_consent(self, consent: bool) -> None:
         self._captain_consent = consent
+
+    def _spawn_task_for(self, station: str, now_s: float) -> None:
+        titles = {
+            "helm": ("rudder", "Rudder Lubricate"),
+            "sonar": ("sonar", "Array Recalibration"),
+            "weapons": ("tubes", "Tube Seal Inspection"),
+            "engineering": ("ballast", "Ballast Valve Service"),
+        }
+        system, title = titles.get(station, ("rudder", "Maintenance"))
+        base_deadline = random.uniform(25.0, 45.0)
+        tid = f"{station}-{int(now_s*1000)%100000}-{random.randint(100,999)}"
+        self._active_tasks[station] = MaintenanceTask(
+            id=tid, station=station, system=system, title=title,
+            stage="normal", progress=0.0, base_deadline_s=base_deadline, time_remaining_s=base_deadline, created_at=now_s
+        )
+
+    def _station_power_fraction(self, ship: Ship, station: str) -> float:
+        p = ship.power
+        return max(0.0, min(1.0, getattr(p, station if station != "engineering" else "engineering")))
+
+    def _apply_stage_penalties(self, ship: Ship, station: str, stage: str) -> None:
+        # Apply degradation effects per station and stage
+        if station == "helm":
+            factor = {"normal": 1.0, "degraded": 0.8, "damaged": 0.5, "failed": 0.0}[stage]
+            ship.hull.turn_rate_max = max(1.0, 7.0 * factor)
+        elif station == "sonar":
+            extra = {"normal": 0.0, "degraded": 2.0, "damaged": 5.0, "failed": 10.0}[stage]
+            ship.acoustics.bearing_noise_extra = extra
+        elif station == "weapons":
+            mult = {"normal": 1.0, "degraded": 1.2, "damaged": 1.5, "failed": 2.0}[stage]
+            ship.weapons.time_penalty_multiplier = mult
+        elif station == "engineering":
+            # Reduce effective pumps and depth rate
+            # For now, we limit ballast_ok threshold via maintenance below and rely on physics depth rate gate
+            pass
+
+    def _step_station_tasks(self, ship: Ship, dt: float) -> None:
+        now_s = time.perf_counter()
+        # Spawn logic per station
+        for station in self._active_tasks.keys():
+            if self._active_tasks[station] is None:
+                self._task_spawn_timers[station] -= dt
+                if self._task_spawn_timers[station] <= 0.0:
+                    # Random spawn; interval depends on maintenance state of linked system
+                    self._spawn_task_for(station, now_s)
+                    # Next spawn after 60-120s
+                    self._task_spawn_timers[station] = random.uniform(60.0, 120.0)
+
+        # Progress active tasks based on power allocation for that station
+        for station, task in self._active_tasks.items():
+            if task is None:
+                continue
+            power_frac = self._station_power_fraction(ship, station)
+            # Only one task per station; progress toward completion
+            task.time_remaining_s = max(0.0, task.time_remaining_s - dt)
+            task.progress = min(1.0, task.progress + (0.2 * power_frac) * dt)  # completes in ~5s at full power
+            # If completed
+            if task.progress >= 1.0:
+                # Apply recovery: maintenance bump and clear penalties
+                ship.maintenance.levels[task.system] = min(1.0, ship.maintenance.levels.get(task.system, 1.0) + 0.1)
+                self._apply_stage_penalties(ship, station, "normal")
+                self._active_tasks[station] = None
+                continue
+            # If deadline passed without completion → escalate stage
+            if task.time_remaining_s <= 0.0:
+                if task.stage == "normal":
+                    task.stage = "degraded"
+                    task.base_deadline_s *= 1.25
+                elif task.stage == "degraded":
+                    task.stage = "damaged"
+                    task.base_deadline_s *= 1.5
+                elif task.stage == "damaged":
+                    task.stage = "failed"
+                # Reset countdown for next stage unless failed
+                if task.stage != "failed":
+                    task.time_remaining_s = task.base_deadline_s
+                # Apply penalties immediately
+                self._apply_stage_penalties(ship, station, task.stage)
+                # Also degrade maintenance slowly downwards
+                ship.maintenance.levels[task.system] = max(0.0, ship.maintenance.levels.get(task.system, 1.0) - (0.05 if task.stage == "degraded" else 0.1))
 
     async def run(self) -> None:
         last = time.perf_counter()
@@ -138,6 +222,9 @@ class Simulation:
         step_damage(own, dt, pump_effect=pump_effect)
         step_engineering(own, dt)
 
+        # Station maintenance/repair tasks lifecycle
+        self._step_station_tasks(own, dt)
+
         self.active_ping_state.tick(dt)
         # Acoustic noise budget and detectability
         noise_from_speed = min(100.0, (speed / max(1.0, own.hull.max_speed)) * 70.0)
@@ -164,14 +251,14 @@ class Simulation:
 
         tel_all = dict(base)
         tel_captain = {**base, "periscopeRaised": self._periscope_raised, "radioRaised": self._radio_raised}
-        tel_helm = {**base, "cavitationSpeedWarn": speed > 25.0, "thermocline": own.acoustics.thermocline_on}
+        tel_helm = {**base, "cavitationSpeedWarn": speed > 25.0, "thermocline": own.acoustics.thermocline_on, "task": (None if self._active_tasks['helm'] is None else self._active_tasks['helm'].__dict__)}
         # Prepare recent active ping responses list (bearing, range_est, strength, time)
         # For now, only generate on demand when 'sonar.ping' happens; UI will render as DEMON dots
         if not hasattr(self, "_last_ping_responses"):
             self._last_ping_responses = []
-        tel_sonar = {**base, "contacts": [c.dict() for c in contacts], "pingCooldown": max(0.0, self.active_ping_state.timer), "pingResponses": list(self._last_ping_responses), "lastPingAt": getattr(self, "_last_ping_at", None)}
-        tel_weapons = {**base, "tubes": [t.dict() for t in own.weapons.tubes], "consentRequired": CONFIG.require_captain_consent, "captainConsent": self._captain_consent}
-        tel_engineering = {**base, "reactor": own.reactor.dict(), "pumps": {"fwd": self._pump_fwd, "aft": self._pump_aft}, "damage": own.damage.dict(), "power": own.power.dict(), "systems": own.systems.dict(), "maintenance": own.maintenance.levels}
+        tel_sonar = {**base, "contacts": [c.dict() for c in contacts], "pingCooldown": max(0.0, self.active_ping_state.timer), "pingResponses": list(self._last_ping_responses), "lastPingAt": getattr(self, "_last_ping_at", None), "task": (None if self._active_tasks['sonar'] is None else self._active_tasks['sonar'].__dict__)}
+        tel_weapons = {**base, "tubes": [t.dict() for t in own.weapons.tubes], "consentRequired": CONFIG.require_captain_consent, "captainConsent": self._captain_consent, "task": (None if self._active_tasks['weapons'] is None else self._active_tasks['weapons'].__dict__)}
+        tel_engineering = {**base, "reactor": own.reactor.dict(), "pumps": {"fwd": self._pump_fwd, "aft": self._pump_aft}, "damage": own.damage.dict(), "power": own.power.dict(), "systems": own.systems.dict(), "maintenance": own.maintenance.levels, "task": (None if self._active_tasks['engineering'] is None else self._active_tasks['engineering'].__dict__)}
 
         def bearings_to(sx: float, sy: float) -> Dict[str, float]:
             # Compass bearing: 0=N, 90=E, 180=S, 270=W
@@ -272,6 +359,29 @@ class Simulation:
             p.weapons = weapons
             p.sonar = sonar
             p.engineering = engineering
+            return None
+        if topic == "station.task.start":
+            station = str(data.get("station", "")).lower()
+            if station not in self._active_tasks:
+                return "Unknown station"
+            # Only one task per station; start if exists and not in progress
+            t = self._active_tasks[station]
+            if t is None:
+                return "No task to start"
+            # Starting just flips a flag; progress handled by power each tick
+            # Return None to indicate accepted
+            return None
+        if topic == "station.task.defer":
+            station = str(data.get("station", "")).lower()
+            if station not in self._active_tasks:
+                return "Unknown station"
+            # Defer: small severity bump and respawn later
+            t = self._active_tasks[station]
+            if t is None:
+                return None
+            t.stage = "degraded"
+            self._active_tasks[station] = None
+            self._task_spawn_timers[station] = 15.0
             return None
         if topic == "engineering.pump.toggle":
             name = str(data.get("pump", "")).lower()

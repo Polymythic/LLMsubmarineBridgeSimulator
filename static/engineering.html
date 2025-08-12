@@ -25,6 +25,9 @@
       <button id="pumpF" title="Toggle forward pump to reduce flooding">Toggle Pump FWD</button>
       <button id="pumpA" title="Toggle aft pump to reduce flooding">Toggle Pump AFT</button>
     </div>
+    <div class="row">
+      <div class="pill" id="task" title="Current maintenance task for Engineering"></div>
+    </div>
     <div class="panel">
       <h3>Current Power Allocation</h3>
       <div class="row">
@@ -135,6 +138,7 @@
         const setOk = (el, ok) => { el.textContent = ok ? 'OK' : 'FAIL'; el.style.color = ok ? '#8DEB8D' : '#FF6B6B'; };
         setOk(rudderOk, !!sys.rudder_ok); setOk(ballastOk, !!sys.ballast_ok); setOk(sonarOk, !!sys.sonar_ok);
         setOk(radioOk, !!sys.radio_ok); setOk(periscopeOk, !!sys.periscope_ok); setOk(tubesOk, !!sys.tubes_ok);
+        const t = m.data.task; const taskEl = document.getElementById('task'); taskEl.textContent = t ? `${t.title} [${t.stage}] ${(t.progress*100).toFixed(0)}% | ${t.time_remaining_s.toFixed(0)}s` : 'No active task';
       } else if (m.topic === 'error') { showToast(m.error || 'Error'); }
       } catch(e){}
     };

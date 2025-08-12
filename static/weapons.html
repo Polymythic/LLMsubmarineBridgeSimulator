@@ -19,7 +19,8 @@
   <div class="panel">
     <h2>Weapons</h2>
     <div id="consent" title="Captain consent requirement before firing"></div>
-    <div class="tubes" id="tubes" title="Tube state machine: Empty→Loaded→Flooded→DoorsOpen; timers show progress."></div>
+    <div class="tubes" id="tubes" title="Tube state machine: Empty→Flooded→DoorsOpen; timers show progress."></div>
+    <div class="small" id="task" title="Current maintenance task for Weapons"></div>
     <label title="Select a tube to operate">Tube <input id="tube" type="number" min="1" max="6" value="1"></label>
     <div>
       <button id="load" title="Load a torpedo into the selected tube (starts reload timer)">Load</button>
@@ -50,6 +51,7 @@
             div.innerHTML = `<div title='Tube state and weapon type'>Tube ${t.idx}: ${t.state} ${t.weapon ? '('+t.weapon.name+')' : ''}</div><div class='small' title='Time remaining on current transition'>Timer${timer}</div>`;
             tubes.appendChild(div);
           });
+          const taskEl = document.getElementById('task'); const task = m.data.task; taskEl.textContent = task ? `${task.title} [${task.stage}] ${(task.progress*100).toFixed(0)}% | ${task.time_remaining_s.toFixed(0)}s` : 'No active task';
         }
       } catch(e){}
     };

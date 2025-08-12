@@ -38,7 +38,8 @@ def passive_contacts(self_ship: Ship, others: List[Ship]) -> List[TelemetryConta
         ambient = 60.0
         snr = max(0.0, src_lvl - tl - ambient)
         strength = max(0.0, min(1.0, snr / 30.0))
-        sigma = max(1.0, 10.0 - other.kin.speed * 0.3)
+        # Bearing error grows as target slows (harder to localize) and with ownship degradation
+        sigma = max(1.0, 10.0 - other.kin.speed * 0.3 + self_ship.acoustics.bearing_noise_extra)
         noisy_bearing = normalize_angle_deg(brg + random.gauss(0, sigma))
         confidence = min(1.0, strength * 1.2)
         contacts.append(

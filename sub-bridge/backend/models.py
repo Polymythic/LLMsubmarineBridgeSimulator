@@ -30,6 +30,8 @@ class Acoustics(BaseModel):
     )
     broadband_sig: float = 0.0
     thermocline_on: bool = True
+    # Additional noise injected into bearing measurement sigma (degradation effects)
+    bearing_noise_extra: float = 0.0
 
 
 class PowerAllocations(BaseModel):
@@ -85,6 +87,20 @@ class WeaponsSuite(BaseModel):
     flood_time_s: float = 8.0
     doors_time_s: float = 3.0
     tubes: List[Tube] = Field(default_factory=lambda: [Tube(idx=i) for i in range(1, 7)])
+    # Multiplier > 1.0 slows weapon timers (degradation effects)
+    time_penalty_multiplier: float = 1.0
+
+
+class MaintenanceTask(BaseModel):
+    id: str
+    station: Literal["helm", "sonar", "weapons", "engineering"]
+    system: Literal["rudder", "sonar", "tubes", "ballast"]
+    title: str
+    stage: Literal["normal", "degraded", "damaged", "failed"] = "normal"
+    progress: float = 0.0  # 0..1
+    base_deadline_s: float = 30.0
+    time_remaining_s: float = 30.0
+    created_at: float = 0.0
 
 
 class Reactor(BaseModel):

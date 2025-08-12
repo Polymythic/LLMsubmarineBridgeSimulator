@@ -162,3 +162,33 @@ def test_debug_restart_resets_world_to_defaults():
     assert red[0].kin.heading == 90.0 and red[0].kin.speed == 8.0 and red[0].kin.depth == 120.0
 
 
+def test_station_tasks_spawn_and_progress_with_power():
+    import time as _time
+    sim = Simulation()
+    own = sim.world.get_ship("ownship")
+    # Force spawn timers to immediate
+    sim._task_spawn_timers = {k: 0.0 for k in sim._task_spawn_timers.keys()}
+    # Tick enough to spawn
+    for _ in range(5):
+        _ = asyncio.run(sim.tick(0.05))
+    # Expect some tasks present (randomized, but at least one station should have a task)
+    active = [k for k, v in sim._active_tasks.items() if v is not None]
+    assert len(active) >= 1
+    # Allocate high power to first station and tick to progress
+    st = active[0]
+    own.power.helm = 0.0; own.power.weapons = 0.0; own.power.sonar = 0.0; own.power.engineering = 0.0
+    if st == "helm": own.power.helm = 1.0
+    elif st == "weapons": own.power.weapons = 1.0
+    elif st == "sonar": own.power.sonar = 1.0
+    else: own.power.engineering = 1.0
+    p0 = sim._active_tasks[st].progress
+    for _ in range(30):
+        _ = asyncio.run(sim.tick(0.1))
+        if sim._active_tasks.get(st) is None:
+            break
+    # Either completed (cleared) or progressed
+    if sim._active_tasks.get(st) is None:
+        assert True
+    else:
+        assert sim._active_tasks[st].progress > p0
+

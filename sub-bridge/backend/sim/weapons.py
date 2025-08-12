@@ -29,7 +29,7 @@ def try_load_tube(ship: Ship, tube_idx: int, weapon_name: str = "Mk48") -> bool:
         return False
     tube.weapon = TorpedoDef(name=weapon_name)
     tube.next_state = "Loaded"
-    tube.timer_s = ws.reload_time_s
+    tube.timer_s = ws.reload_time_s * max(1.0, ws.time_penalty_multiplier)
     ship.weapons.torpedoes_stored -= 1
     return True
 
@@ -44,7 +44,7 @@ def try_flood_tube(ship: Ship, tube_idx: int) -> bool:
     if tube.timer_s > 0.0:
         return False
     tube.next_state = "Flooded"
-    tube.timer_s = ws.flood_time_s
+    tube.timer_s = ws.flood_time_s * max(1.0, ws.time_penalty_multiplier)
     return True
 
 
@@ -59,7 +59,7 @@ def try_set_doors(ship: Ship, tube_idx: int, open_state: bool) -> bool:
         return False
     if open_state and tube.state == "Flooded":
         tube.next_state = "DoorsOpen"
-        tube.timer_s = ws.doors_time_s
+        tube.timer_s = ws.doors_time_s * max(1.0, ws.time_penalty_multiplier)
         return True
     if not open_state and tube.state == "DoorsOpen":
         tube.next_state = "Flooded"

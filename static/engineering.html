@@ -28,10 +28,10 @@
     <div class="panel">
       <h3>Current Power Allocation</h3>
       <div class="row">
-        <div class="pill">Helm: <span id="cHelmPct">25%</span></div>
-        <div class="pill">Weapons: <span id="cWeaponsPct">25%</span></div>
-        <div class="pill">Sonar: <span id="cSonarPct">25%</span></div>
-        <div class="pill">Engineering: <span id="cEngPct">25%</span></div>
+        <div>Helm: <input id="cHelm" type="range" min="0" max="1" step="0.01" value="0.25" disabled /> <span class="pill" id="cHelmPct">25%</span></div>
+        <div>Weapons: <input id="cWeapons" type="range" min="0" max="1" step="0.01" value="0.25" disabled /> <span class="pill" id="cWeaponsPct">25%</span></div>
+        <div>Sonar: <input id="cSonar" type="range" min="0" max="1" step="0.01" value="0.25" disabled /> <span class="pill" id="cSonarPct">25%</span></div>
+        <div>Engineering: <input id="cEng" type="range" min="0" max="1" step="0.01" value="0.25" disabled /> <span class="pill" id="cEngPct">25%</span></div>
       </div>
       <div class="row"><div class="pill">Total: <span id="cTotal">100%</span></div></div>
     </div>
@@ -87,6 +87,10 @@
     const pTotal = document.getElementById('pTotal');
     const pErr = document.getElementById('pErr');
     const pUnalloc = document.getElementById('pUnalloc');
+    const cHelm = document.getElementById('cHelm');
+    const cWeapons = document.getElementById('cWeapons');
+    const cSonar = document.getElementById('cSonar');
+    const cEng = document.getElementById('cEng');
     const cHelmPct = document.getElementById('cHelmPct');
     const cWeaponsPct = document.getElementById('cWeaponsPct');
     const cSonarPct = document.getElementById('cSonarPct');
@@ -114,10 +118,10 @@
         // Power allocations
         const p = m.data.power || {};
         // Update current allocation labels
-        if (typeof p.helm === 'number') cHelmPct.textContent = Math.round(p.helm*100) + '%';
-        if (typeof p.weapons === 'number') cWeaponsPct.textContent = Math.round(p.weapons*100) + '%';
-        if (typeof p.sonar === 'number') cSonarPct.textContent = Math.round(p.sonar*100) + '%';
-        if (typeof p.engineering === 'number') cEngPct.textContent = Math.round(p.engineering*100) + '%';
+        if (typeof p.helm === 'number') { cHelm.value = p.helm.toFixed(2); cHelmPct.textContent = Math.round(p.helm*100) + '%'; }
+        if (typeof p.weapons === 'number') { cWeapons.value = p.weapons.toFixed(2); cWeaponsPct.textContent = Math.round(p.weapons*100) + '%'; }
+        if (typeof p.sonar === 'number') { cSonar.value = p.sonar.toFixed(2); cSonarPct.textContent = Math.round(p.sonar*100) + '%'; }
+        if (typeof p.engineering === 'number') { cEng.value = p.engineering.toFixed(2); cEngPct.textContent = Math.round(p.engineering*100) + '%'; }
         const ct = (p.helm||0)+(p.weapons||0)+(p.sonar||0)+(p.engineering||0);
         cTotal.textContent = Math.round(ct*100) + '%';
         // Initialize proposed sliders from current if user hasn't adjusted them

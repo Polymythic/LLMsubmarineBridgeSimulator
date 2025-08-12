@@ -16,6 +16,7 @@
 <body>
   <div class="panel">
     <h2>Engineering</h2>
+    <div id="toast" style="position:fixed;top:8px;right:8px;background:#2B0F14;color:#FFD1D1;border:1px solid #5F1B25;padding:8px 12px;border-radius:6px;display:none;">Error</div>
     <div title="Reactor output and SCRAM state">Reactor MW <span id="mwv">60</span> / <span id="mwmax">100</span> <span class="pill" id="scramState">SCRAM: OFF</span></div>
     <input id="mw" type="range" min="0" max="100" step="1" value="60" title="Adjust reactor power (MW)" />
     <div class="row">
@@ -77,6 +78,8 @@
     const periscopeOk = document.getElementById('periscopeOk');
     const tubesOk = document.getElementById('tubesOk');
     mw.oninput = () => mwv.textContent = mw.value;
+    function showToast(msg){ const t=document.getElementById('toast'); t.textContent = msg; t.style.display='block'; setTimeout(()=>t.style.display='none', 2500); }
+
     ws.onmessage = (ev) => {
       try { const m = JSON.parse(ev.data); if (m.topic === 'telemetry') {
         tel.textContent = JSON.stringify(m.data, null, 2);
@@ -99,7 +102,8 @@
         const setOk = (el, ok) => { el.textContent = ok ? 'OK' : 'FAIL'; el.style.color = ok ? '#8DEB8D' : '#FF6B6B'; };
         setOk(rudderOk, !!sys.rudder_ok); setOk(ballastOk, !!sys.ballast_ok); setOk(sonarOk, !!sys.sonar_ok);
         setOk(radioOk, !!sys.radio_ok); setOk(periscopeOk, !!sys.periscope_ok); setOk(tubesOk, !!sys.tubes_ok);
-      }} catch(e){}
+      } else if (m.topic === 'error') { showToast(m.error || 'Error'); }
+      } catch(e){}
     };
     document.getElementById('set').onclick = () => ws.send(JSON.stringify({topic:'engineering.reactor.set', data:{mw: parseFloat(mw.value)}}));
     document.getElementById('scram').onclick = () => ws.send(JSON.stringify({topic:'engineering.reactor.scram', data:{scrammed:true}}));
@@ -127,7 +131,7 @@
       const sonar = parseFloat(pSonar.value);
       const engineering = parseFloat(pEng.value);
       const total = helm + weapons + sonar + engineering;
-      if (total > 1.0){ pErr.textContent = 'Exceeds 100% budget'; return; }
+      if (total > 1.0){ pErr.textContent = 'Exceeds 100% budget'; showToast('Exceeds 100% budget'); return; }
       ws.send(JSON.stringify({topic:'engineering.power.allocate', data:{helm, weapons, sonar, engineering}}));
     };
   </script>

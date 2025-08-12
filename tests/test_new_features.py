@@ -1,5 +1,6 @@
 import os
 import sys
+import asyncio
 import pytest
 
 # Add project sub-bridge to import path (same pattern as existing tests)
@@ -11,19 +12,18 @@ from backend.sim.physics import integrate_kinematics
 from backend.sim.sonar import passive_contacts, active_ping
 
 
-@pytest.mark.asyncio
-async def test_power_allocation_rejects_and_accepts():
+def test_power_allocation_rejects_and_accepts():
     sim = Simulation()
     # Reject over-budget
-    err = await sim.handle_command(
+    err = asyncio.run(sim.handle_command(
         "engineering.power.allocate", {"helm": 0.5, "weapons": 0.5, "sonar": 0.3, "engineering": 0.0}
-    )
+    ))
     assert isinstance(err, str) and "exceeds" in err.lower()
 
     # Accept exact budget and set fractions
-    err2 = await sim.handle_command(
+    err2 = asyncio.run(sim.handle_command(
         "engineering.power.allocate", {"helm": 0.1, "weapons": 0.2, "sonar": 0.3, "engineering": 0.4}
-    )
+    ))
     assert err2 is None
     own = sim.world.get_ship("ownship")
     assert own.power.helm == pytest.approx(0.1)
@@ -94,18 +94,17 @@ def test_sonar_gating_on_failure():
     assert active_ping(own, red) == []
 
 
-@pytest.mark.asyncio
-async def test_active_ping_cooldown_and_event():
+def test_active_ping_cooldown_and_event():
     sim = Simulation()
     # Initial ping should start cooldown and emit event
-    err = await sim.handle_command("sonar.ping", {"array": "bow"})
+    err = asyncio.run(sim.handle_command("sonar.ping", {"array": "bow"}))
     assert err is None
     assert sim.active_ping_state.timer > 0.0
     # Event queued for this tick
     assert any(e.get("type") == "counterDetected" for e in sim._transient_events)
 
     # Immediate second ping should be rejected by cooldown
-    err2 = await sim.handle_command("sonar.ping", {"array": "bow"})
+    err2 = asyncio.run(sim.handle_command("sonar.ping", {"array": "bow"}))
     assert isinstance(err2, str) and "cooldown" in err2.lower()
 
 

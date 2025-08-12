@@ -139,7 +139,7 @@
         const setOk = (el, ok) => { el.textContent = ok ? 'OK' : 'FAIL'; el.style.color = ok ? '#8DEB8D' : '#FF6B6B'; };
         setOk(rudderOk, !!sys.rudder_ok); setOk(ballastOk, !!sys.ballast_ok); setOk(sonarOk, !!sys.sonar_ok);
         setOk(radioOk, !!sys.radio_ok); setOk(periscopeOk, !!sys.periscope_ok); setOk(tubesOk, !!sys.tubes_ok);
-        const t = m.data.task; const taskEl = document.getElementById('task'); taskEl.textContent = t ? `${t.title} [${t.stage}] ${(t.progress*100).toFixed(0)}% | ${t.time_remaining_s.toFixed(0)}s${t.started ? ' (REPAIRING)' : ''}` : 'No active task';
+        const t = m.data.task; const taskEl = document.getElementById('task'); if (t) { taskEl.textContent = `${t.title} [${t.stage}] ${(t.progress*100).toFixed(0)}% | ${t.time_remaining_s.toFixed(0)}s${t.started ? ' (REPAIRING)' : ''}`; const color = t.stage === 'normal' ? '#FACC15' : (t.stage === 'degraded' ? '#F59E0B' : '#EF4444'); taskEl.style.color = color; taskEl.style.borderColor = color; } else { taskEl.textContent = 'No active task'; taskEl.style.color = '#D7E3FF'; taskEl.style.borderColor = '#1B2440'; }
       } else if (m.topic === 'error') { showToast(m.error || 'Error'); }
       } catch(e){}
     };

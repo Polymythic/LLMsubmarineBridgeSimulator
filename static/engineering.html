@@ -26,14 +26,29 @@
       <button id="pumpA" title="Toggle aft pump to reduce flooding">Toggle Pump AFT</button>
     </div>
     <div class="panel">
-      <h3>Power Allocation</h3>
+      <h3>Current Power Allocation</h3>
+      <div class="row">
+        <div class="pill">Helm: <span id="cHelmPct">25%</span></div>
+        <div class="pill">Weapons: <span id="cWeaponsPct">25%</span></div>
+        <div class="pill">Sonar: <span id="cSonarPct">25%</span></div>
+        <div class="pill">Engineering: <span id="cEngPct">25%</span></div>
+      </div>
+      <div class="row"><div class="pill">Total: <span id="cTotal">100%</span></div></div>
+    </div>
+
+    <div class="panel">
+      <h3>Proposed Power Allocation</h3>
       <div class="row">
         <div>Helm: <input id="pHelm" type="range" min="0" max="1" step="0.05" value="0.25" /> <span class="pill" id="pHelmPct">25%</span></div>
         <div>Weapons: <input id="pWeapons" type="range" min="0" max="1" step="0.05" value="0.25" /> <span class="pill" id="pWeaponsPct">25%</span></div>
         <div>Sonar: <input id="pSonar" type="range" min="0" max="1" step="0.05" value="0.25" /> <span class="pill" id="pSonarPct">25%</span></div>
         <div>Engineering: <input id="pEng" type="range" min="0" max="1" step="0.05" value="0.25" /> <span class="pill" id="pEngPct">25%</span></div>
       </div>
-      <div class="row"><div class="pill">Total: <span id="pTotal">100%</span></div> <span id="pErr" style="color:#FF6B6B"></span></div>
+      <div class="row">
+        <div class="pill">Total: <span id="pTotal">100%</span></div>
+        <div class="pill">Unallocated: <span id="pUnalloc">0%</span></div>
+        <span id="pErr" style="color:#FF6B6B"></span>
+      </div>
       <button id="applyAlloc" title="Apply power allocations (must not exceed 100%)">Apply Allocation</button>
     </div>
     <div class="row">
@@ -71,6 +86,12 @@
     const pEngPct = document.getElementById('pEngPct');
     const pTotal = document.getElementById('pTotal');
     const pErr = document.getElementById('pErr');
+    const pUnalloc = document.getElementById('pUnalloc');
+    const cHelmPct = document.getElementById('cHelmPct');
+    const cWeaponsPct = document.getElementById('cWeaponsPct');
+    const cSonarPct = document.getElementById('cSonarPct');
+    const cEngPct = document.getElementById('cEngPct');
+    const cTotal = document.getElementById('cTotal');
     const rudderOk = document.getElementById('rudderOk');
     const ballastOk = document.getElementById('ballastOk');
     const sonarOk = document.getElementById('sonarOk');
@@ -92,10 +113,18 @@
         const s = !!m.data.reactor?.scrammed; scramState.textContent = `SCRAM: ${s ? 'ON' : 'OFF'}`;
         // Power allocations
         const p = m.data.power || {};
-        if (typeof p.helm === 'number') pHelm.value = p.helm.toFixed(2);
-        if (typeof p.weapons === 'number') pWeapons.value = p.weapons.toFixed(2);
-        if (typeof p.sonar === 'number') pSonar.value = p.sonar.toFixed(2);
-        if (typeof p.engineering === 'number') pEng.value = p.engineering.toFixed(2);
+        // Update current allocation labels
+        if (typeof p.helm === 'number') cHelmPct.textContent = Math.round(p.helm*100) + '%';
+        if (typeof p.weapons === 'number') cWeaponsPct.textContent = Math.round(p.weapons*100) + '%';
+        if (typeof p.sonar === 'number') cSonarPct.textContent = Math.round(p.sonar*100) + '%';
+        if (typeof p.engineering === 'number') cEngPct.textContent = Math.round(p.engineering*100) + '%';
+        const ct = (p.helm||0)+(p.weapons||0)+(p.sonar||0)+(p.engineering||0);
+        cTotal.textContent = Math.round(ct*100) + '%';
+        // Initialize proposed sliders from current if user hasn't adjusted them
+        if (!pHelm.dataset.userSet) pHelm.value = (p.helm ?? 0.25).toFixed(2);
+        if (!pWeapons.dataset.userSet) pWeapons.value = (p.weapons ?? 0.25).toFixed(2);
+        if (!pSonar.dataset.userSet) pSonar.value = (p.sonar ?? 0.25).toFixed(2);
+        if (!pEng.dataset.userSet) pEng.value = (p.engineering ?? 0.25).toFixed(2);
         updateAllocLabels();
         // Systems
         const sys = m.data.systems || {};
@@ -121,9 +150,13 @@
       pEngPct.textContent = Math.round(engineering*100) + '%';
       pTotal.textContent = Math.round(total*100) + '%';
       pErr.textContent = total > 1.0 ? 'Exceeds 100% budget' : '';
+      const un = Math.max(0, 1.0 - total);
+      pUnalloc.textContent = Math.round(un*100) + '%';
     }
 
-    ;[pHelm, pWeapons, pSonar, pEng].forEach(inp => inp.addEventListener('input', updateAllocLabels));
+    ;[pHelm, pWeapons, pSonar, pEng].forEach(inp => {
+      inp.addEventListener('input', () => { inp.dataset.userSet = '1'; updateAllocLabels(); });
+    });
 
     document.getElementById('applyAlloc').onclick = () => {
       const helm = parseFloat(pHelm.value);

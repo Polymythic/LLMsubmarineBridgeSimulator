@@ -124,7 +124,7 @@
           tel.textContent = JSON.stringify(m.data, null, 2);
           cd.textContent = (m.data.pingCooldown || 0).toFixed(1);
           if (m.data.acoustics) { emcon.textContent = (m.data.acoustics.emconRisk || 'low'); }
-          const t = m.data.task; const taskEl = document.getElementById('task'); if (t) { taskEl.textContent = `${t.title} [${t.stage}] ${(t.progress*100).toFixed(0)}% | ${t.time_remaining_s.toFixed(0)}s${t.started ? ' (REPAIRING)' : ''}`; const color = t.stage === 'normal' ? '#FACC15' : (t.stage === 'degraded' ? '#F59E0B' : '#EF4444'); taskEl.style.color = color; } else { taskEl.textContent = 'No active task'; taskEl.style.color = '#D7E3FF'; }
+          const t = m.data.task; const taskEl = document.getElementById('task'); if (t) { const color = t.stage === 'normal' ? '#FACC15' : (t.stage === 'degraded' ? '#F59E0B' : '#EF4444'); const bg = t.stage === 'normal' ? 'rgba(250, 204, 21, 0.1)' : (t.stage === 'degraded' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)'); taskEl.style.color = color; taskEl.style.backgroundColor = bg; taskEl.textContent = `🔧 ${t.title} — ${t.stage.toUpperCase()} ${(t.progress*100).toFixed(0)}% — time to complete ${Math.max(0, t.time_remaining_s).toFixed(0)}s${t.started ? ' (REPAIRING)' : ''}`; } else { taskEl.textContent = 'No active task'; taskEl.style.color = '#D7E3FF'; taskEl.style.backgroundColor = 'transparent'; }
           list.innerHTML = '';
           (m.data.contacts || []).forEach(c => { const li = document.createElement('li'); li.title = 'Passive contact; bearing-only with noisy measurement.'; li.textContent = `ID ${c.id} brg ${c.bearing.toFixed(0)}° str ${c.strength.toFixed(2)} conf ${c.confidence.toFixed(2)}`; list.appendChild(li); });
           prList.innerHTML = '';

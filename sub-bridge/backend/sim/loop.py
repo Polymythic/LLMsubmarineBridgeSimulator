@@ -121,18 +121,24 @@ class Simulation:
     def _apply_stage_penalties(self, ship: Ship, station: str, stage: str) -> None:
         # Apply degradation effects per station and stage
         if station == "helm":
-            factor = {"normal": 1.0, "degraded": 0.8, "damaged": 0.5, "failed": 0.0}[stage]
-            ship.hull.turn_rate_max = max(1.0, 7.0 * factor)
+            factor = {"normal": 1.0, "degraded": 0.7, "damaged": 0.4, "failed": 0.0}[stage]
+            ship.hull.turn_rate_max = 7.0 * factor
+            if stage == "failed":
+                ship.systems.rudder_ok = False
         elif station == "sonar":
-            extra = {"normal": 0.0, "degraded": 2.0, "damaged": 5.0, "failed": 10.0}[stage]
+            extra = {"normal": 0.0, "degraded": 3.0, "damaged": 7.0, "failed": 12.0}[stage]
             ship.acoustics.bearing_noise_extra = extra
+            if stage == "failed":
+                ship.systems.sonar_ok = False
         elif station == "weapons":
-            mult = {"normal": 1.0, "degraded": 1.2, "damaged": 1.5, "failed": 2.0}[stage]
+            mult = {"normal": 1.0, "degraded": 1.4, "damaged": 1.8, "failed": 2.5}[stage]
             ship.weapons.time_penalty_multiplier = mult
+            if stage == "failed":
+                ship.systems.tubes_ok = False
         elif station == "engineering":
-            # Reduce effective pumps and depth rate
-            # For now, we limit ballast_ok threshold via maintenance below and rely on physics depth rate gate
-            pass
+            # Engineering failed: ballast system effectively unavailable
+            if stage == "failed":
+                ship.systems.ballast_ok = False
 
     def _step_station_tasks(self, ship: Ship, dt: float) -> None:
         now_s = time.perf_counter()

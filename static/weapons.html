@@ -20,7 +20,7 @@
     <h2>Weapons</h2>
     <div id="consent" title="Captain consent requirement before firing"></div>
     <div class="tubes" id="tubes" title="Tube state machine: Empty→Flooded→DoorsOpen; timers show progress."></div>
-    <div class="small" id="task" title="Current maintenance task for Weapons"></div>
+    <div class="small" id="task" title="Current maintenance task for Weapons">No active task</div>
     <button id="repair" title="Start repairing the active weapons task">Repair</button>
     <label title="Select a tube to operate">Tube <input id="tube" type="number" min="1" max="6" value="1"></label>
     <div>
@@ -52,7 +52,7 @@
             div.innerHTML = `<div title='Tube state and weapon type'>Tube ${t.idx}: ${t.state} ${t.weapon ? '('+t.weapon.name+')' : ''}</div><div class='small' title='Time remaining on current transition'>Timer${timer}</div>`;
             tubes.appendChild(div);
           });
-          const taskEl = document.getElementById('task'); const task = m.data.task; if (task) { taskEl.textContent = `${task.title} [${task.stage}] ${(task.progress*100).toFixed(0)}% | ${task.time_remaining_s.toFixed(0)}s${task.started ? ' (REPAIRING)' : ''}`; const color = task.stage === 'normal' ? '#FACC15' : (task.stage === 'degraded' ? '#F59E0B' : '#EF4444'); taskEl.style.color = color; taskEl.style.borderColor = color; } else { taskEl.textContent = 'No active task'; taskEl.style.color = '#D7E3FF'; taskEl.style.borderColor = '#1B2440'; }
+          const taskEl = document.getElementById('task'); const task = m.data.task; if (task) { const color = task.stage === 'normal' ? '#FACC15' : (task.stage === 'degraded' ? '#F59E0B' : '#EF4444'); const bg = task.stage === 'normal' ? 'rgba(250, 204, 21, 0.1)' : (task.stage === 'degraded' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)'); taskEl.style.color = color; taskEl.style.borderColor = color; taskEl.style.backgroundColor = bg; taskEl.textContent = `🔧 ${task.title} — ${task.stage.toUpperCase()} ${(task.progress*100).toFixed(0)}% — time to complete ${Math.max(0, task.time_remaining_s).toFixed(0)}s${task.started ? ' (REPAIRING)' : ''}`; } else { taskEl.textContent = 'No active task'; taskEl.style.color = '#D7E3FF'; taskEl.style.borderColor = '#1B2440'; taskEl.style.backgroundColor = '#0F162A'; }
         }
       } catch(e){}
     };

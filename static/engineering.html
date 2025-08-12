@@ -27,6 +27,7 @@
     </div>
     <div class="row">
       <div class="pill" id="task" title="Current maintenance task for Engineering"></div>
+      <button id="repair" title="Start repairing the active engineering task">Repair</button>
     </div>
     <div class="panel">
       <h3>Current Power Allocation</h3>
@@ -138,7 +139,7 @@
         const setOk = (el, ok) => { el.textContent = ok ? 'OK' : 'FAIL'; el.style.color = ok ? '#8DEB8D' : '#FF6B6B'; };
         setOk(rudderOk, !!sys.rudder_ok); setOk(ballastOk, !!sys.ballast_ok); setOk(sonarOk, !!sys.sonar_ok);
         setOk(radioOk, !!sys.radio_ok); setOk(periscopeOk, !!sys.periscope_ok); setOk(tubesOk, !!sys.tubes_ok);
-        const t = m.data.task; const taskEl = document.getElementById('task'); taskEl.textContent = t ? `${t.title} [${t.stage}] ${(t.progress*100).toFixed(0)}% | ${t.time_remaining_s.toFixed(0)}s` : 'No active task';
+        const t = m.data.task; const taskEl = document.getElementById('task'); taskEl.textContent = t ? `${t.title} [${t.stage}] ${(t.progress*100).toFixed(0)}% | ${t.time_remaining_s.toFixed(0)}s${t.started ? ' (REPAIRING)' : ''}` : 'No active task';
       } else if (m.topic === 'error') { showToast(m.error || 'Error'); }
       } catch(e){}
     };
@@ -175,6 +176,7 @@
       if (total > 1.0){ pErr.textContent = 'Exceeds 100% budget'; showToast('Exceeds 100% budget'); return; }
       ws.send(JSON.stringify({topic:'engineering.power.allocate', data:{helm, weapons, sonar, engineering}}));
     };
+    document.getElementById('repair').onclick = () => { ws.send(JSON.stringify({topic:'station.task.start', data:{station:'engineering'}})); };
   </script>
 </body>
 </html>

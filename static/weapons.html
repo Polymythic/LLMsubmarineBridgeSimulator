@@ -21,6 +21,7 @@
     <div id="consent" title="Captain consent requirement before firing"></div>
     <div class="tubes" id="tubes" title="Tube state machine: Empty→Flooded→DoorsOpen; timers show progress."></div>
     <div class="small" id="task" title="Current maintenance task for Weapons"></div>
+    <button id="repair" title="Start repairing the active weapons task">Repair</button>
     <label title="Select a tube to operate">Tube <input id="tube" type="number" min="1" max="6" value="1"></label>
     <div>
       <button id="load" title="Load a torpedo into the selected tube (starts reload timer)">Load</button>
@@ -51,7 +52,7 @@
             div.innerHTML = `<div title='Tube state and weapon type'>Tube ${t.idx}: ${t.state} ${t.weapon ? '('+t.weapon.name+')' : ''}</div><div class='small' title='Time remaining on current transition'>Timer${timer}</div>`;
             tubes.appendChild(div);
           });
-          const taskEl = document.getElementById('task'); const task = m.data.task; taskEl.textContent = task ? `${task.title} [${task.stage}] ${(task.progress*100).toFixed(0)}% | ${task.time_remaining_s.toFixed(0)}s` : 'No active task';
+          const taskEl = document.getElementById('task'); const task = m.data.task; taskEl.textContent = task ? `${task.title} [${task.stage}] ${(task.progress*100).toFixed(0)}% | ${task.time_remaining_s.toFixed(0)}s${task.started ? ' (REPAIRING)' : ''}` : 'No active task';
         }
       } catch(e){}
     };
@@ -64,6 +65,7 @@
       const run_depth = parseFloat(document.getElementById('rdepth').value);
       ws.send(JSON.stringify({topic:'weapons.fire', data:{tube: tube(), bearing, run_depth}}));
     };
+    document.getElementById('repair').onclick = () => { ws.send(JSON.stringify({topic:'station.task.start', data:{station:'weapons'}})); };
   </script>
 </body>
 </html>

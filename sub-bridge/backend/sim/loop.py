@@ -138,7 +138,9 @@ class Simulation:
             power_frac = self._station_power_fraction(ship, station)
             # Only one task per station; progress toward completion
             task.time_remaining_s = max(0.0, task.time_remaining_s - dt)
-            task.progress = min(1.0, task.progress + (0.2 * power_frac) * dt)  # completes in ~5s at full power
+            # Progress only if explicitly started by station crew (clicked Repair)
+            if task.started:
+                task.progress = min(1.0, task.progress + (0.2 * power_frac) * dt)  # completes in ~5s at full power
             # If completed
             if task.progress >= 1.0:
                 # Apply recovery: maintenance bump and clear penalties
@@ -368,7 +370,8 @@ class Simulation:
             t = self._active_tasks[station]
             if t is None:
                 return "No task to start"
-            # Starting just flips a flag; progress handled by power each tick
+            # Mark as started (player clicked Repair)
+            t.started = True
             # Return None to indicate accepted
             return None
         if topic == "station.task.defer":

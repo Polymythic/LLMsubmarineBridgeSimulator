@@ -98,6 +98,7 @@ class MaintenanceTask(BaseModel):
     title: str
     stage: Literal["normal", "degraded", "damaged", "failed"] = "normal"
     progress: float = 0.0  # 0..1
+    started: bool = False
     base_deadline_s: float = 30.0
     time_remaining_s: float = 30.0
     created_at: float = 0.0

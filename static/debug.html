@@ -10,7 +10,7 @@
     canvas { width:100%; height:420px; background:#050814; border:1px solid #1B2440; border-radius:6px; }
     .row { display:flex; gap:16px; }
     .col { flex:1; }
-    .pill { padding:4px 8px; border-radius:12px; background:#0F162A; border:1px solid #1B2440; }
+    .pill { padding:4px 8px; border-radius:12px; background:#0F162A; border:1px solid #1B2440; margin:4px 0; }
   </style>
 </head>
 <body>
@@ -18,7 +18,7 @@
     <h2>Debug</h2>
     <div class="row">
       <div class="col">
-        <canvas id="map" width="720" height="420" title="Ownship and contacts truth positions"></canvas>
+        <canvas id="map" width="720" height="420" title="Ownship-centered truth positions"></canvas>
       </div>
       <div class="col">
         <div class="pill">Ownship: <span id="own"></span></div>
@@ -48,26 +48,25 @@
     }
 
     function render(data){
-      // Compute bounds from ships to auto-scale
-      const all = [{x:data.ownship.x, y:data.ownship.y}, ...data.ships.map(s=>({x:s.x,y:s.y}))];
-      const xs = all.map(p=>p.x), ys = all.map(p=>p.y);
-      const minx = Math.min(...xs), maxx = Math.max(...xs), miny = Math.min(...ys), maxy = Math.max(...ys);
+      // Center on ownship, scale to include all ships with padding
+      const cx = data.ownship.x, cy = data.ownship.y;
       const pad = 200;
-      const spanX = Math.max(100, (maxx-minx)||100) + pad;
-      const spanY = Math.max(100, (maxy-miny)||100) + pad;
-      const centerX = (minx+maxx)/2, centerY = (miny+maxy)/2;
+      let maxDx = 100, maxDy = 100;
+      data.ships.forEach(s => { maxDx = Math.max(maxDx, Math.abs(s.x - cx)); maxDy = Math.max(maxDy, Math.abs(s.y - cy)); });
+      const spanX = maxDx * 2 + pad;
+      const spanY = maxDy * 2 + pad;
       function worldToScreen(wx, wy){
-        const sx = (wx - centerX) / spanX * (W*0.8) + W/2;
-        const sy = (wy - centerY) / spanY * (H*0.8) + H/2;
+        const sx = (wx - cx) / spanX * (W*0.8) + W/2;
+        const sy = (wy - cy) / spanY * (H*0.8) + H/2;
         return [sx, sy];
       }
       ctx.clearRect(0,0,W,H);
       ctx.fillStyle = '#050814'; ctx.fillRect(0,0,W,H);
-      ctx.strokeStyle = '#1B2440';
+      ctx.strokeStyle = '#1B2440'; ctx.lineWidth = 1;
       for(let i=0;i<8;i++){ ctx.beginPath(); ctx.moveTo(0, i*H/8); ctx.lineTo(W, i*H/8); ctx.stroke(); }
       for(let i=0;i<12;i++){ ctx.beginPath(); ctx.moveTo(i*W/12, 0); ctx.lineTo(i*W/12, H); ctx.stroke(); }
 
-      // Ownship
+      // Ownship fixed at center
       const [ox, oy] = worldToScreen(data.ownship.x, data.ownship.y);
       drawShip(ox, oy, data.ownship.heading, '#6EE7A7', `OWN hdg ${data.ownship.heading.toFixed(0)} spd ${data.ownship.speed.toFixed(1)} dpt ${data.ownship.depth.toFixed(0)}`);
 
@@ -81,7 +80,10 @@
         ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(sx, sy); ctx.stroke();
         const li = document.createElement('div');
         li.className = 'pill';
-        li.textContent = `${s.id} hdg ${s.heading.toFixed(0)} spd ${s.speed.toFixed(1)} dpt ${s.depth.toFixed(0)} brg ${(s.bearing_from_own||0).toFixed(0)} rng ${((s.range_from_own||0)).toFixed(0)}`;
+        const bTrue = (s.bearing_true ?? 0).toFixed(0);
+        const bRel = (s.bearing_rel ?? 0).toFixed(0);
+        const rng = (s.range_from_own ?? 0).toFixed(0);
+        li.textContent = `${s.id} hdg ${s.heading.toFixed(0)} spd ${s.speed.toFixed(1)} dpt ${s.depth.toFixed(0)} brgT ${bTrue} brgR ${bRel} rng ${rng}`;
         list.appendChild(li);
       });
     }

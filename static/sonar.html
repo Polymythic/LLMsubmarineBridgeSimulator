@@ -28,9 +28,9 @@
         <ul id="contacts" title="Bearing-only passive contacts"></ul>
       </div>
       <div class="col">
-        <div class="label" title="Bearing axis 0..360°; time flows downward">Passive Waterfall</div>
-        <canvas id="legend" width="720" height="24" title="Bearing ticks (0/90/180/270/360)"></canvas>
-        <canvas id="waterfall" width="720" height="220" title="Bearing-time-intensity display"></canvas>
+        <div class="label" title="Bearing axis centered at 0°; time flows downward">Passive Waterfall</div>
+        <canvas id="legend" width="720" height="24" title="Bearing ticks (270 | 0 | 90)"></canvas>
+        <canvas id="waterfall" width="720" height="220" title="Bearing-time-intensity display (0° centered)"></canvas>
       </div>
     </div>
     <pre id="telemetry" title="Station telemetry and events"></pre>
@@ -50,30 +50,27 @@
     const W = canvas.width; // 720 px
     const H = canvas.height; // 220 px
 
+    // Map bearing (0..360) to x with 0° in the middle
+    function xForBearing(b, width){
+      const rel = (((b + 180) % 360) + 360) % 360; // 0..360 where 180 is left edge, 0 is center
+      // shift so rel=180 -> x=0, rel=0 -> x=width/2, rel=360-> x=width
+      return Math.floor((rel / 360) * width);
+    }
+
     function drawLegend(){
       lctx.clearRect(0,0,lW,lH);
       lctx.fillStyle = '#0B1020';
       lctx.fillRect(0,0,lW,lH);
       lctx.strokeStyle = '#1B2440';
-      lctx.beginPath();
-      lctx.moveTo(0, lH-0.5); lctx.lineTo(lW, lH-0.5); lctx.stroke();
-      const majors = [0,90,180,270,360];
+      lctx.beginPath(); lctx.moveTo(0, lH-0.5); lctx.lineTo(lW, lH-0.5); lctx.stroke();
+      const majors = [270, 0, 90];
       const minors = [];
-      for (let b=0; b<=360; b+=30) if (!majors.includes(b)) minors.push(b);
-      lctx.fillStyle = '#8593B8';
-      lctx.font = '12px ui-sans-serif';
+      for (let b=0; b<360; b+=30){ if (!majors.includes(b)) minors.push(b); }
+      lctx.fillStyle = '#8593B8'; lctx.font = '12px ui-sans-serif';
       lctx.strokeStyle = '#2A345C';
-      minors.forEach(b => {
-        const x = Math.round((b/360)*lW);
-        lctx.beginPath(); lctx.moveTo(x+0.5, lH-10); lctx.lineTo(x+0.5, lH-2); lctx.stroke();
-      });
+      minors.forEach(b => { const x = xForBearing(b, lW); lctx.beginPath(); lctx.moveTo(x+0.5, lH-10); lctx.lineTo(x+0.5, lH-2); lctx.stroke(); });
       lctx.strokeStyle = '#4C5E9A';
-      majors.forEach(b => {
-        const x = Math.round((b/360)*lW);
-        lctx.beginPath(); lctx.moveTo(x+0.5, lH-16); lctx.lineTo(x+0.5, lH-2); lctx.stroke();
-        lctx.textAlign = 'center';
-        lctx.fillText(String(b), x, 12);
-      });
+      majors.forEach(b => { const x = xForBearing(b, lW); lctx.beginPath(); lctx.moveTo(x+0.5, lH-16); lctx.lineTo(x+0.5, lH-2); lctx.stroke(); lctx.textAlign='center'; lctx.fillText(String(b), x, 12); });
     }
 
     drawLegend();
@@ -84,12 +81,11 @@
       const imageData = ctx.createImageData(W, 1);
       const data = imageData.data;
       for (let x = 0; x < W; x++){
-        const idx = x * 4;
-        data[idx+0] = 9; data[idx+1] = 14; data[idx+2] = 28; data[idx+3] = 255;
+        const idx = x * 4; data[idx+0] = 9; data[idx+1] = 14; data[idx+2] = 28; data[idx+3] = 255;
       }
       (contacts || []).forEach(c => {
         const bearing = ((c.bearing % 360) + 360) % 360;
-        const x = Math.floor((bearing / 360) * W);
+        const x = xForBearing(bearing, W);
         const strength = Math.max(0, Math.min(1, c.strength || 0));
         const glow = Math.floor(60 + strength * 180);
         for (let dx = -1; dx <= 1; dx++){
@@ -109,12 +105,7 @@
           tel.textContent = JSON.stringify(m.data, null, 2);
           cd.textContent = (m.data.pingCooldown || 0).toFixed(1);
           list.innerHTML = '';
-          (m.data.contacts || []).forEach(c => {
-            const li = document.createElement('li');
-            li.title = 'Passive contact; bearing-only with noisy measurement.';
-            li.textContent = `ID ${c.id} brg ${c.bearing.toFixed(0)}° str ${c.strength.toFixed(2)} conf ${c.confidence.toFixed(2)}`;
-            list.appendChild(li);
-          });
+          (m.data.contacts || []).forEach(c => { const li = document.createElement('li'); li.title = 'Passive contact; bearing-only with noisy measurement.'; li.textContent = `ID ${c.id} brg ${c.bearing.toFixed(0)}° str ${c.strength.toFixed(2)} conf ${c.confidence.toFixed(2)}`; list.appendChild(li); });
           drawWaterfall(m.data.contacts || []);
         }
       } catch(e){}

@@ -13,6 +13,7 @@ from .sonar import passive_contacts, ActivePingState, active_ping
 from .weapons import try_load_tube, try_flood_tube, try_set_doors, try_fire, step_torpedo, step_tubes
 from .ai_tools import LocalAIStub
 from .damage import step_damage, step_engineering
+import math
 
 
 class Simulation:
@@ -77,7 +78,6 @@ class Simulation:
     async def tick(self, dt: float) -> None:
         own = self.world.get_ship("ownship")
 
-        # Enemy AI proposals (optional)
         if CONFIG.use_enemy_ai:
             self._last_ai += dt
             if self._last_ai >= CONFIG.ai_poll_s:
@@ -101,10 +101,8 @@ class Simulation:
             ballast_boost=ballast_boost,
         )
 
-        # Step weapons tube timers
         step_tubes(own, dt)
 
-        # Move RED ships if not static testing
         for ship in self.world.all_ships():
             if ship.id == "ownship":
                 continue
@@ -112,7 +110,6 @@ class Simulation:
                 continue
             integrate_kinematics(ship, ship.kin.heading, ship.kin.speed, ship.kin.depth, dt)
 
-        # Torpedo step with callbacks for detonation events
         if self.world.torpedoes:
             for t in list(self.world.torpedoes):
                 def _on_event(name: str, payload: dict) -> None:
@@ -121,7 +118,6 @@ class Simulation:
                 if t["run_time"] > t["max_run_time"]:
                     self.world.torpedoes.remove(t)
 
-        # Damage and engineering steps
         pump_effect = 2.0 if (self._pump_fwd or self._pump_aft) else 0.0
         step_damage(own, dt, pump_effect=pump_effect)
         step_engineering(own, dt)
@@ -147,12 +143,32 @@ class Simulation:
         tel_weapons = {**base, "tubes": [t.dict() for t in own.weapons.tubes], "consentRequired": CONFIG.require_captain_consent, "captainConsent": self._captain_consent}
         tel_engineering = {**base, "reactor": own.reactor.dict(), "pumps": {"fwd": self._pump_fwd, "aft": self._pump_aft}, "damage": own.damage.dict()}
 
+        # Debug payload: ownship and all ships truth data
+        debug_payload = {
+            "ownship": {
+                "x": own.kin.x, "y": own.kin.y, "depth": own.kin.depth,
+                "heading": own.kin.heading, "speed": own.kin.speed,
+            },
+            "ships": [
+                {
+                    "id": s.id, "side": s.side,
+                    "x": s.kin.x, "y": s.kin.y, "depth": s.kin.depth,
+                    "heading": s.kin.heading, "speed": s.kin.speed,
+                    "bearing_from_own": ((math.degrees(math.atan2(s.kin.y - own.kin.y, s.kin.x - own.kin.x)) % 360.0) if True else 0.0),
+                    "range_from_own": (( ( (s.kin.x - own.kin.x)**2 + (s.kin.y - own.kin.y)**2 ) ** 0.5 )),
+                }
+                for s in self.world.all_ships() if s.id != own.id
+            ],
+            "torpedoes": list(self.world.torpedoes),
+        }
+
         await BUS.publish("tick:all", {"topic": "telemetry", "data": tel_all})
         await BUS.publish("tick:captain", {"topic": "telemetry", "data": tel_captain})
         await BUS.publish("tick:helm", {"topic": "telemetry", "data": tel_helm})
         await BUS.publish("tick:sonar", {"topic": "telemetry", "data": tel_sonar})
         await BUS.publish("tick:weapons", {"topic": "telemetry", "data": tel_weapons})
         await BUS.publish("tick:engineering", {"topic": "telemetry", "data": tel_engineering})
+        await BUS.publish("tick:debug", {"topic": "telemetry", "data": debug_payload})
 
         self._last_snapshot += dt
         if self._last_snapshot >= CONFIG.snapshot_s:

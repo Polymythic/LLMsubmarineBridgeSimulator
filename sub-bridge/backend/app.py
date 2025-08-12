@@ -78,7 +78,12 @@ async def engineering() -> FileResponse:
     return FileResponse(station_file("engineering"))
 
 
-_station_clients: Dict[str, Set[WebSocket]] = {s: set() for s in ["captain", "helm", "sonar", "weapons", "engineering"]}
+@app.get("/debug")
+async def debug() -> FileResponse:
+    return FileResponse(station_file("debug"))
+
+
+_station_clients: Dict[str, Set[WebSocket]] = {s: set() for s in ["captain", "helm", "sonar", "weapons", "engineering", "debug"]}
 
 
 @app.websocket("/ws/{station}")
@@ -95,6 +100,7 @@ async def ws_station(ws: WebSocket, station: str) -> None:
         "sonar": "tick:sonar",
         "weapons": "tick:weapons",
         "engineering": "tick:engineering",
+        "debug": "tick:debug",
     }
     forward_topic = topic_map.get(station, "tick:all")
 

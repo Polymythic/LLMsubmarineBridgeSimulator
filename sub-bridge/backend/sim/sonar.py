@@ -69,6 +69,9 @@ class ActivePingState:
 
 
 def active_ping(self_ship: Ship, others: List[Ship]) -> List[Tuple[str, float, float]]:
+    # Sonar failure prevents active returns
+    if getattr(self_ship, "systems", None) is not None and not self_ship.systems.sonar_ok:
+        return []
     out: List[Tuple[str, float, float]] = []
     for other in others:
         if other.id == self_ship.id:

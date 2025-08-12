@@ -143,7 +143,7 @@ class Simulation:
         tel_helm = {**base, "cavitationSpeedWarn": speed > 25.0, "thermocline": own.acoustics.thermocline_on}
         tel_sonar = {**base, "contacts": [c.dict() for c in contacts], "pingCooldown": max(0.0, self.active_ping_state.timer)}
         tel_weapons = {**base, "tubes": [t.dict() for t in own.weapons.tubes], "consentRequired": CONFIG.require_captain_consent, "captainConsent": self._captain_consent}
-        tel_engineering = {**base, "reactor": own.reactor.dict(), "pumps": {"fwd": self._pump_fwd, "aft": self._pump_aft}, "damage": own.damage.dict()}
+        tel_engineering = {**base, "reactor": own.reactor.dict(), "pumps": {"fwd": self._pump_fwd, "aft": self._pump_aft}, "damage": own.damage.dict(), "power": own.power.dict(), "systems": own.systems.dict(), "maintenance": own.maintenance.levels}
 
         def bearings_to(sx: float, sy: float) -> Dict[str, float]:
             brg_true = (math.degrees(math.atan2(sy - own.kin.y, sx - own.kin.x)) % 360.0)
@@ -214,6 +214,19 @@ class Simulation:
         if topic == "engineering.reactor.set":
             mw = max(0.0, min(own.reactor.max_mw, float(data.get("mw", own.reactor.output_mw))))
             own.reactor.output_mw = mw
+            return None
+        if topic == "engineering.power.allocate":
+            # Expect fractions for helm/weapons/sonar/engineering; normalize softly
+            p = own.power
+            helm = float(data.get("helm", p.helm))
+            weapons = float(data.get("weapons", p.weapons))
+            sonar = float(data.get("sonar", p.sonar))
+            engineering = float(data.get("engineering", p.engineering))
+            total = max(0.0001, helm + weapons + sonar + engineering)
+            p.helm = max(0.0, helm / total)
+            p.weapons = max(0.0, weapons / total)
+            p.sonar = max(0.0, sonar / total)
+            p.engineering = max(0.0, engineering / total)
             return None
         if topic == "engineering.pump.toggle":
             name = str(data.get("pump", "")).lower()

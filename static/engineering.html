@@ -24,6 +24,24 @@
       <button id="pumpF" title="Toggle forward pump to reduce flooding">Toggle Pump FWD</button>
       <button id="pumpA" title="Toggle aft pump to reduce flooding">Toggle Pump AFT</button>
     </div>
+    <div class="panel">
+      <h3>Power Allocation</h3>
+      <div class="row">
+        <div>Helm: <input id="pHelm" type="range" min="0" max="1" step="0.05" value="0.25" /></div>
+        <div>Weapons: <input id="pWeapons" type="range" min="0" max="1" step="0.05" value="0.25" /></div>
+        <div>Sonar: <input id="pSonar" type="range" min="0" max="1" step="0.05" value="0.25" /></div>
+        <div>Engineering: <input id="pEng" type="range" min="0" max="1" step="0.05" value="0.25" /></div>
+      </div>
+      <button id="applyAlloc" title="Normalize and apply power allocations">Apply Allocation</button>
+    </div>
+    <div class="row">
+      <div class="pill">Rudder: <span id="rudderOk">OK</span></div>
+      <div class="pill">Ballast: <span id="ballastOk">OK</span></div>
+      <div class="pill">Sonar: <span id="sonarOk">OK</span></div>
+      <div class="pill">Radio: <span id="radioOk">OK</span></div>
+      <div class="pill">Periscope: <span id="periscopeOk">OK</span></div>
+      <div class="pill">Tubes: <span id="tubesOk">OK</span></div>
+    </div>
     <div class="row">
       <div class="pill" title="Battery state of charge">Battery: <span id="bat">100</span>%</div>
       <div class="pill" title="Flooding rate; pumps reduce this">Flooding rate: <span id="flood">0</span></div>
@@ -41,6 +59,16 @@
     const flood = document.getElementById('flood');
     const hull = document.getElementById('hull');
     const scramState = document.getElementById('scramState');
+    const pHelm = document.getElementById('pHelm');
+    const pWeapons = document.getElementById('pWeapons');
+    const pSonar = document.getElementById('pSonar');
+    const pEng = document.getElementById('pEng');
+    const rudderOk = document.getElementById('rudderOk');
+    const ballastOk = document.getElementById('ballastOk');
+    const sonarOk = document.getElementById('sonarOk');
+    const radioOk = document.getElementById('radioOk');
+    const periscopeOk = document.getElementById('periscopeOk');
+    const tubesOk = document.getElementById('tubesOk');
     mw.oninput = () => mwv.textContent = mw.value;
     ws.onmessage = (ev) => {
       try { const m = JSON.parse(ev.data); if (m.topic === 'telemetry') {
@@ -52,12 +80,30 @@
         flood.textContent = (m.data.damage?.flooding_rate ?? 0).toFixed(1);
         hull.textContent = (m.data.damage?.hull ?? 0).toFixed(2);
         const s = !!m.data.reactor?.scrammed; scramState.textContent = `SCRAM: ${s ? 'ON' : 'OFF'}`;
+        // Power allocations
+        const p = m.data.power || {};
+        if (typeof p.helm === 'number') pHelm.value = p.helm.toFixed(2);
+        if (typeof p.weapons === 'number') pWeapons.value = p.weapons.toFixed(2);
+        if (typeof p.sonar === 'number') pSonar.value = p.sonar.toFixed(2);
+        if (typeof p.engineering === 'number') pEng.value = p.engineering.toFixed(2);
+        // Systems
+        const sys = m.data.systems || {};
+        const setOk = (el, ok) => { el.textContent = ok ? 'OK' : 'FAIL'; el.style.color = ok ? '#8DEB8D' : '#FF6B6B'; };
+        setOk(rudderOk, !!sys.rudder_ok); setOk(ballastOk, !!sys.ballast_ok); setOk(sonarOk, !!sys.sonar_ok);
+        setOk(radioOk, !!sys.radio_ok); setOk(periscopeOk, !!sys.periscope_ok); setOk(tubesOk, !!sys.tubes_ok);
       }} catch(e){}
     };
     document.getElementById('set').onclick = () => ws.send(JSON.stringify({topic:'engineering.reactor.set', data:{mw: parseFloat(mw.value)}}));
     document.getElementById('scram').onclick = () => ws.send(JSON.stringify({topic:'engineering.reactor.scram', data:{scrammed:true}}));
     document.getElementById('pumpF').onclick = () => ws.send(JSON.stringify({topic:'engineering.pump.toggle', data:{pump:'fwd', enabled:true}}));
     document.getElementById('pumpA').onclick = () => ws.send(JSON.stringify({topic:'engineering.pump.toggle', data:{pump:'aft', enabled:true}}));
+    document.getElementById('applyAlloc').onclick = () => {
+      const helm = parseFloat(pHelm.value);
+      const weapons = parseFloat(pWeapons.value);
+      const sonar = parseFloat(pSonar.value);
+      const engineering = parseFloat(pEng.value);
+      ws.send(JSON.stringify({topic:'engineering.power.allocate', data:{helm, weapons, sonar, engineering}}));
+    };
   </script>
 </body>
 </html>

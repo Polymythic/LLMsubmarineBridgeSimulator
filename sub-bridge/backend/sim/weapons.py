@@ -19,6 +19,8 @@ esspoof_prob = 0.2  # chance to be spoofed when a countermeasure effect occurs
 
 
 def try_load_tube(ship: Ship, tube_idx: int, weapon_name: str = "Mk48") -> bool:
+    if getattr(ship, "systems", None) is not None and not ship.systems.tubes_ok:
+        return False
     ws = ship.weapons
     tube = _get_tube(ship, tube_idx)
     if tube is None or tube.state != "Empty" or ship.weapons.torpedoes_stored <= 0:
@@ -33,6 +35,8 @@ def try_load_tube(ship: Ship, tube_idx: int, weapon_name: str = "Mk48") -> bool:
 
 
 def try_flood_tube(ship: Ship, tube_idx: int) -> bool:
+    if getattr(ship, "systems", None) is not None and not ship.systems.tubes_ok:
+        return False
     ws = ship.weapons
     tube = _get_tube(ship, tube_idx)
     if tube is None or tube.state != "Loaded":
@@ -45,6 +49,8 @@ def try_flood_tube(ship: Ship, tube_idx: int) -> bool:
 
 
 def try_set_doors(ship: Ship, tube_idx: int, open_state: bool) -> bool:
+    if getattr(ship, "systems", None) is not None and not ship.systems.tubes_ok:
+        return False
     ws = ship.weapons
     tube = _get_tube(ship, tube_idx)
     if tube is None:

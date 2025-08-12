@@ -36,12 +36,15 @@ def integrate_kinematics(
     else:
         kin.speed = max(target_speed, kin.speed - hull.decel_max * dt)
 
+    # Rudder failure disables turning
+    rudder_ok = getattr(ship, "systems", None) is None or ship.systems.rudder_ok
     dh = ((ordered_heading - kin.heading + 540) % 360) - 180
     max_turn = hull.turn_rate_max * dt
-    turn = clamp(dh, -max_turn, max_turn)
+    turn = 0.0 if not rudder_ok else clamp(dh, -max_turn, max_turn)
     kin.heading = (kin.heading + turn) % 360
 
-    max_depth_rate = 6.0 if ballast_boost else 3.0
+    ballast_ok = getattr(ship, "systems", None) is None or ship.systems.ballast_ok
+    max_depth_rate = (6.0 if ballast_boost else 3.0) if ballast_ok else 0.5
     dz = ordered_depth - kin.depth
     step = clamp(dz, -max_depth_rate * dt, max_depth_rate * dt)
     kin.depth = max(0.0, kin.depth + step)

@@ -32,6 +32,36 @@ class Acoustics(BaseModel):
     thermocline_on: bool = True
 
 
+class PowerAllocations(BaseModel):
+    helm: float = 0.25
+    weapons: float = 0.25
+    sonar: float = 0.25
+    engineering: float = 0.25
+
+
+class SystemsStatus(BaseModel):
+    rudder_ok: bool = True
+    ballast_ok: bool = True
+    sonar_ok: bool = True
+    radio_ok: bool = True
+    periscope_ok: bool = True
+    tubes_ok: bool = True
+
+
+class MaintenanceState(BaseModel):
+    # Levels from 0.0 (failed) to 1.0 (fully maintained)
+    levels: Dict[str, float] = Field(
+        default_factory=lambda: {
+            "rudder": 1.0,
+            "ballast": 1.0,
+            "sonar": 1.0,
+            "radio": 1.0,
+            "periscope": 1.0,
+            "tubes": 1.0,
+        }
+    )
+
+
 class TorpedoDef(BaseModel):
     name: str = "Mk48"
     speed: float = 45.0
@@ -87,6 +117,9 @@ class Ship(BaseModel):
     weapons: WeaponsSuite
     reactor: Reactor
     damage: DamageState
+    power: PowerAllocations = PowerAllocations()
+    systems: SystemsStatus = SystemsStatus()
+    maintenance: MaintenanceState = MaintenanceState()
     ai_profile: Optional[AIProfile] = None
 
 

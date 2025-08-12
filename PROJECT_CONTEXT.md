@@ -104,6 +104,16 @@
 
 ### Damage / Engineering
 - Compartment flooding; pumps reduce flooding rate; ballast affects depth rate; reactor output caps achievable speed; SCRAM drops shaft power and increases battery drain.
+- Shared power budget (Engineering allocates reactor output across Helm/Propulsion, Sonar/Sensors, Weapons, Engineering): allocations affect caps and timers.
+- Maintenance and system reliability model:
+  - Per-system maintenance levels `0.0..1.0` for `rudder`, `ballast`, `sonar`, `radio`, `periscope`, `tubes`.
+  - Engineering power accelerates maintenance recovery; neglect causes decay. Below thresholds, systems can fail/degrade:
+    - Rudder fail → no turning authority.
+    - Ballast fail → severely limited depth rate.
+    - Sonar fail → passive/active degraded or disabled.
+    - Radio fail / Periscope fail → respective captain station controls disabled.
+    - Tubes fail → load/flood/doors inhibited.
+  - Telemetry surfaces `power`, `systems`, and `maintenance` to Engineering; other stations experience the effects.
 
 ### Messages (WebSocket JSON)
 - Telemetry (server→client example):

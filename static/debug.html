@@ -48,7 +48,9 @@
     function drawShip(x,y,heading,color,label){
       ctx.save();
       ctx.translate(x,y);
-      ctx.rotate(heading * Math.PI/180);
+      // Canvas default points to +X (east). Our headings are compass (0=N,90=E,180=S,270=W).
+      // Map compass to canvas by rotating (90 - heading) degrees.
+      ctx.rotate((90 - heading) * Math.PI/180);
       ctx.fillStyle = color;
       ctx.beginPath();
       ctx.moveTo(16,0); ctx.lineTo(-10,6); ctx.lineTo(-10,-6); ctx.closePath();

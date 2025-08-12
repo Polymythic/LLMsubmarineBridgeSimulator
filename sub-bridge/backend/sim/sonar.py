@@ -40,6 +40,9 @@ def passive_contacts(self_ship: Ship, others: List[Ship]) -> List[TelemetryConta
         penalty = getattr(self_ship.acoustics, "passive_snr_penalty_db", 0.0)
         snr = max(0.0, src_lvl - tl - ambient - penalty)
         strength = max(0.0, min(1.0, snr / 30.0))
+        # Gate very weak signals: hide from UI and mark bearing/range unknown
+        if strength < 0.15:
+            continue
         # Bearing error grows as target slows (harder to localize) and with ownship degradation
         sigma = max(1.0, 10.0 - other.kin.speed * 0.3 + self_ship.acoustics.bearing_noise_extra)
         noisy_bearing = normalize_angle_deg(brg + random.gauss(0, sigma))
@@ -51,6 +54,8 @@ def passive_contacts(self_ship: Ship, others: List[Ship]) -> List[TelemetryConta
                 strength=strength,
                 classifiedAs="SSN?",
                 confidence=confidence,
+                bearingKnown=True,
+                rangeKnown=False,
             )
         )
     return contacts

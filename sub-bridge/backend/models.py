@@ -161,6 +161,8 @@ class TelemetryContact(BaseModel):
     strength: float
     classifiedAs: str
     confidence: float
+    bearingKnown: bool = True
+    rangeKnown: bool = False
 
 
 class TelemetryMessage(BaseModel):

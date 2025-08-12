@@ -18,18 +18,18 @@
 <body>
   <div class="panel">
     <h2>Weapons</h2>
-    <div id="consent"></div>
-    <div class="tubes" id="tubes"></div>
-    <label>Tube <input id="tube" type="number" min="1" max="6" value="1"></label>
+    <div id="consent" title="Captain consent requirement before firing"></div>
+    <div class="tubes" id="tubes" title="Tube state machine: Empty→Loaded→Flooded→DoorsOpen; timers show progress."></div>
+    <label title="Select a tube to operate">Tube <input id="tube" type="number" min="1" max="6" value="1"></label>
     <div>
-      <button id="load">Load</button>
-      <button id="flood">Flood</button>
-      <button id="doors">Open Doors</button>
+      <button id="load" title="Load a torpedo into the selected tube (starts reload timer)">Load</button>
+      <button id="flood" title="Flood the selected tube (makes it ready to open)">Flood</button>
+      <button id="doors" title="Open outer doors on the selected tube (required to fire)">Open Doors</button>
     </div>
-    <label>Bearing <input id="bearing" type="number" min="0" max="359" value="270"></label>
-    <label>Run Depth <input id="rdepth" type="number" min="0" max="600" value="120"></label>
-    <button id="fire">Fire</button>
-    <pre id="telemetry"></pre>
+    <label title="Set bearing to fire along">Bearing <input id="bearing" type="number" min="0" max="359" value="270"></label>
+    <label title="Set commanded torpedo run depth">Run Depth <input id="rdepth" type="number" min="0" max="600" value="120"></label>
+    <button id="fire" title="Fire the selected tube (interlocks apply)">Fire</button>
+    <pre id="telemetry" title="Weapons telemetry and events"></pre>
   </div>
   <script>
     const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/weapons');
@@ -47,7 +47,7 @@
             const div = document.createElement('div');
             div.className = 'tube';
             const timer = t.timer_s && t.timer_s > 0 ? ` [${t.timer_s.toFixed(1)}s]` : '';
-            div.innerHTML = `<div>Tube ${t.idx}: ${t.state} ${t.weapon ? '('+t.weapon.name+')' : ''}</div><div class='small'>Timer${timer}</div>`;
+            div.innerHTML = `<div title='Tube state and weapon type'>Tube ${t.idx}: ${t.state} ${t.weapon ? '('+t.weapon.name+')' : ''}</div><div class='small' title='Time remaining on current transition'>Timer${timer}</div>`;
             tubes.appendChild(div);
           });
         }

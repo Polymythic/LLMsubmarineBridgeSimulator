@@ -12,7 +12,8 @@
     li { margin:4px 0; }
     .row { display:flex; gap:16px; }
     .col { flex:1; }
-    canvas { width:100%; height:220px; background:#050814; border:1px solid #1B2440; border-radius:6px; }
+    #legend { width:100%; height:24px; background:#0B1020; border:1px solid #1B2440; border-radius:6px; margin-bottom:6px; }
+    #waterfall { width:100%; height:220px; background:#050814; border:1px solid #1B2440; border-radius:6px; }
     .label { font-size:12px; opacity:0.8; }
   </style>
 </head>
@@ -21,17 +22,18 @@
     <h2>Sonar</h2>
     <div class="row">
       <div class="col">
-        <button id="ping">Active Ping</button>
-        <div>Ping cooldown: <span id="cd">0</span>s</div>
+        <button id="ping" title="Send an active ping; reveals ownship and returns noisy range+bearing">Active Ping</button>
+        <div title="Ping cooldown in seconds">Ping cooldown: <span id="cd">0</span>s</div>
         <h3>Contacts</h3>
-        <ul id="contacts"></ul>
+        <ul id="contacts" title="Bearing-only passive contacts"></ul>
       </div>
       <div class="col">
-        <div class="label">Passive Waterfall (bearing 0°→359° across)</div>
-        <canvas id="waterfall" width="720" height="220"></canvas>
+        <div class="label" title="Bearing axis 0..360°; time flows downward">Passive Waterfall</div>
+        <canvas id="legend" width="720" height="24" title="Bearing ticks (0/90/180/270/360)"></canvas>
+        <canvas id="waterfall" width="720" height="220" title="Bearing-time-intensity display"></canvas>
       </div>
     </div>
-    <pre id="telemetry"></pre>
+    <pre id="telemetry" title="Station telemetry and events"></pre>
   </div>
   <script>
     const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/sonar');
@@ -39,42 +41,63 @@
     const cd = document.getElementById('cd');
     const list = document.getElementById('contacts');
 
+    const legend = document.getElementById('legend');
+    const lctx = legend.getContext('2d');
+    const lW = legend.width; const lH = legend.height;
+
     const canvas = document.getElementById('waterfall');
     const ctx = canvas.getContext('2d');
     const W = canvas.width; // 720 px
     const H = canvas.height; // 220 px
 
-    // Render state for the waterfall: current row index
+    function drawLegend(){
+      lctx.clearRect(0,0,lW,lH);
+      lctx.fillStyle = '#0B1020';
+      lctx.fillRect(0,0,lW,lH);
+      lctx.strokeStyle = '#1B2440';
+      lctx.beginPath();
+      lctx.moveTo(0, lH-0.5); lctx.lineTo(lW, lH-0.5); lctx.stroke();
+      const majors = [0,90,180,270,360];
+      const minors = [];
+      for (let b=0; b<=360; b+=30) if (!majors.includes(b)) minors.push(b);
+      lctx.fillStyle = '#8593B8';
+      lctx.font = '12px ui-sans-serif';
+      lctx.strokeStyle = '#2A345C';
+      minors.forEach(b => {
+        const x = Math.round((b/360)*lW);
+        lctx.beginPath(); lctx.moveTo(x+0.5, lH-10); lctx.lineTo(x+0.5, lH-2); lctx.stroke();
+      });
+      lctx.strokeStyle = '#4C5E9A';
+      majors.forEach(b => {
+        const x = Math.round((b/360)*lW);
+        lctx.beginPath(); lctx.moveTo(x+0.5, lH-16); lctx.lineTo(x+0.5, lH-2); lctx.stroke();
+        lctx.textAlign = 'center';
+        lctx.fillText(String(b), x, 12);
+      });
+    }
+
+    drawLegend();
+
     let row = 0;
 
     function drawWaterfall(contacts){
-      // Draw a dark baseline row first (low-level ambient)
       const imageData = ctx.createImageData(W, 1);
       const data = imageData.data;
       for (let x = 0; x < W; x++){
         const idx = x * 4;
-        data[idx+0] = 9;   // R
-        data[idx+1] = 14;  // G
-        data[idx+2] = 28;  // B
-        data[idx+3] = 255; // A
+        data[idx+0] = 9; data[idx+1] = 14; data[idx+2] = 28; data[idx+3] = 255;
       }
-      // Plot contacts as brighter stripes at their bearings
-      // Map bearing (0..359) to x in 0..W-1 (2 px per degree at W=720)
       (contacts || []).forEach(c => {
         const bearing = ((c.bearing % 360) + 360) % 360;
         const x = Math.floor((bearing / 360) * W);
         const strength = Math.max(0, Math.min(1, c.strength || 0));
-        const glow = Math.floor(60 + strength * 180); // 60..240
+        const glow = Math.floor(60 + strength * 180);
         for (let dx = -1; dx <= 1; dx++){
           const xi = Math.max(0, Math.min(W-1, x + dx));
           const base = xi * 4;
-          data[base+0] = glow;    // brighter blue-green tone
-          data[base+1] = Math.floor(glow * 0.85);
-          data[base+2] = Math.floor(glow * 0.4);
-          data[base+3] = 255;
+          data[base+0] = glow; data[base+1] = Math.floor(glow * 0.85); data[base+2] = Math.floor(glow * 0.4); data[base+3] = 255;
         }
       });
-      // Put the row at current y
       ctx.putImageData(imageData, 0, row);
       row = (row + 1) % H;
     }
@@ -88,6 +111,7 @@
           list.innerHTML = '';
           (m.data.contacts || []).forEach(c => {
             const li = document.createElement('li');
+            li.title = 'Passive contact; bearing-only with noisy measurement.';
             li.textContent = `ID ${c.id} brg ${c.bearing.toFixed(0)}° str ${c.strength.toFixed(2)} conf ${c.confidence.toFixed(2)}`;
             list.appendChild(li);
           });

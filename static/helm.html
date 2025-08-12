@@ -19,16 +19,16 @@
   <div class="panel">
     <h2>Helm</h2>
     <div class="row">
-      <div class="col"><label>Heading (deg)<input id="heading" type="number" min="0" max="359" value="270"></label></div>
-      <div class="col"><label>Speed (kn)<input id="speed" type="number" min="0" max="30" value="8"></label></div>
-      <div class="col"><label>Depth (m)<input id="depth" type="number" min="0" max="600" value="100"></label></div>
+      <div class="col"><label title="Ordered heading in degrees (0=North)">Heading (deg)<input id="heading" type="number" min="0" max="359" value="270"></label></div>
+      <div class="col"><label title="Ordered speed in knots">Speed (kn)<input id="speed" type="number" min="0" max="30" value="8"></label></div>
+      <div class="col"><label title="Ordered keel depth in meters">Depth (m)<input id="depth" type="number" min="0" max="600" value="100"></label></div>
     </div>
     <div class="row">
-      <div class="pill" id="cav">Cavitation: NO</div>
-      <div class="pill" id="therm">Thermocline: ON</div>
+      <div class="pill" id="cav" title="Cavitation increases detectability and noise">Cavitation: NO</div>
+      <div class="pill" id="therm" title="Thermocline may attenuate sound; affects detection">Thermocline: ON</div>
     </div>
-    <button id="send">Order</button>
-    <pre id="telemetry"></pre>
+    <button id="send" title="Send helm order to the sim loop">Order</button>
+    <pre id="telemetry" title="Ownship state and events"></pre>
   </div>
   <script>
     const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/helm');

@@ -1,5 +1,16 @@
 ## Project Context and Objectives
 
+### Current Implementation Status
+- Backend server: FastAPI with 20 Hz loop; WebSockets `/ws/{station}` live.
+- Ownship kinematics: accel/turn/depth clamp; cavitation flag; reactor caps speed.
+- Sonar: passive contacts; active ping with cooldown; passive waterfall graphic in Sonar UI.
+- Weapons: tube state machine with timers (reload/flood/doors); fire torpedo with PN; proximity detonation applies damage/flooding; timers shown in UI.
+- Engineering: reactor MW set, SCRAM, battery drain, pumps reduce flooding; telemetry shows reactor/battery/damage.
+- Captain: consent toggle; periscope/radio raised flags.
+- Static enemy supported for station testing (AI disabled by default).
+- Persistence: SQLite run/snapshot/event logging.
+- UIs: minimal dark HTML for all stations; incremental graphics (waterfall, timers).
+
 ### MVP Objectives
 - **Fixed timestep server loop**: 20 Hz (50 ms).
 - **Ownship kinematics**: heading, speed, depth; with cavitation/noise modeling.
@@ -116,6 +127,7 @@
 {"topic":"weapons.fire","data":{"tube":1,"bearing":145,"run_depth":120}}
 {"topic":"engineering.reactor.set","data":{"mw":65}}
 {"topic":"engineering.pump.toggle","data":{"pump":"fwd","enabled":true}}
+{"topic":"engineering.reactor.scram","data":{"scrammed":true}}
 {"topic":"captain.periscope.raise","data":{"raised":true}}
 {"topic":"captain.radio.raise","data":{"raised":true}}
 ```
@@ -144,9 +156,11 @@
 - `REQUIRE_CAPTAIN_CONSENT=true`
 - `SQLITE_PATH=./sub-bridge.db`
 - `LOG_LEVEL=INFO`
+- `USE_ENEMY_AI=false`
+- `ENEMY_STATIC=true`
 
 ### Testing & Acceptance
 - Start server: `uvicorn sub-bridge.backend.app:app --reload --host 0.0.0.0 --port 8000`
 - Open five tabs: `/captain`, `/helm`, `/sonar`, `/weapons`, `/engineering`.
-- Helm orders change ownship within limits; Sonar shows contacts; Weapons can load/flood/open/fire one torpedo; Engineering can SCRAM/adjust power; Captain consent required before firing (toggleable).
-- Enemy AI stub updates ~2 s; tool calls appear in logs; orders clamped to limits.
+- Helm orders change ownship within limits; Sonar shows contacts waterfall; Weapons can load/flood/open/fire one torpedo with timers; Engineering can SCRAM/adjust power/pumps; Captain consent required before firing (toggleable).
+- Static enemy mode for station testing; enemy AI can be enabled later; tool calls logged when enabled.

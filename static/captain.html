@@ -18,13 +18,13 @@
   <div class="panel">
     <h2>Captain</h2>
     <div class="row">
-      <button id="consent">Toggle Fire Consent</button>
-      <span>Periscope <span id="periscope" class="pip off"></span></span>
-      <button id="periscopeBtn">Raise/Lower</button>
-      <span>Radio <span id="radio" class="pip off"></span></span>
-      <button id="radioBtn">Raise/Lower</button>
+      <button id="consent" title="Grant temporary firing consent for interlocked weapons">Toggle Fire Consent</button>
+      <span title="Periscope raised increases detection risk">Periscope <span id="periscope" class="pip off"></span></span>
+      <button id="periscopeBtn" title="Raise/lower periscope">Raise/Lower</button>
+      <span title="Radio mast raised increases EMCON risk">Radio <span id="radio" class="pip off"></span></span>
+      <button id="radioBtn" title="Raise/lower radio mast">Raise/Lower</button>
     </div>
-    <pre id="telemetry"></pre>
+    <pre id="telemetry" title="Captain telemetry and events"></pre>
   </div>
   <script>
     const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/captain');

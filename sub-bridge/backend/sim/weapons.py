@@ -1,5 +1,6 @@
 from __future__ import annotations
 import math
+import random
 from typing import Optional, Callable
 from ..models import Ship, Tube, TorpedoDef
 
@@ -12,6 +13,9 @@ def step_tubes(ship: Ship, dt: float) -> None:
             if t.timer_s == 0.0 and t.next_state is not None:
                 t.state = t.next_state
                 t.next_state = None
+
+
+esspoof_prob = 0.2  # chance to be spoofed when a countermeasure effect occurs
 
 
 def try_load_tube(ship: Ship, tube_idx: int, weapon_name: str = "Mk48") -> bool:
@@ -76,6 +80,7 @@ def try_fire(ship: Ship, tube_idx: int, bearing_deg: float, run_depth: float):
         "name": tube.weapon.name,
         "seeker_cone": tube.weapon.seeker_cone_deg,
         "side": ship.side,
+        "spoofed_timer": 0.0,
     }
     tube.weapon = None
     tube.state = "Empty"
@@ -93,26 +98,39 @@ def step_torpedo(t: dict, world, dt: float, on_event: Optional[Callable[[str, di
         if on_event:
             on_event("torpedo.armed", {"name": t["name"]})
 
+    # Spoof timer decay
+    if t.get("spoofed_timer", 0.0) > 0.0:
+        t["spoofed_timer"] = max(0.0, t["spoofed_timer"] - dt)
+
     # Detonation check against opposing ships
     for ship in world.all_ships():
         if ship.side == t.get("side"):
             continue
         rng = math.hypot(ship.kin.x - t["x"], ship.kin.y - t["y"])
         if t["armed"] and rng < 30.0:  # proximity fuze
-            # Apply damage
             ship.damage.hull = min(1.0, ship.damage.hull + 0.5)
             ship.damage.flooding_rate = min(10.0, ship.damage.flooding_rate + 2.0)
             if on_event:
                 on_event("torpedo.detonated", {"target": ship.id, "range_m": rng})
-            # Mark torp as expired
             t["run_time"] = t["max_run_time"] + 1.0
             return
 
+    # Guidance
     target = _nearest_target(t, world)
     if target is not None and t["armed"]:
+        # Chance to be spoofed by a countermeasure; here we model as periodic effect
+        if t.get("spoofed_timer", 0.0) == 0.0 and random.random() < 0.02:
+            t["spoofed_timer"] = 3.0
+            if on_event:
+                on_event("torpedo.spoofed", {"seconds": t["spoofed_timer"]})
         desired = math.degrees(math.atan2(target.kin.y - t["y"], target.kin.x - t["x"])) % 360.0
         dh = ((desired - t["heading"] + 540) % 360) - 180
-        max_turn = 20.0 * dt
+        # If spoofed, add jitter and reduce turn authority
+        if t.get("spoofed_timer", 0.0) > 0.0:
+            dh += random.uniform(-30.0, 30.0)
+            max_turn = 10.0 * dt
+        else:
+            max_turn = 20.0 * dt
         t["heading"] = (t["heading"] + max(-max_turn, min(max_turn, dh))) % 360
 
     mps = t["speed"] * 0.514444

@@ -16,20 +16,20 @@
 <body>
   <div class="panel">
     <h2>Engineering</h2>
-    <div>Reactor MW <span id="mwv">60</span> / <span id="mwmax">100</span> <span class="pill" id="scramState">SCRAM: OFF</span></div>
-    <input id="mw" type="range" min="0" max="100" step="1" value="60" />
+    <div title="Reactor output and SCRAM state">Reactor MW <span id="mwv">60</span> / <span id="mwmax">100</span> <span class="pill" id="scramState">SCRAM: OFF</span></div>
+    <input id="mw" type="range" min="0" max="100" step="1" value="60" title="Adjust reactor power (MW)" />
     <div class="row">
-      <button id="set">Set MW</button>
-      <button id="scram">Toggle SCRAM</button>
-      <button id="pumpF">Toggle Pump FWD</button>
-      <button id="pumpA">Toggle Pump AFT</button>
+      <button id="set" title="Set reactor power to slider value">Set MW</button>
+      <button id="scram" title="Trip reactor SCRAM (emergency shutdown)">Toggle SCRAM</button>
+      <button id="pumpF" title="Toggle forward pump to reduce flooding">Toggle Pump FWD</button>
+      <button id="pumpA" title="Toggle aft pump to reduce flooding">Toggle Pump AFT</button>
     </div>
     <div class="row">
-      <div class="pill">Battery: <span id="bat">100</span>%</div>
-      <div class="pill">Flooding rate: <span id="flood">0</span></div>
-      <div class="pill">Hull dmg: <span id="hull">0</span></div>
+      <div class="pill" title="Battery state of charge">Battery: <span id="bat">100</span>%</div>
+      <div class="pill" title="Flooding rate; pumps reduce this">Flooding rate: <span id="flood">0</span></div>
+      <div class="pill" title="Overall hull damage fraction">Hull dmg: <span id="hull">0</span></div>
     </div>
-    <pre id="telemetry"></pre>
+    <pre id="telemetry" title="Engineering telemetry and events"></pre>
   </div>
   <script>
     const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/engineering');

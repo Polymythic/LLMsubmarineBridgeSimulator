@@ -27,7 +27,8 @@ def passive_contacts(self_ship: Ship, others: List[Ship]) -> List[TelemetryConta
         dx = other.kin.x - self_ship.kin.x
         dy = other.kin.y - self_ship.kin.y
         rng = math.hypot(dx, dy)
-        brg = normalize_angle_deg(math.degrees(math.atan2(dy, dx)))
+        # Compass bearing: 0=N, 90=E, 180=S, 270=W
+        brg = normalize_angle_deg(math.degrees(math.atan2(dx, dy)))
         rel = angle_diff(brg, self_ship.kin.heading)
         if abs(rel) > 180 - BAFFLES_DEG / 2:
             continue

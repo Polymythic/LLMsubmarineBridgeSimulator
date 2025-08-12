@@ -174,7 +174,10 @@ class Simulation:
         tel_engineering = {**base, "reactor": own.reactor.dict(), "pumps": {"fwd": self._pump_fwd, "aft": self._pump_aft}, "damage": own.damage.dict(), "power": own.power.dict(), "systems": own.systems.dict(), "maintenance": own.maintenance.levels}
 
         def bearings_to(sx: float, sy: float) -> Dict[str, float]:
-            brg_true = (math.degrees(math.atan2(sy - own.kin.y, sx - own.kin.x)) % 360.0)
+            # Compass bearing: 0=N, 90=E, 180=S, 270=W
+            dx = sx - own.kin.x
+            dy = sy - own.kin.y
+            brg_true = (math.degrees(math.atan2(dx, dy)) % 360.0)
             brg_rel = (brg_true - own.kin.heading + 360.0) % 360.0
             return {"bearing_true": brg_true, "bearing_rel": brg_rel, "heading_to_face": brg_true}
 

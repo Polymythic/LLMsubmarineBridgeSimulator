@@ -71,11 +71,11 @@ class ActivePingState:
         return False
 
 
-def active_ping(self_ship: Ship, others: List[Ship]) -> List[Tuple[str, float, float]]:
+def active_ping(self_ship: Ship, others: List[Ship]) -> List[Tuple[str, float, float, float]]:
     # Sonar failure prevents active returns
     if getattr(self_ship, "systems", None) is not None and not self_ship.systems.sonar_ok:
         return []
-    out: List[Tuple[str, float, float]] = []
+    out: List[Tuple[str, float, float, float]] = []
     for other in others:
         if other.id == self_ship.id:
             continue
@@ -85,5 +85,7 @@ def active_ping(self_ship: Ship, others: List[Ship]) -> List[Tuple[str, float, f
         brg = normalize_angle_deg(math.degrees(math.atan2(dy, dx)))
         rng_noise = max(1.0, rng + random.gauss(0, rng * 0.02 + 5.0))
         brg_noise = normalize_angle_deg(brg + random.gauss(0, 1.5))
-        out.append((other.id, rng_noise, brg_noise))
+        # Simple active strength model: stronger when closer; clamp 0..1
+        strength = max(0.0, min(1.0, 1.0 / (1.0 + (rng_noise / 2000.0))))
+        out.append((other.id, rng_noise, brg_noise, strength))
     return out

@@ -150,7 +150,11 @@ class Simulation:
         tel_all = dict(base)
         tel_captain = {**base, "periscopeRaised": self._periscope_raised, "radioRaised": self._radio_raised}
         tel_helm = {**base, "cavitationSpeedWarn": speed > 25.0, "thermocline": own.acoustics.thermocline_on}
-        tel_sonar = {**base, "contacts": [c.dict() for c in contacts], "pingCooldown": max(0.0, self.active_ping_state.timer)}
+        # Prepare recent active ping responses list (bearing, range_est, strength, time)
+        # For now, only generate on demand when 'sonar.ping' happens; UI will render as DEMON dots
+        if not hasattr(self, "_last_ping_responses"):
+            self._last_ping_responses = []
+        tel_sonar = {**base, "contacts": [c.dict() for c in contacts], "pingCooldown": max(0.0, self.active_ping_state.timer), "pingResponses": list(self._last_ping_responses), "lastPingAt": getattr(self, "_last_ping_at", None)}
         tel_weapons = {**base, "tubes": [t.dict() for t in own.weapons.tubes], "consentRequired": CONFIG.require_captain_consent, "captainConsent": self._captain_consent}
         tel_engineering = {**base, "reactor": own.reactor.dict(), "pumps": {"fwd": self._pump_fwd, "aft": self._pump_aft}, "damage": own.damage.dict(), "power": own.power.dict(), "systems": own.systems.dict(), "maintenance": own.maintenance.levels}
 
@@ -202,7 +206,14 @@ class Simulation:
             return None
         if topic == "sonar.ping":
             if self.active_ping_state.start():
-                _ = active_ping(own, [s for s in self.world.all_ships() if s.id != own.id])
+                res = active_ping(own, [s for s in self.world.all_ships() if s.id != own.id])
+                now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                # Store simplified responses for UI
+                self._last_ping_at = now_iso
+                self._last_ping_responses = [
+                    {"id": rid, "bearing": brg, "range_est": rng, "strength": st, "at": now_iso}
+                    for (rid, rng, brg, st) in res
+                ]
                 # Active ping raises EMCON risk; emit counter-detected event for UI
                 self._transient_events.append({"type": "counterDetected", "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
                 return None

@@ -27,6 +27,8 @@
         <div class="label" title="Current EMCON risk from acoustics">EMCON: <span id="emcon">low</span></div>
         <h3>Contacts</h3>
         <ul id="contacts" title="Bearing-only passive contacts"></ul>
+        <h3>Ping Responses</h3>
+        <ul id="pingResponses" title="Last active ping responses"></ul>
       </div>
       <div class="col">
         <div class="label" title="Bearing axis centered at 0°; time flows downward">Passive Waterfall</div>
@@ -41,6 +43,7 @@
     const tel = document.getElementById('telemetry');
     const cd = document.getElementById('cd');
     const list = document.getElementById('contacts');
+    const prList = document.getElementById('pingResponses');
     const emcon = document.getElementById('emcon');
 
     const legend = document.getElementById('legend');
@@ -79,7 +82,7 @@
 
     let row = 0;
 
-    function drawWaterfall(contacts){
+    function drawWaterfall(contacts, pingResponses){
       const imageData = ctx.createImageData(W, 1);
       const data = imageData.data;
       for (let x = 0; x < W; x++){
@@ -96,6 +99,18 @@
           data[base+0] = glow; data[base+1] = Math.floor(glow * 0.85); data[base+2] = Math.floor(glow * 0.4); data[base+3] = 255;
         }
       });
+      // Active ping dots: brighter by strength
+      (pingResponses || []).forEach(p => {
+        const bearing = ((p.bearing % 360) + 360) % 360;
+        const x = xForBearing(bearing, W);
+        const strength = Math.max(0, Math.min(1, p.strength || 0));
+        const glow = Math.floor(80 + strength * 175);
+        const base = x * 4;
+        data[base+0] = Math.max(data[base+0], glow);
+        data[base+1] = Math.max(data[base+1], Math.floor(glow * 0.6));
+        data[base+2] = Math.max(data[base+2], Math.floor(glow * 0.2));
+        data[base+3] = 255;
+      });
       ctx.putImageData(imageData, 0, row);
       row = (row + 1) % H;
     }
@@ -109,7 +124,9 @@
           if (m.data.acoustics) { emcon.textContent = (m.data.acoustics.emconRisk || 'low'); }
           list.innerHTML = '';
           (m.data.contacts || []).forEach(c => { const li = document.createElement('li'); li.title = 'Passive contact; bearing-only with noisy measurement.'; li.textContent = `ID ${c.id} brg ${c.bearing.toFixed(0)}° str ${c.strength.toFixed(2)} conf ${c.confidence.toFixed(2)}`; list.appendChild(li); });
-          drawWaterfall(m.data.contacts || []);
+          prList.innerHTML = '';
+          (m.data.pingResponses || []).forEach(p => { const li = document.createElement('li'); li.title = 'Active ping response'; const km = (p.range_est/1000).toFixed(1); li.textContent = `ID ${p.id} brg ${p.bearing.toFixed(0)}° range ~${km} km str ${(+p.strength).toFixed(2)} at ${p.at}`; prList.appendChild(li); });
+          drawWaterfall(m.data.contacts || [], m.data.pingResponses || []);
         }
       } catch(e){}
     };

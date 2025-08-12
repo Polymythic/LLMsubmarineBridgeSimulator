@@ -27,12 +27,13 @@
     <div class="panel">
       <h3>Power Allocation</h3>
       <div class="row">
-        <div>Helm: <input id="pHelm" type="range" min="0" max="1" step="0.05" value="0.25" /></div>
-        <div>Weapons: <input id="pWeapons" type="range" min="0" max="1" step="0.05" value="0.25" /></div>
-        <div>Sonar: <input id="pSonar" type="range" min="0" max="1" step="0.05" value="0.25" /></div>
-        <div>Engineering: <input id="pEng" type="range" min="0" max="1" step="0.05" value="0.25" /></div>
+        <div>Helm: <input id="pHelm" type="range" min="0" max="1" step="0.05" value="0.25" /> <span class="pill" id="pHelmPct">25%</span></div>
+        <div>Weapons: <input id="pWeapons" type="range" min="0" max="1" step="0.05" value="0.25" /> <span class="pill" id="pWeaponsPct">25%</span></div>
+        <div>Sonar: <input id="pSonar" type="range" min="0" max="1" step="0.05" value="0.25" /> <span class="pill" id="pSonarPct">25%</span></div>
+        <div>Engineering: <input id="pEng" type="range" min="0" max="1" step="0.05" value="0.25" /> <span class="pill" id="pEngPct">25%</span></div>
       </div>
-      <button id="applyAlloc" title="Normalize and apply power allocations">Apply Allocation</button>
+      <div class="row"><div class="pill">Total: <span id="pTotal">100%</span></div> <span id="pErr" style="color:#FF6B6B"></span></div>
+      <button id="applyAlloc" title="Apply power allocations (must not exceed 100%)">Apply Allocation</button>
     </div>
     <div class="row">
       <div class="pill">Rudder: <span id="rudderOk">OK</span></div>
@@ -63,6 +64,12 @@
     const pWeapons = document.getElementById('pWeapons');
     const pSonar = document.getElementById('pSonar');
     const pEng = document.getElementById('pEng');
+    const pHelmPct = document.getElementById('pHelmPct');
+    const pWeaponsPct = document.getElementById('pWeaponsPct');
+    const pSonarPct = document.getElementById('pSonarPct');
+    const pEngPct = document.getElementById('pEngPct');
+    const pTotal = document.getElementById('pTotal');
+    const pErr = document.getElementById('pErr');
     const rudderOk = document.getElementById('rudderOk');
     const ballastOk = document.getElementById('ballastOk');
     const sonarOk = document.getElementById('sonarOk');
@@ -86,6 +93,7 @@
         if (typeof p.weapons === 'number') pWeapons.value = p.weapons.toFixed(2);
         if (typeof p.sonar === 'number') pSonar.value = p.sonar.toFixed(2);
         if (typeof p.engineering === 'number') pEng.value = p.engineering.toFixed(2);
+        updateAllocLabels();
         // Systems
         const sys = m.data.systems || {};
         const setOk = (el, ok) => { el.textContent = ok ? 'OK' : 'FAIL'; el.style.color = ok ? '#8DEB8D' : '#FF6B6B'; };
@@ -97,11 +105,29 @@
     document.getElementById('scram').onclick = () => ws.send(JSON.stringify({topic:'engineering.reactor.scram', data:{scrammed:true}}));
     document.getElementById('pumpF').onclick = () => ws.send(JSON.stringify({topic:'engineering.pump.toggle', data:{pump:'fwd', enabled:true}}));
     document.getElementById('pumpA').onclick = () => ws.send(JSON.stringify({topic:'engineering.pump.toggle', data:{pump:'aft', enabled:true}}));
+    function updateAllocLabels(){
+      const helm = parseFloat(pHelm.value);
+      const weapons = parseFloat(pWeapons.value);
+      const sonar = parseFloat(pSonar.value);
+      const engineering = parseFloat(pEng.value);
+      const total = helm + weapons + sonar + engineering;
+      pHelmPct.textContent = Math.round(helm*100) + '%';
+      pWeaponsPct.textContent = Math.round(weapons*100) + '%';
+      pSonarPct.textContent = Math.round(sonar*100) + '%';
+      pEngPct.textContent = Math.round(engineering*100) + '%';
+      pTotal.textContent = Math.round(total*100) + '%';
+      pErr.textContent = total > 1.0 ? 'Exceeds 100% budget' : '';
+    }
+
+    ;[pHelm, pWeapons, pSonar, pEng].forEach(inp => inp.addEventListener('input', updateAllocLabels));
+
     document.getElementById('applyAlloc').onclick = () => {
       const helm = parseFloat(pHelm.value);
       const weapons = parseFloat(pWeapons.value);
       const sonar = parseFloat(pSonar.value);
       const engineering = parseFloat(pEng.value);
+      const total = helm + weapons + sonar + engineering;
+      if (total > 1.0){ pErr.textContent = 'Exceeds 100% budget'; return; }
       ws.send(JSON.stringify({topic:'engineering.power.allocate', data:{helm, weapons, sonar, engineering}}));
     };
   </script>

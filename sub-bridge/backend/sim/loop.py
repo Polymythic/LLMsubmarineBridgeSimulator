@@ -230,17 +230,19 @@ class Simulation:
             own.reactor.output_mw = mw
             return None
         if topic == "engineering.power.allocate":
-            # Expect fractions for helm/weapons/sonar/engineering; normalize softly
+            # Expect fractions for helm/weapons/sonar/engineering; must NOT exceed total budget (<= 1.0)
             p = own.power
-            helm = float(data.get("helm", p.helm))
-            weapons = float(data.get("weapons", p.weapons))
-            sonar = float(data.get("sonar", p.sonar))
-            engineering = float(data.get("engineering", p.engineering))
-            total = max(0.0001, helm + weapons + sonar + engineering)
-            p.helm = max(0.0, helm / total)
-            p.weapons = max(0.0, weapons / total)
-            p.sonar = max(0.0, sonar / total)
-            p.engineering = max(0.0, engineering / total)
+            helm = max(0.0, float(data.get("helm", p.helm)))
+            weapons = max(0.0, float(data.get("weapons", p.weapons)))
+            sonar = max(0.0, float(data.get("sonar", p.sonar)))
+            engineering = max(0.0, float(data.get("engineering", p.engineering)))
+            total = helm + weapons + sonar + engineering
+            if total > 1.000001:
+                return "Allocation exceeds budget"
+            p.helm = helm
+            p.weapons = weapons
+            p.sonar = sonar
+            p.engineering = engineering
             return None
         if topic == "engineering.pump.toggle":
             name = str(data.get("pump", "")).lower()

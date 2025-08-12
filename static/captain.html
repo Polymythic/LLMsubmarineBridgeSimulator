@@ -28,6 +28,18 @@
       <div class="pill">EMCON: <span id="emcon">low</span></div>
       <div class="pill">Noise: <span id="noise">0</span></div>
     </div>
+    <div class="panel">
+      <h3>Mission Brief</h3>
+      <div class="pill" id="briefTitle"></div>
+      <div class="label" id="briefObj"></div>
+      <div class="label">ROE:</div>
+      <ul id="roe"></ul>
+    </div>
+    <div class="panel">
+      <h3>Communications</h3>
+      <div class="label">Raise radio mast at ≤20m to receive scheduled comms.</div>
+      <ul id="comms"></ul>
+    </div>
     <pre id="telemetry" title="Captain telemetry and events"></pre>
   </div>
   <script>
@@ -38,7 +50,7 @@
     const emcon = document.getElementById('emcon');
     const noise = document.getElementById('noise');
     function setPip(el, val){ el.className = 'pip ' + (val ? 'on' : 'off'); }
-    ws.onmessage = (ev) => { try { const m = JSON.parse(ev.data); if (m.topic === 'telemetry') { tel.textContent = JSON.stringify(m.data, null, 2); setPip(per, !!m.data.periscopeRaised); setPip(rad, !!m.data.radioRaised); if (m.data.acoustics){ emcon.textContent = m.data.acoustics.emconRisk || 'low'; noise.textContent = (m.data.acoustics.noiseBudget || 0).toFixed(0);} } } catch(e){} };
+    ws.onmessage = (ev) => { try { const m = JSON.parse(ev.data); if (m.topic === 'telemetry') { tel.textContent = JSON.stringify(m.data, null, 2); setPip(per, !!m.data.periscopeRaised); setPip(rad, !!m.data.radioRaised); if (m.data.acoustics){ emcon.textContent = m.data.acoustics.emconRisk || 'low'; noise.textContent = (m.data.acoustics.noiseBudget || 0).toFixed(0);} const mission = m.data.mission || {}; document.getElementById('briefTitle').textContent = mission.title || ''; document.getElementById('briefObj').textContent = mission.objective || ''; const roe = mission.roe || []; const ul = document.getElementById('roe'); ul.innerHTML = ''; roe.forEach(r => { const li=document.createElement('li'); li.textContent = r; ul.appendChild(li); }); const comms = m.data.comms || []; const cu = document.getElementById('comms'); const seen = new Set(Array.from(cu.querySelectorAll('li')).map(li=>li.dataset.key)); comms.forEach(c => { const key = (c.at + c.text); if (!seen.has(key)) { const li=document.createElement('li'); li.dataset.key = key; li.textContent = `${c.at} - ${c.text}`; cu.appendChild(li);} }); } } catch(e){} };
     document.getElementById('consent').onclick = () => { ws.send(JSON.stringify({topic:'captain.consent', data:{consent:true}})); setTimeout(()=>ws.send(JSON.stringify({topic:'captain.consent', data:{consent:false}})), 3000); };
     document.getElementById('periscopeBtn').onclick = () => { const next = per.classList.contains('off'); ws.send(JSON.stringify({topic:'captain.periscope.raise', data:{raised: next}})); };
     document.getElementById('radioBtn').onclick = () => { const next = rad.classList.contains('off'); ws.send(JSON.stringify({topic:'captain.radio.raise', data:{raised: next}})); };

@@ -40,6 +40,21 @@ class Simulation:
         # Station task state
         self._active_tasks: Dict[str, Optional[MaintenanceTask]] = {s: None for s in ["helm", "sonar", "weapons", "engineering"]}
         self._task_spawn_timers: Dict[str, float] = {s: 0.0 for s in ["helm", "sonar", "weapons", "engineering"]}
+        # Mission briefing and ROE
+        self.mission_brief = {
+            "title": "Patrol Box KILO-7",
+            "objective": "Shadow contact RED-01, maintain undetected posture, do not fire unless fired upon.",
+            "roe": [
+                "Weapons free upon hostile engagement or direct order.",
+                "Avoid active sonar unless necessary for navigation or identification.",
+                "Maintain EMCON; minimize mast raises."
+            ],
+            "comms_schedule": [
+                {"at_s": 120.0, "msg": "FLASH: New tasking window opens at 18:00Z. Await further instructions."},
+                {"at_s": 300.0, "msg": "INFO: Intel suggests RED-01 may alter course east within 10 minutes."}
+            ],
+        }
+        self._delivered_comms_idx = -1
 
     def _init_default_world(self) -> None:
         # Clear existing world and set to original game state
@@ -252,7 +267,7 @@ class Simulation:
         }
 
         tel_all = dict(base)
-        tel_captain = {**base, "periscopeRaised": self._periscope_raised, "radioRaised": self._radio_raised}
+        tel_captain = {**base, "periscopeRaised": self._periscope_raised, "radioRaised": self._radio_raised, "mission": {"title": self.mission_brief["title"], "objective": self.mission_brief["objective"], "roe": self.mission_brief["roe"]}, "comms": getattr(self, "_captain_comms", [])}
         tel_helm = {**base, "cavitationSpeedWarn": speed > 25.0, "thermocline": own.acoustics.thermocline_on, "task": (None if self._active_tasks['helm'] is None else self._active_tasks['helm'].__dict__)}
         # Prepare recent active ping responses list (bearing, range_est, strength, time)
         # For now, only generate on demand when 'sonar.ping' happens; UI will render as DEMON dots
@@ -303,6 +318,29 @@ class Simulation:
         if self._last_snapshot >= CONFIG.snapshot_s:
             self._last_snapshot = 0.0
             insert_snapshot(self.engine, self.run_id, heading, speed, depth)
+        # Handle timed comms after core tick; uses sim time
+        self._handle_captain_comms(dt)
+
+    def _handle_captain_comms(self, dt: float) -> None:
+        own = self.world.get_ship("ownship")
+        if not hasattr(self, "_sim_time_s"):
+            self._sim_time_s = 0.0
+        self._sim_time_s += dt
+        # Require shallow enough depth and radio raised
+        at_radio_depth = own.kin.depth <= 20.0 and self._radio_raised
+        if not at_radio_depth:
+            return
+        # Deliver next scheduled message if time passed
+        sched = self.mission_brief.get("comms_schedule", [])
+        next_idx = self._delivered_comms_idx + 1
+        if 0 <= next_idx < len(sched):
+            if self._sim_time_s >= sched[next_idx]["at_s"]:
+                # Append to captain comms list
+                if not hasattr(self, "_captain_comms"):
+                    self._captain_comms = []
+                ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                self._captain_comms.append({"at": ts, "text": sched[next_idx]["msg"]})
+                self._delivered_comms_idx = next_idx
 
     async def handle_command(self, topic: str, data: Dict) -> Optional[str]:
         own = self.world.get_ship("ownship")

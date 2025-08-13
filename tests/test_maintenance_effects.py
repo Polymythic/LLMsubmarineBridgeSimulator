@@ -87,3 +87,56 @@ def test_task_escalation_applies_penalties():
     assert after_turn <= before_turn
 
 
+def test_aggregated_penalties_use_worst_stage():
+    sim = Simulation()
+    own = sim.world.get_ship("ownship")
+
+    # Prevent auto-spawn during this test
+    sim._task_spawn_timers = {k: 1e9 for k in sim._task_spawn_timers.keys()}
+
+    # Seed two HELM tasks: one degraded and one failed
+    t_deg = MaintenanceTask(
+        id="t_deg",
+        station="helm",
+        system="rudder",
+        key="helm.rudder.linkage",
+        title="Rudder Linkage Adjust",
+        stage="degraded",
+        progress=0.0,
+        started=False,
+        base_deadline_s=20.0,
+        time_remaining_s=10.0,
+        created_at=0.0,
+    )
+    t_fail = MaintenanceTask(
+        id="t_fail",
+        station="helm",
+        system="rudder",
+        key="helm.hydraulics.fail",
+        title="Hydraulics Major Leak",
+        stage="failed",
+        progress=0.0,
+        started=False,
+        base_deadline_s=20.0,
+        time_remaining_s=10.0,
+        created_at=0.0,
+    )
+    sim._active_tasks["helm"] = [t_deg, t_fail]
+
+    # Aggregation should apply the worst (failed) penalties
+    sim._step_station_tasks(own, dt=0.0)
+    assert own.hull.turn_rate_max == 0.0
+
+    # Clearing the lesser (degraded) task should not clear penalties
+    sim._active_tasks["helm"] = [t_fail]
+    own.hull.turn_rate_max = 7.0  # reset to detect reapplication
+    sim._step_station_tasks(own, dt=0.0)
+    assert own.hull.turn_rate_max == 0.0
+
+    # Clearing all tasks should return penalties to normal for that station
+    sim._active_tasks["helm"] = []
+    own.hull.turn_rate_max = 3.0  # non-normal; expect reset to 7.0
+    sim._step_station_tasks(own, dt=0.0)
+    assert own.hull.turn_rate_max == 7.0
+
+

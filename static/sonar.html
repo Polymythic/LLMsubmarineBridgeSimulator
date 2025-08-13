@@ -147,7 +147,9 @@
     };
 
     document.getElementById('ping').onclick = () => { ws.send(JSON.stringify({topic:'sonar.ping', data:{array:'bow'}})); };
-    document.getElementById('repair').onclick = () => { ws.send(JSON.stringify({topic:'station.task.start', data:{station:'sonar'}})); };
+    // Fallback: global Repair button starts the most urgent SONAR task
+    const globalRepair = document.getElementById('repair');
+    if (globalRepair) { globalRepair.onclick = () => { ws.send(JSON.stringify({topic:'station.task.start', data:{station:'sonar'}})); }; }
   </script>
 </body>
 </html>

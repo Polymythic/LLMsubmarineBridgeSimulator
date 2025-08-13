@@ -82,7 +82,8 @@
       const doctrine = document.getElementById('doctrine').value;
       ws.send(JSON.stringify({topic:'weapons.fire', data:{tube: tube(), bearing, run_depth, enable_range, doctrine}}));
     };
-    // Per-task repair buttons are rendered above
+    // Fallback: global Repair button starts the most urgent WEAPONS task if present
+    (function(){ const btn = document.getElementById('repair'); if (btn) { btn.onclick = () => { ws.send(JSON.stringify({topic:'station.task.start', data:{station:'weapons'}})); }; } })();
   </script>
 </body>
 </html>

@@ -39,7 +39,7 @@ class Simulation:
         self._init_default_world()
         # Station task state
         self._active_tasks: Dict[str, list[MaintenanceTask]] = {s: [] for s in ["helm", "sonar", "weapons", "engineering"]}
-        self._task_spawn_timers: Dict[str, float] = {s: 0.0 for s in ["helm", "sonar", "weapons", "engineering"]}
+        self._task_spawn_timers: Dict[str, float] = {s: CONFIG.first_task_delay_s for s in ["helm", "sonar", "weapons", "engineering"]}
         # Mission briefing and ROE
         self.mission_brief = {
             "title": "Patrol Box KILO-7",
@@ -204,7 +204,8 @@ class Simulation:
             self._task_spawn_timers[station] -= dt
             if self._task_spawn_timers[station] <= 0.0:
                 self._spawn_task_for(station, now_s)
-                self._task_spawn_timers[station] = random.uniform(60.0, 120.0)
+                base = random.uniform(60.0, 120.0)
+                self._task_spawn_timers[station] = base / max(0.2, CONFIG.maint_spawn_scale)
 
         # Progress all active tasks based on power allocation for that station
         for station, tasks in self._active_tasks.items():
@@ -340,7 +341,7 @@ class Simulation:
             "engineering": station_status("engineering", own.systems.ballast_ok),
         }
 
-        # Periscope spotting: precise bearing/range/type for shallow targets within 15km when scope up and at depth
+        # Periscope spotting: precise bearing/range/type/speed for shallow targets within 15km when scope up and at depth
         periscope_contacts = []
         if self._periscope_raised and own.kin.depth <= 20.0:
             for s in self.world.all_ships():
@@ -352,7 +353,7 @@ class Simulation:
                     rng = (dx*dx + dy*dy) ** 0.5
                     if rng <= 15000.0:
                         brg_true = (math.degrees(math.atan2(dx, dy)) % 360.0)
-                        periscope_contacts.append({"id": s.id, "bearing": brg_true, "range_m": rng, "type": (s.side + " vessel")})
+                        periscope_contacts.append({"id": s.id, "bearing": brg_true, "range_m": rng, "speed_kn": s.kin.speed, "type": (s.side + " vessel")})
         tel_captain = {**base, "periscopeRaised": self._periscope_raised, "radioRaised": self._radio_raised, "mission": {"title": self.mission_brief["title"], "objective": self.mission_brief["objective"], "roe": self.mission_brief["roe"]}, "comms": getattr(self, "_captain_comms", []), "stationStatus": station_statuses, "periscopeContacts": periscope_contacts}
         tel_helm = {**base, "cavitationSpeedWarn": speed > 25.0, "thermocline": own.acoustics.thermocline_on, "tasks": [t.__dict__ for t in self._active_tasks['helm']]}
         # Prepare recent active ping responses list (bearing, range_est, strength, time)

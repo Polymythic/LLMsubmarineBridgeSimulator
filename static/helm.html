@@ -29,8 +29,15 @@
       </div>
       <div class="col">
         <svg id="depthLadder" viewBox="0 0 120 300" title="Depth ladder"></svg>
-        <div class="pill" id="task" title="Current maintenance task for Helm, if any">No active task</div>
-        <button id="repair" title="Start repairing the active task (makes it top priority)">Repair</button>
+        <div class="panel">
+          <h3>Maintenance</h3>
+          <div class="row">
+            <div class="pill" id="task" title="Current maintenance task for Helm, if any">No active task</div>
+            <button id="repair" title="Start repairing the active task (makes it top priority)">Repair</button>
+            <button id="defer" title="Defer the current task (it will escalate)">Defer</button>
+          </div>
+          <div class="label">Progress scales with station power allocation.</div>
+        </div>
       </div>
       <div class="col">
         <svg id="speedTele" viewBox="0 0 120 300" title="Speed telegraph"></svg>
@@ -105,6 +112,7 @@
     function stageLabel(stage){ return stage === 'normal' ? 'MAINTENANCE' : (stage === 'degraded' ? 'DEGRADED' : 'FAILED'); }
     ws.onmessage = (ev) => { try { const m = JSON.parse(ev.data); if (m.topic === 'telemetry') { const d=m.data; tel.textContent = JSON.stringify(d, null, 2); cav.textContent = 'Cavitation: ' + (d.ownship?.cavitation ? 'YES' : 'NO'); therm.textContent = 'Thermocline: ' + ((d.thermocline ?? true) ? 'ON' : 'OFF'); drawDial(hdgDial, d.ownship.heading, d.ownship.orderedHeading); drawLadder(depthLadder, d.ownship.depth, d.ownship.orderedDepth); drawTele(speedTele, d.ownship.speed, d.ownship.orderedSpeed); const t = d.task; const taskEl = document.getElementById('task'); if (t) { const color = stageColor(t.stage); const bg = stageBg(t.stage); taskEl.style.color = color; taskEl.style.borderColor = color; taskEl.style.backgroundColor = bg; const label = stageLabel(t.stage); taskEl.innerHTML = `🔧 ${t.title} — ${label} ${(t.progress*100).toFixed(0)}% — time to complete ${Math.max(0, t.time_remaining_s).toFixed(0)}s${t.started ? ' (REPAIRING)' : ''}`; } else { taskEl.textContent = 'No active task'; taskEl.style.color = '#D7E3FF'; taskEl.style.borderColor = '#1B2440'; taskEl.style.backgroundColor = '#0F162A'; } } } catch(e){} };
     document.getElementById('repair').onclick = () => { ws.send(JSON.stringify({topic:'station.task.start', data:{station:'helm'}})); };
+    document.getElementById('defer').onclick = () => { ws.send(JSON.stringify({topic:'station.task.defer', data:{station:'helm'}})); };
 
     // Keep simple inputs for ordering
     document.getElementById('send').onclick = () => {

@@ -25,8 +25,15 @@
         <button id="ping" title="Send an active ping; reveals ownship and returns noisy range+bearing">Active Ping</button>
         <div title="Ping cooldown in seconds">Ping cooldown: <span id="cd">0</span>s</div>
         <div class="label" title="Current EMCON risk from acoustics">EMCON: <span id="emcon">low</span></div>
-        <div class="label" id="task" title="Current maintenance task for Sonar, if any"></div>
-        <button id="repair" title="Start repairing the active sonar task">Repair</button>
+        <div class="panel">
+          <h3>Maintenance</h3>
+          <div class="row">
+            <div class="label" id="task" title="Current maintenance task for Sonar, if any"></div>
+            <button id="repair" title="Start repairing the active sonar task">Repair</button>
+            <button id="defer" title="Defer the current task (it will escalate)">Defer</button>
+          </div>
+          <div class="label">Progress scales with station power allocation.</div>
+        </div>
         <h3>Contacts</h3>
         <ul id="contacts" title="Bearing-only passive contacts"></ul>
         <h3>Ping Responses</h3>
@@ -142,6 +149,7 @@
 
     document.getElementById('ping').onclick = () => { ws.send(JSON.stringify({topic:'sonar.ping', data:{array:'bow'}})); };
     document.getElementById('repair').onclick = () => { ws.send(JSON.stringify({topic:'station.task.start', data:{station:'sonar'}})); };
+    document.getElementById('defer').onclick = () => { ws.send(JSON.stringify({topic:'station.task.defer', data:{station:'sonar'}})); };
   </script>
 </body>
 </html>

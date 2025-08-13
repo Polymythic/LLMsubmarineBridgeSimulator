@@ -20,8 +20,15 @@
     <h2>Weapons</h2>
     <div id="consent" title="Captain consent requirement before firing"></div>
     <div class="tubes" id="tubes" title="Tube state machine: Empty→Flooded→DoorsOpen; timers show progress."></div>
-    <div class="small" id="task" title="Current maintenance task for Weapons">No active task</div>
-    <button id="repair" title="Start repairing the active weapons task">Repair</button>
+    <div class="panel">
+      <h3>Maintenance</h3>
+      <div class="row">
+        <div class="small" id="task" title="Current maintenance task for Weapons">No active task</div>
+        <button id="repair" title="Start repairing the active weapons task">Repair</button>
+        <button id="defer" title="Defer the current task (it will escalate)">Defer</button>
+      </div>
+      <div class="small">Progress scales with station power allocation.</div>
+    </div>
     <label title="Select a tube to operate">Tube <input id="tube" type="number" min="1" max="6" value="1"></label>
     <div>
       <button id="load" title="Load a torpedo into the selected tube (starts reload timer)">Load</button>
@@ -77,6 +84,7 @@
       ws.send(JSON.stringify({topic:'weapons.fire', data:{tube: tube(), bearing, run_depth, enable_range, doctrine}}));
     };
     document.getElementById('repair').onclick = () => { ws.send(JSON.stringify({topic:'station.task.start', data:{station:'weapons'}})); };
+    document.getElementById('defer').onclick = () => { ws.send(JSON.stringify({topic:'station.task.defer', data:{station:'weapons'}})); };
   </script>
 </body>
 </html>

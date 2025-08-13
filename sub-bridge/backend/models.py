@@ -74,6 +74,7 @@ class TorpedoDef(BaseModel):
     name: str = "Mk48"
     speed: float = 45.0
     seeker_cone_deg: float = 35.0
+    seeker_range_m: float = 4000.0
     enable_range_m: float = 800.0
     max_run_time_s: float = 600.0
 

@@ -80,6 +80,7 @@ def try_fire(ship: Ship, tube_idx: int, bearing_deg: float, run_depth: float):
         "speed": tube.weapon.speed,
         "armed": False,
         "enable_range_m": tube.weapon.enable_range_m,
+        "seeker_range_m": getattr(tube.weapon, "seeker_range_m", 4000.0),
         "run_time": 0.0,
         "max_run_time": tube.weapon.max_run_time_s,
         "target_id": None,
@@ -159,6 +160,11 @@ def _nearest_target(t: dict, world):
         dx = ship.kin.x - t["x"]
         dy = ship.kin.y - t["y"]
         rng = math.hypot(dx, dy)
+        # Seeker range gating with simple environmental effect (thermocline reduces range)
+        own = world.ships.get("ownship")
+        env_mult = 0.6 if getattr(getattr(own, "acoustics", None), "thermocline_on", False) else 1.0
+        if rng > t.get("seeker_range_m", 4000.0) * env_mult:
+            continue
         # Compass bearing from torpedo to target
         bearing = (math.degrees(math.atan2(dx, dy)) % 360.0)
         off = abs(((bearing - t["heading"] + 540) % 360) - 180)

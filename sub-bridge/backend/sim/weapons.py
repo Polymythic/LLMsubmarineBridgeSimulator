@@ -68,7 +68,7 @@ def try_set_doors(ship: Ship, tube_idx: int, open_state: bool) -> bool:
     return False
 
 
-def try_fire(ship: Ship, tube_idx: int, bearing_deg: float, run_depth: float):
+def try_fire(ship: Ship, tube_idx: int, bearing_deg: float, run_depth: float, enable_range_m: float = None, doctrine: str = "passive_then_active"):
     tube = _get_tube(ship, tube_idx)
     if tube is None or tube.state != "DoorsOpen" or tube.weapon is None:
         return None
@@ -79,7 +79,7 @@ def try_fire(ship: Ship, tube_idx: int, bearing_deg: float, run_depth: float):
         "heading": bearing_deg % 360.0,
         "speed": tube.weapon.speed,
         "armed": False,
-        "enable_range_m": tube.weapon.enable_range_m,
+        "enable_range_m": (enable_range_m if enable_range_m is not None else tube.weapon.enable_range_m),
         "seeker_range_m": getattr(tube.weapon, "seeker_range_m", 4000.0),
         "run_time": 0.0,
         "max_run_time": tube.weapon.max_run_time_s,
@@ -88,6 +88,8 @@ def try_fire(ship: Ship, tube_idx: int, bearing_deg: float, run_depth: float):
         "seeker_cone": tube.weapon.seeker_cone_deg,
         "side": ship.side,
         "spoofed_timer": 0.0,
+        "run_depth": run_depth,
+        "doctrine": doctrine,
     }
     tube.weapon = None
     tube.state = "Empty"

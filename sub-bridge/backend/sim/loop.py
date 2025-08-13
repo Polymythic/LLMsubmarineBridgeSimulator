@@ -475,7 +475,14 @@ class Simulation:
         if topic == "weapons.fire":
             if CONFIG.require_captain_consent and not self._captain_consent:
                 return "Captain consent required"
-            torp = try_fire(own, int(data.get("tube", 1)), float(data.get("bearing", own.kin.heading)), float(data.get("run_depth", own.kin.depth)))
+            torp = try_fire(
+                own,
+                int(data.get("tube", 1)),
+                float(data.get("bearing", own.kin.heading)),
+                float(data.get("run_depth", own.kin.depth)),
+                float(data.get("enable_range", own.weapons.tubes[0].weapon.enable_range_m if own.weapons.tubes and own.weapons.tubes[0].weapon else 800.0)),
+                str(data.get("doctrine", "passive_then_active")),
+            )
             if torp is None:
                 return "Cannot fire"
             self.world.torpedoes.append(torp)

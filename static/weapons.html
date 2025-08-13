@@ -30,6 +30,12 @@
     </div>
     <label title="Set bearing to fire along">Bearing <input id="bearing" type="number" min="0" max="359" value="270"></label>
     <label title="Set commanded torpedo run depth">Run Depth <input id="rdepth" type="number" min="0" max="600" value="120"></label>
+    <label title="Seeker enable range (m)">Enable Range <input id="enable" type="number" min="100" max="8000" step="100" value="1500"></label>
+    <label title="Guidance doctrine">Doctrine
+      <select id="doctrine">
+        <option value="passive_then_active" selected>Passive→Active</option>
+      </select>
+    </label>
     <button id="fire" title="Fire the selected tube (interlocks apply)">Fire</button>
     <pre id="telemetry" title="Weapons telemetry and events"></pre>
   </div>
@@ -66,7 +72,9 @@
     document.getElementById('fire').onclick = () => {
       const bearing = parseFloat(document.getElementById('bearing').value);
       const run_depth = parseFloat(document.getElementById('rdepth').value);
-      ws.send(JSON.stringify({topic:'weapons.fire', data:{tube: tube(), bearing, run_depth}}));
+      const enable_range = parseFloat(document.getElementById('enable').value);
+      const doctrine = document.getElementById('doctrine').value;
+      ws.send(JSON.stringify({topic:'weapons.fire', data:{tube: tube(), bearing, run_depth, enable_range, doctrine}}));
     };
     document.getElementById('repair').onclick = () => { ws.send(JSON.stringify({topic:'station.task.start', data:{station:'weapons'}})); };
   </script>

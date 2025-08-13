@@ -208,6 +208,28 @@ class Simulation:
             if stage == "failed":
                 ship.systems.ballast_ok = False
 
+    def _recompute_penalties_from_tasks(self, ship: Ship) -> None:
+        """Aggregate active task stages per station and apply the worst effect.
+
+        This prevents a completed task from resetting penalties while other degraded/failed
+        tasks remain for the same station.
+        """
+        # Determine worst stage order
+        stage_rank = {"normal": 0, "degraded": 1, "damaged": 2, "failed": 3}
+        # Default to normal for all stations
+        worst_by_station = {s: "normal" for s in ["helm", "sonar", "weapons", "engineering"]}
+        for station, tasks in self._active_tasks.items():
+            if not tasks:
+                continue
+            worst = "normal"
+            for t in tasks:
+                if stage_rank[t.stage] > stage_rank[worst]:
+                    worst = t.stage
+            worst_by_station[station] = worst
+        # Apply aggregated penalties
+        for station, stage in worst_by_station.items():
+            self._apply_stage_penalties(ship, station, stage)
+
     def _step_station_tasks(self, ship: Ship, dt: float) -> None:
         now_s = time.perf_counter()
         # Spawn logic per station (allow multiple concurrent tasks)
@@ -229,7 +251,6 @@ class Simulation:
                     task.progress = min(1.0, task.progress + (0.2 * power_frac) * dt)
                 if task.progress >= 1.0:
                     ship.maintenance.levels[task.system] = min(1.0, ship.maintenance.levels.get(task.system, 1.0) + 0.1)
-                    self._apply_stage_penalties(ship, station, "normal")
                     tasks.remove(task)
                     continue
                 if task.time_remaining_s <= 0.0:
@@ -241,8 +262,9 @@ class Simulation:
                         task.stage = "failed"
                     if task.stage != "failed":
                         task.time_remaining_s = task.base_deadline_s
-                    self._apply_stage_penalties(ship, station, task.stage)
                     ship.maintenance.levels[task.system] = max(0.0, ship.maintenance.levels.get(task.system, 1.0) - (0.05 if task.stage == "degraded" else 0.1))
+        # After all updates, recompute aggregated penalties for accuracy
+        self._recompute_penalties_from_tasks(ship)
 
     async def run(self) -> None:
         last = time.perf_counter()

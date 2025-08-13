@@ -140,3 +140,50 @@ def test_aggregated_penalties_use_worst_stage():
     assert own.hull.turn_rate_max == 7.0
 
 
+def test_clicking_repair_spawns_task_if_none_and_progresses_with_power():
+    import asyncio
+    sim = Simulation()
+    own = sim.world.get_ship("ownship")
+
+    # Ensure no tasks for sonar
+    sim._active_tasks["sonar"] = []
+    # Allocate sonar power to drive progress
+    own.power.sonar = 1.0; own.power.helm = 0.0; own.power.weapons = 0.0; own.power.engineering = 0.0
+    # Click Repair -> should spawn and start
+    _ = asyncio.run(sim.handle_command("station.task.start", {"station": "sonar"}))
+    assert len(sim._active_tasks["sonar"]) == 1
+    assert sim._active_tasks["sonar"][0].started is True
+    p0 = sim._active_tasks["sonar"][0].progress
+    # Tick a bit and expect progress
+    for _ in range(10):
+        _ = asyncio.run(sim.tick(0.1))
+        if not sim._active_tasks["sonar"]:
+            break
+    if sim._active_tasks["sonar"]:
+        assert sim._active_tasks["sonar"][0].progress > p0
+
+
+def test_per_task_repair_only_advances_selected_task():
+    import asyncio
+    sim = Simulation()
+    own = sim.world.get_ship("ownship")
+    sim._task_spawn_timers = {k: 1e9 for k in sim._task_spawn_timers.keys()}
+    # Seed two SONAR tasks
+    t1 = MaintenanceTask(id="a", station="sonar", system="sonar", key="sonar.hydro.cal", title="Hydrophone Calibration", stage="normal", progress=0.0, started=False, base_deadline_s=20.0, time_remaining_s=10.0, created_at=0.0)
+    t2 = MaintenanceTask(id="b", station="sonar", system="sonar", key="sonar.preamp", title="Preamp Gain Trim", stage="normal", progress=0.0, started=False, base_deadline_s=20.0, time_remaining_s=10.0, created_at=0.0)
+    sim._active_tasks["sonar"] = [t1, t2]
+    own.power.helm = own.power.weapons = own.power.engineering = 0.0
+    own.power.sonar = 1.0
+    # Start only task b
+    _ = asyncio.run(sim.handle_command("station.task.start", {"station": "sonar", "task_id": "b"}))
+    assert sim._active_tasks["sonar"][0].started is False
+    assert sim._active_tasks["sonar"][1].started is True
+    # Tick and verify b progressed, a did not
+    p0a, p0b = sim._active_tasks["sonar"][0].progress, sim._active_tasks["sonar"][1].progress
+    for _ in range(10):
+        _ = asyncio.run(sim.tick(0.1))
+    pa, pb = sim._active_tasks["sonar"][0].progress, sim._active_tasks["sonar"][1].progress
+    assert pb > p0b
+    assert pa == p0a
+
+

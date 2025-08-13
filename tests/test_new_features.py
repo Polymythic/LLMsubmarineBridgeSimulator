@@ -181,7 +181,7 @@ def test_station_tasks_spawn_and_progress_with_power():
     elif st == "weapons": own.power.weapons = 1.0
     elif st == "sonar": own.power.sonar = 1.0
     else: own.power.engineering = 1.0
-    # Start/repair the task explicitly
+    # Start/repair the task explicitly; also covers case where none existed
     _ = asyncio.run(sim.handle_command("station.task.start", {"station": st}))
     p0 = sim._active_tasks[st][0].progress
     for _ in range(30):

@@ -67,7 +67,7 @@
             div.innerHTML = `<div title='Tube state and weapon type'>Tube ${t.idx}: ${t.state} ${t.weapon ? '('+t.weapon.name+')' : ''}</div><div class='small' title='Time remaining on current transition'>Timer${timer}</div><div class='small'>Flood:${canFlood?'YES':'NO'} Doors:${canDoors?'YES':'NO'} Fire:${canFire?'YES':'NO'}</div>`;
             tubes.appendChild(div);
           });
-          const tasks = m.data.tasks || []; const row = document.getElementById('tasksRow'); const repairBtn = document.getElementById('repair'); row.innerHTML=''; if (tasks.length === 0) { const el=document.createElement('div'); el.className='small'; el.textContent='No active task'; el.style.color='#D7E3FF'; el.style.borderColor='#1B2440'; el.style.backgroundColor='#0F162A'; row.appendChild(el); row.appendChild(repairBtn);} else { tasks.forEach((task)=>{ const el=document.createElement('div'); el.className='small'; const color = task.stage === 'normal' ? '#FACC15' : (task.stage === 'degraded' ? '#F59E0B' : '#EF4444'); const bg = task.stage === 'normal' ? 'rgba(250, 204, 21, 0.1)' : (task.stage === 'degraded' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)'); el.style.color=color; el.style.borderColor=color; el.style.backgroundColor=bg; el.textContent = `🔧 ${task.title} — ${task.stage.toUpperCase()} ${(task.progress*100).toFixed(0)}% — time to complete ${Math.max(0, task.time_remaining_s).toFixed(0)}s${task.started ? ' (REPAIRING)' : ''}`; row.appendChild(el); }); row.appendChild(repairBtn);} 
+          const tasks = m.data.tasks || []; const row = document.getElementById('tasksRow'); row.innerHTML=''; if (tasks.length === 0) { const el=document.createElement('div'); el.className='small'; el.textContent='No active task'; el.style.color='#D7E3FF'; el.style.borderColor='#1B2440'; el.style.backgroundColor='#0F162A'; row.appendChild(el);} else { tasks.forEach((task)=>{ const el=document.createElement('div'); el.className='small'; const color = task.stage === 'normal' ? '#FACC15' : (task.stage === 'degraded' ? '#F59E0B' : (task.stage === 'damaged' ? '#F97316' : '#EF4444')); const bg = task.stage === 'normal' ? 'rgba(250, 204, 21, 0.1)' : (task.stage === 'degraded' ? 'rgba(245, 158, 11, 0.1)' : (task.stage === 'damaged' ? 'rgba(249, 115, 22, 0.1)' : 'rgba(239, 68, 68, 0.1)')); el.style.color=color; el.style.borderColor=color; el.style.backgroundColor=bg; const label = task.stage === 'normal' ? 'MAINTENANCE' : (task.stage === 'degraded' ? 'DEGRADED' : (task.stage === 'damaged' ? 'DAMAGED' : 'FAILED')); const btn = document.createElement('button'); btn.textContent='Repair'; btn.style.marginLeft='8px'; btn.onclick = () => ws.send(JSON.stringify({topic:'station.task.start', data:{station:'weapons', task_id: task.id}})); el.textContent = `🔧 ${task.title} — ${label} ${(task.progress*100).toFixed(0)}% — time to complete ${Math.max(0, task.time_remaining_s).toFixed(0)}s${task.started ? ' (REPAIRING)' : ''}`; el.appendChild(btn); row.appendChild(el); }); } 
         }
       } catch(e){}
     };
@@ -82,7 +82,7 @@
       const doctrine = document.getElementById('doctrine').value;
       ws.send(JSON.stringify({topic:'weapons.fire', data:{tube: tube(), bearing, run_depth, enable_range, doctrine}}));
     };
-    document.getElementById('repair').onclick = () => { ws.send(JSON.stringify({topic:'station.task.start', data:{station:'weapons'}})); };
+    // Per-task repair buttons are rendered above
   </script>
 </body>
 </html>

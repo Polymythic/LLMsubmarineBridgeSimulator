@@ -535,9 +535,28 @@ class Simulation:
                 return "Unknown station"
             tasks = self._active_tasks[station]
             if not tasks:
-                return "No task to start"
-            # Mark earliest task as started (player clicked Repair)
-            tasks[0].started = True
+                # Spawn an immediate task if none exists yet, then start it
+                now_s = time.perf_counter()
+                self._spawn_task_for(station, now_s)
+                tasks = self._active_tasks[station]
+            # If a specific task_id was provided, start only that one; stop others
+            task_id = str(data.get("task_id", "")).strip()
+            if task_id:
+                found = False
+                for t in tasks:
+                    if t.id == task_id:
+                        t.started = True
+                        found = True
+                    else:
+                        t.started = False
+                if not found:
+                    return "Unknown task"
+            else:
+                # Choose the most urgent task: worst stage first, then shortest remaining time
+                stage_rank = {"normal": 0, "degraded": 1, "damaged": 2, "failed": 3}
+                tasks.sort(key=lambda t: (-stage_rank.get(t.stage, 0), t.time_remaining_s))
+                for i, t in enumerate(tasks):
+                    t.started = (i == 0)
             # Return None to indicate accepted
             return None
         if topic == "engineering.pump.toggle":

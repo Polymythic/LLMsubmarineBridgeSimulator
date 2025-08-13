@@ -555,4 +555,16 @@ class Simulation:
             # Reset to original game state
             self._init_default_world()
             return None
+        if topic == "debug.mission1":
+            # Configure a slow-moving surface contact for torpedo testing
+            # Keep ownship as-is; reposition/redesignate the RED ship
+            for ship in self.world.all_ships():
+                if ship.id != own.id and ship.side == "RED":
+                    ship.kin.x = 6000.0
+                    ship.kin.y = 0.0
+                    ship.kin.depth = 3.0  # surface contact
+                    ship.kin.heading = 90.0
+                    ship.kin.speed = 5.0
+                    break
+            return None
         return None

@@ -103,6 +103,8 @@
 
     ws.onmessage = (ev) => { try { const m = JSON.parse(ev.data); if (m.topic === 'telemetry') { ownEl.textContent = `hdg ${m.data.ownship.heading.toFixed(0)} spd ${m.data.ownship.speed.toFixed(1)} dpt ${m.data.ownship.depth.toFixed(0)}`; render(m.data); } } catch(e){} };
     document.getElementById('restart').onclick = () => { ws.send(JSON.stringify({topic:'debug.restart', data:{}})); };
+    const mission = document.createElement('button'); mission.textContent = 'Mission 1'; mission.onclick = () => { ws.send(JSON.stringify({topic:'debug.mission1', data:{}})); };
+    document.body.appendChild(mission);
   </script>
 </body>
 </html>

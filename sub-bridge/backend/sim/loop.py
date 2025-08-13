@@ -38,7 +38,7 @@ class Simulation:
         self._last_ping_at = None
         self._init_default_world()
         # Station task state
-        self._active_tasks: Dict[str, Optional[MaintenanceTask]] = {s: None for s in ["helm", "sonar", "weapons", "engineering"]}
+        self._active_tasks: Dict[str, list[MaintenanceTask]] = {s: [] for s in ["helm", "sonar", "weapons", "engineering"]}
         self._task_spawn_timers: Dict[str, float] = {s: 0.0 for s in ["helm", "sonar", "weapons", "engineering"]}
         # Mission briefing and ROE
         self.mission_brief = {
@@ -158,10 +158,10 @@ class Simulation:
         system, key, title = random.choice(choices)
         base_deadline = random.uniform(25.0, 45.0)
         tid = f"{station}-{int(now_s*1000)%100000}-{random.randint(100,999)}"
-        self._active_tasks[station] = MaintenanceTask(
+        self._active_tasks[station].append(MaintenanceTask(
             id=tid, station=station, system=system, key=key, title=title,
             stage="normal", progress=0.0, base_deadline_s=base_deadline, time_remaining_s=base_deadline, created_at=now_s
-        )
+        ))
 
     def _station_power_fraction(self, ship: Ship, station: str) -> float:
         p = ship.power
@@ -199,50 +199,38 @@ class Simulation:
 
     def _step_station_tasks(self, ship: Ship, dt: float) -> None:
         now_s = time.perf_counter()
-        # Spawn logic per station
+        # Spawn logic per station (allow multiple concurrent tasks)
         for station in self._active_tasks.keys():
-            if self._active_tasks[station] is None:
-                self._task_spawn_timers[station] -= dt
-                if self._task_spawn_timers[station] <= 0.0:
-                    # Random spawn; interval depends on maintenance state of linked system
-                    self._spawn_task_for(station, now_s)
-                    # Next spawn after 60-120s
-                    self._task_spawn_timers[station] = random.uniform(60.0, 120.0)
+            self._task_spawn_timers[station] -= dt
+            if self._task_spawn_timers[station] <= 0.0:
+                self._spawn_task_for(station, now_s)
+                self._task_spawn_timers[station] = random.uniform(60.0, 120.0)
 
-        # Progress active tasks based on power allocation for that station
-        for station, task in self._active_tasks.items():
-            if task is None:
+        # Progress all active tasks based on power allocation for that station
+        for station, tasks in self._active_tasks.items():
+            if not tasks:
                 continue
             power_frac = self._station_power_fraction(ship, station)
-            # Only one task per station; progress toward completion
-            task.time_remaining_s = max(0.0, task.time_remaining_s - dt)
-            # Progress only if explicitly started by station crew (clicked Repair)
-            if task.started:
-                task.progress = min(1.0, task.progress + (0.2 * power_frac) * dt)  # completes in ~5s at full power
-            # If completed
-            if task.progress >= 1.0:
-                # Apply recovery: maintenance bump and clear penalties
-                ship.maintenance.levels[task.system] = min(1.0, ship.maintenance.levels.get(task.system, 1.0) + 0.1)
-                self._apply_stage_penalties(ship, station, "normal")
-                self._active_tasks[station] = None
-                continue
-            # If deadline passed without completion → escalate stage
-            if task.time_remaining_s <= 0.0:
-                if task.stage == "normal":
-                    task.stage = "degraded"
-                    task.base_deadline_s *= 1.25
-                elif task.stage == "degraded":
-                    task.stage = "damaged"
-                    task.base_deadline_s *= 1.5
-                elif task.stage == "damaged":
-                    task.stage = "failed"
-                # Reset countdown for next stage unless failed
-                if task.stage != "failed":
-                    task.time_remaining_s = task.base_deadline_s
-                # Apply penalties immediately
-                self._apply_stage_penalties(ship, station, task.stage)
-                # Also degrade maintenance slowly downwards
-                ship.maintenance.levels[task.system] = max(0.0, ship.maintenance.levels.get(task.system, 1.0) - (0.05 if task.stage == "degraded" else 0.1))
+            for task in list(tasks):
+                task.time_remaining_s = max(0.0, task.time_remaining_s - dt)
+                if task.started:
+                    task.progress = min(1.0, task.progress + (0.2 * power_frac) * dt)
+                if task.progress >= 1.0:
+                    ship.maintenance.levels[task.system] = min(1.0, ship.maintenance.levels.get(task.system, 1.0) + 0.1)
+                    self._apply_stage_penalties(ship, station, "normal")
+                    tasks.remove(task)
+                    continue
+                if task.time_remaining_s <= 0.0:
+                    if task.stage == "normal":
+                        task.stage = "degraded"; task.base_deadline_s *= 1.25
+                    elif task.stage == "degraded":
+                        task.stage = "damaged"; task.base_deadline_s *= 1.5
+                    elif task.stage == "damaged":
+                        task.stage = "failed"
+                    if task.stage != "failed":
+                        task.time_remaining_s = task.base_deadline_s
+                    self._apply_stage_penalties(ship, station, task.stage)
+                    ship.maintenance.levels[task.system] = max(0.0, ship.maintenance.levels.get(task.system, 1.0) - (0.05 if task.stage == "degraded" else 0.1))
 
     async def run(self) -> None:
         last = time.perf_counter()
@@ -340,10 +328,10 @@ class Simulation:
         def station_status(station: str, ok_flag: bool) -> str:
             if not ok_flag:
                 return "Failed"
-            t = self._active_tasks.get(station)
-            if t is None:
+            tasks = self._active_tasks.get(station, [])
+            if not tasks:
                 return "OK"
-            return "Degraded" if t.stage in ("degraded", "damaged") else "OK"
+            return "Degraded" if any(t.stage in ("degraded", "damaged") for t in tasks) else "OK"
 
         station_statuses = {
             "helm": station_status("helm", own.systems.rudder_ok),
@@ -366,14 +354,14 @@ class Simulation:
                         brg_true = (math.degrees(math.atan2(dx, dy)) % 360.0)
                         periscope_contacts.append({"id": s.id, "bearing": brg_true, "range_m": rng, "type": (s.side + " vessel")})
         tel_captain = {**base, "periscopeRaised": self._periscope_raised, "radioRaised": self._radio_raised, "mission": {"title": self.mission_brief["title"], "objective": self.mission_brief["objective"], "roe": self.mission_brief["roe"]}, "comms": getattr(self, "_captain_comms", []), "stationStatus": station_statuses, "periscopeContacts": periscope_contacts}
-        tel_helm = {**base, "cavitationSpeedWarn": speed > 25.0, "thermocline": own.acoustics.thermocline_on, "task": (None if self._active_tasks['helm'] is None else self._active_tasks['helm'].__dict__)}
+        tel_helm = {**base, "cavitationSpeedWarn": speed > 25.0, "thermocline": own.acoustics.thermocline_on, "tasks": [t.__dict__ for t in self._active_tasks['helm']]}
         # Prepare recent active ping responses list (bearing, range_est, strength, time)
         # For now, only generate on demand when 'sonar.ping' happens; UI will render as DEMON dots
         if not hasattr(self, "_last_ping_responses"):
             self._last_ping_responses = []
-        tel_sonar = {**base, "contacts": [c.dict() for c in contacts], "pingCooldown": max(0.0, self.active_ping_state.timer), "pingResponses": list(self._last_ping_responses), "lastPingAt": getattr(self, "_last_ping_at", None), "task": (None if self._active_tasks['sonar'] is None else self._active_tasks['sonar'].__dict__)}
-        tel_weapons = {**base, "tubes": [t.dict() for t in own.weapons.tubes], "consentRequired": CONFIG.require_captain_consent, "captainConsent": self._captain_consent, "task": (None if self._active_tasks['weapons'] is None else self._active_tasks['weapons'].__dict__)}
-        tel_engineering = {**base, "reactor": own.reactor.dict(), "pumps": {"fwd": self._pump_fwd, "aft": self._pump_aft}, "damage": own.damage.dict(), "power": own.power.dict(), "systems": own.systems.dict(), "maintenance": own.maintenance.levels, "task": (None if self._active_tasks['engineering'] is None else self._active_tasks['engineering'].__dict__)}
+        tel_sonar = {**base, "contacts": [c.dict() for c in contacts], "pingCooldown": max(0.0, self.active_ping_state.timer), "pingResponses": list(self._last_ping_responses), "lastPingAt": getattr(self, "_last_ping_at", None), "tasks": [t.__dict__ for t in self._active_tasks['sonar']]}
+        tel_weapons = {**base, "tubes": [t.dict() for t in own.weapons.tubes], "consentRequired": CONFIG.require_captain_consent, "captainConsent": self._captain_consent, "tasks": [t.__dict__ for t in self._active_tasks['weapons']]}
+        tel_engineering = {**base, "reactor": own.reactor.dict(), "pumps": {"fwd": self._pump_fwd, "aft": self._pump_aft}, "damage": own.damage.dict(), "power": own.power.dict(), "systems": own.systems.dict(), "maintenance": own.maintenance.levels, "tasks": [t.__dict__ for t in self._active_tasks['engineering']]}
 
         def bearings_to(sx: float, sy: float) -> Dict[str, float]:
             # Compass bearing: 0=N, 90=E, 180=S, 270=W
@@ -511,25 +499,12 @@ class Simulation:
             station = str(data.get("station", "")).lower()
             if station not in self._active_tasks:
                 return "Unknown station"
-            # Only one task per station; start if exists and not in progress
-            t = self._active_tasks[station]
-            if t is None:
+            tasks = self._active_tasks[station]
+            if not tasks:
                 return "No task to start"
-            # Mark as started (player clicked Repair)
-            t.started = True
+            # Mark earliest task as started (player clicked Repair)
+            tasks[0].started = True
             # Return None to indicate accepted
-            return None
-        if topic == "station.task.defer":
-            station = str(data.get("station", "")).lower()
-            if station not in self._active_tasks:
-                return "Unknown station"
-            # Defer: small severity bump and respawn later
-            t = self._active_tasks[station]
-            if t is None:
-                return None
-            t.stage = "degraded"
-            self._active_tasks[station] = None
-            self._task_spawn_timers[station] = 15.0
             return None
         if topic == "engineering.pump.toggle":
             name = str(data.get("pump", "")).lower()

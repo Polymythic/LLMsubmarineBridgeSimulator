@@ -172,7 +172,7 @@ def test_station_tasks_spawn_and_progress_with_power():
     for _ in range(5):
         _ = asyncio.run(sim.tick(0.05))
     # Expect some tasks present (randomized, but at least one station should have a task)
-    active = [k for k, v in sim._active_tasks.items() if v is not None]
+    active = [k for k, v in sim._active_tasks.items() if v]
     assert len(active) >= 1
     # Allocate high power to first station and tick to progress
     st = active[0]
@@ -183,14 +183,14 @@ def test_station_tasks_spawn_and_progress_with_power():
     else: own.power.engineering = 1.0
     # Start/repair the task explicitly
     _ = asyncio.run(sim.handle_command("station.task.start", {"station": st}))
-    p0 = sim._active_tasks[st].progress
+    p0 = sim._active_tasks[st][0].progress
     for _ in range(30):
         _ = asyncio.run(sim.tick(0.1))
-        if sim._active_tasks.get(st) is None:
+        if not sim._active_tasks.get(st):
             break
     # Either completed (cleared) or progressed
-    if sim._active_tasks.get(st) is None:
+    if not sim._active_tasks.get(st):
         assert True
     else:
-        assert sim._active_tasks[st].progress > p0
+        assert sim._active_tasks[st][0].progress > p0
 

@@ -22,10 +22,9 @@
     <div class="tubes" id="tubes" title="Tube state machine: Empty→Flooded→DoorsOpen; timers show progress."></div>
     <div class="panel">
       <h3>Maintenance</h3>
-      <div class="row">
+      <div class="row" id="tasksRow">
         <div class="small" id="task" title="Current maintenance task for Weapons">No active task</div>
         <button id="repair" title="Start repairing the active weapons task">Repair</button>
-        <button id="defer" title="Defer the current task (it will escalate)">Defer</button>
       </div>
       <div class="small">Progress scales with station power allocation.</div>
     </div>
@@ -68,7 +67,7 @@
             div.innerHTML = `<div title='Tube state and weapon type'>Tube ${t.idx}: ${t.state} ${t.weapon ? '('+t.weapon.name+')' : ''}</div><div class='small' title='Time remaining on current transition'>Timer${timer}</div><div class='small'>Flood:${canFlood?'YES':'NO'} Doors:${canDoors?'YES':'NO'} Fire:${canFire?'YES':'NO'}</div>`;
             tubes.appendChild(div);
           });
-          const taskEl = document.getElementById('task'); const task = m.data.task; if (task) { const color = task.stage === 'normal' ? '#FACC15' : (task.stage === 'degraded' ? '#F59E0B' : '#EF4444'); const bg = task.stage === 'normal' ? 'rgba(250, 204, 21, 0.1)' : (task.stage === 'degraded' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)'); taskEl.style.color = color; taskEl.style.borderColor = color; taskEl.style.backgroundColor = bg; taskEl.textContent = `🔧 ${task.title} — ${task.stage.toUpperCase()} ${(task.progress*100).toFixed(0)}% — time to complete ${Math.max(0, task.time_remaining_s).toFixed(0)}s${task.started ? ' (REPAIRING)' : ''}`; } else { taskEl.textContent = 'No active task'; taskEl.style.color = '#D7E3FF'; taskEl.style.borderColor = '#1B2440'; taskEl.style.backgroundColor = '#0F162A'; }
+          const tasks = m.data.tasks || []; const row = document.getElementById('tasksRow'); row.querySelectorAll('.small').forEach((el, idx) => { if (idx>0) el.remove(); }); if (tasks.length === 0) { const taskEl = document.getElementById('task'); taskEl.textContent = 'No active task'; taskEl.style.color = '#D7E3FF'; taskEl.style.borderColor = '#1B2440'; taskEl.style.backgroundColor = '#0F162A'; } else { const base = document.getElementById('task'); base.removeAttribute('id'); tasks.forEach((task, i) => { const el = i===0 ? base : base.cloneNode(true); const color = task.stage === 'normal' ? '#FACC15' : (task.stage === 'degraded' ? '#F59E0B' : '#EF4444'); const bg = task.stage === 'normal' ? 'rgba(250, 204, 21, 0.1)' : (task.stage === 'degraded' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)'); el.style.color = color; el.style.borderColor = color; el.style.backgroundColor = bg; el.textContent = `🔧 ${task.title} — ${task.stage.toUpperCase()} ${(task.progress*100).toFixed(0)}% — time to complete ${Math.max(0, task.time_remaining_s).toFixed(0)}s${task.started ? ' (REPAIRING)' : ''}`; row.insertBefore(el, document.getElementById('repair')); }); }
         }
       } catch(e){}
     };
@@ -84,7 +83,6 @@
       ws.send(JSON.stringify({topic:'weapons.fire', data:{tube: tube(), bearing, run_depth, enable_range, doctrine}}));
     };
     document.getElementById('repair').onclick = () => { ws.send(JSON.stringify({topic:'station.task.start', data:{station:'weapons'}})); };
-    document.getElementById('defer').onclick = () => { ws.send(JSON.stringify({topic:'station.task.defer', data:{station:'weapons'}})); };
   </script>
 </body>
 </html>

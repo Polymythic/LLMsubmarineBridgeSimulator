@@ -77,13 +77,13 @@ def test_task_escalation_applies_penalties():
         time_remaining_s=0.0,
         created_at=0.0,
     )
-    sim._active_tasks["helm"] = t
+    sim._active_tasks["helm"] = [t]
 
     # Capture current turn rate, then step tasks to trigger escalation to degraded
     before_turn = own.hull.turn_rate_max
     sim._step_station_tasks(own, dt=0.1)
     after_turn = own.hull.turn_rate_max
-    assert sim._active_tasks["helm"].stage in ("degraded", "damaged", "failed")
+    assert sim._active_tasks["helm"][0].stage in ("degraded", "damaged", "failed")
     assert after_turn <= before_turn
 
 

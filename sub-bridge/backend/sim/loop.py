@@ -95,6 +95,17 @@ class Simulation:
         self._last_ping_responses = []
         self._last_ping_at = None
         self.active_ping_state = ActivePingState(cooldown_s=12.0)
+        # Reset maintenance/task state and timers on restart
+        if hasattr(self, "_active_tasks"):
+            self._active_tasks = {s: [] for s in ["helm", "sonar", "weapons", "engineering"]}
+        if hasattr(self, "_task_spawn_timers"):
+            from ..config import CONFIG as _C
+            self._task_spawn_timers = {s: _C.first_task_delay_s for s in ["helm", "sonar", "weapons", "engineering"]}
+        # Reset storm/emcon timers
+        if hasattr(self, "_emcon_high_timer"):
+            self._emcon_high_timer = 0.0
+        if hasattr(self, "_storm_timer"):
+            self._storm_timer = 0.0
 
     def stop(self) -> None:
         self._stop.set()

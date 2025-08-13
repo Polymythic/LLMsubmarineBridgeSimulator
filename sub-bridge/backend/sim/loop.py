@@ -55,6 +55,9 @@ class Simulation:
             ],
         }
         self._delivered_comms_idx = -1
+        # EMCON and storms
+        self._emcon_high_timer = 0.0
+        self._storm_timer = 0.0
 
     def _init_default_world(self) -> None:
         # Clear existing world and set to original game state
@@ -309,6 +312,12 @@ class Simulation:
         noise_pumps = 10.0 if (self._pump_fwd or self._pump_aft) else 0.0
         noise_masts = (10.0 if self._periscope_raised else 0.0) + (10.0 if self._radio_raised else 0.0)
         noise_budget = max(0.0, min(100.0, noise_from_speed + noise_cav + noise_pumps + noise_masts))
+        # EMCON pressure: sustained high noise raises alert
+        if noise_budget >= 60.0:
+            self._emcon_high_timer = min(30.0, self._emcon_high_timer + dt)
+        else:
+            self._emcon_high_timer = max(0.0, self._emcon_high_timer - dt)
+        emcon_alert = self._emcon_high_timer >= 10.0
         detectability = noise_budget / 100.0
         contacts = passive_contacts(own, [s for s in self.world.all_ships() if s.id != own.id])
 
@@ -322,7 +331,7 @@ class Simulation:
                 "depth": depth,
                 "cavitation": cav,
             },
-            "acoustics": {"noiseBudget": noise_budget, "detectability": detectability, "emconRisk": ("high" if noise_budget >= 75 else "med" if noise_budget >= 40 else "low")},
+            "acoustics": {"noiseBudget": noise_budget, "detectability": detectability, "emconRisk": ("high" if noise_budget >= 75 else "med" if noise_budget >= 40 else "low"), "emconAlert": emcon_alert},
             "events": list(self._transient_events),
         }
 
@@ -343,7 +352,20 @@ class Simulation:
             "engineering": station_status("engineering", own.systems.ballast_ok),
         }
 
-        tel_captain = {**base, "periscopeRaised": self._periscope_raised, "radioRaised": self._radio_raised, "mission": {"title": self.mission_brief["title"], "objective": self.mission_brief["objective"], "roe": self.mission_brief["roe"]}, "comms": getattr(self, "_captain_comms", []), "stationStatus": station_statuses}
+        # Periscope spotting: precise bearing/range/type for shallow targets within 15km when scope up and at depth
+        periscope_contacts = []
+        if self._periscope_raised and own.kin.depth <= 20.0:
+            for s in self.world.all_ships():
+                if s.id == own.id:
+                    continue
+                if s.kin.depth <= 5.0:
+                    dx = s.kin.x - own.kin.x
+                    dy = s.kin.y - own.kin.y
+                    rng = (dx*dx + dy*dy) ** 0.5
+                    if rng <= 15000.0:
+                        brg_true = (math.degrees(math.atan2(dx, dy)) % 360.0)
+                        periscope_contacts.append({"id": s.id, "bearing": brg_true, "range_m": rng, "type": (s.side + " vessel")})
+        tel_captain = {**base, "periscopeRaised": self._periscope_raised, "radioRaised": self._radio_raised, "mission": {"title": self.mission_brief["title"], "objective": self.mission_brief["objective"], "roe": self.mission_brief["roe"]}, "comms": getattr(self, "_captain_comms", []), "stationStatus": station_statuses, "periscopeContacts": periscope_contacts}
         tel_helm = {**base, "cavitationSpeedWarn": speed > 25.0, "thermocline": own.acoustics.thermocline_on, "task": (None if self._active_tasks['helm'] is None else self._active_tasks['helm'].__dict__)}
         # Prepare recent active ping responses list (bearing, range_est, strength, time)
         # For now, only generate on demand when 'sonar.ping' happens; UI will render as DEMON dots
@@ -381,6 +403,8 @@ class Simulation:
 
         await BUS.publish("tick:all", {"topic": "telemetry", "data": tel_all})
         await BUS.publish("tick:captain", {"topic": "telemetry", "data": tel_captain})
+        # Store for tests/inspection
+        self._last_captain_tel = tel_captain
         await BUS.publish("tick:helm", {"topic": "telemetry", "data": tel_helm})
         await BUS.publish("tick:sonar", {"topic": "telemetry", "data": tel_sonar})
         await BUS.publish("tick:weapons", {"topic": "telemetry", "data": tel_weapons})

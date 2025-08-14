@@ -198,7 +198,9 @@ class AgentsOrchestrator:
         }
         try:
             summary = self._build_fleet_summary()
-            intent = await asyncio.wait_for(self._fleet_decide(summary), timeout=max(1.0, CONFIG.ai_poll_s))
+            intent_raw = await asyncio.wait_for(self._fleet_decide(summary), timeout=max(1.0, CONFIG.ai_poll_s))
+            # Normalize/augment intent to ensure objectives/guidance present
+            intent = self._normalize_intent(summary, intent_raw)
             result["tool_calls"] = [{"tool": "set_fleet_intent", "arguments": intent}]
             # Validation/clamping would occur here (placeholder: accept as-is)
             result["tool_calls_validated"] = result["tool_calls"]
@@ -231,6 +233,44 @@ class AgentsOrchestrator:
         finally:
             result["duration_ms"] = int((time.perf_counter() - started) * 1000)
         return result
+
+    def _normalize_intent(self, fleet_summary: Dict[str, Any], intent: Dict[str, Any]) -> Dict[str, Any]:
+        intent = dict(intent or {})
+        objectives = intent.get("objectives")
+        # Ensure dict objectives keyed by ship id
+        if not isinstance(objectives, dict):
+            objectives = {}
+        # If empty, derive from mission target_wp for each RED ship
+        mission = fleet_summary.get("mission", {}) or {}
+        target = mission.get("target_wp")
+        if target and isinstance(target, (list, tuple)) and len(target) == 2 and not objectives:
+            for s in (fleet_summary.get("own_fleet", []) or []):
+                sid = s.get("id")
+                if not sid:
+                    continue
+                objectives[sid] = {"destination": [float(target[0]), float(target[1])]}
+        # Engagement rules: default from mission ROE
+        er = intent.get("engagement_rules")
+        if not isinstance(er, dict):
+            er = {}
+        if "weapons_free" not in er:
+            er["weapons_free"] = bool((mission.get("roe") or {}).get("weapons_free", False))
+        intent["engagement_rules"] = er
+        intent["objectives"] = objectives
+        # Optional advisory notes
+        notes = intent.get("notes")
+        if not isinstance(notes, list):
+            notes = []
+        hint = mission.get("ai_fleet_prompt")
+        if hint and all("sub" not in (n.get("text","")) for n in notes if isinstance(n, dict)):
+            if "sub" in str(hint).lower():
+                # Add a simple advisory applicable to all
+                for s in (fleet_summary.get("own_fleet", []) or []):
+                    sid = s.get("id")
+                    if sid:
+                        notes.append({"ship_id": sid, "text": "Warning: possible enemy submarine in area."})
+        intent["notes"] = notes
+        return intent
 
     async def run_ship(self, ship_id: str, parent_run_id: Optional[str] = None) -> RunResult:
         started = time.perf_counter()

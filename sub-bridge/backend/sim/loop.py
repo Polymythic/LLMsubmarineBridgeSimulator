@@ -358,7 +358,7 @@ class Simulation:
                     # Persist tool calls for trace
                     for tc in res.get("tool_calls_validated", []):
                         insert_event(self.engine, self.run_id, "ai.tool.fleet", json.dumps(tc))
-                        # Update world-level FleetIntent for UI only (not yet consumed by ships)
+                        # Update world-level FleetIntent for UI and ship guidance
                         if tc.get("tool") == "set_fleet_intent":
                             self._fleet_intent = tc.get("arguments", {})
                             # Also attach to orchestrator so ship summaries can see guidance slice

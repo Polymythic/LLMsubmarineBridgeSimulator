@@ -222,11 +222,16 @@ class AgentsOrchestrator:
             summary = self._build_ship_summary(ship)
             tool = await asyncio.wait_for(self._ship_decide(ship, summary), timeout=max(1.0, CONFIG.ai_poll_s))
             result["tool_calls"] = [tool]
-            # Minimal validation/clamping placeholder: ensure known tool
-            tool_name = tool.get("tool")
+            # Validate tool; fallback to a conservative set_nav if invalid
+            tool_name = (tool or {}).get("tool") if isinstance(tool, dict) else None
             if tool_name not in ("set_nav", "fire_torpedo", "deploy_countermeasure"):
-                raise ValueError("Unknown tool returned by engine")
-            result["tool_calls_validated"] = [tool]
+                # Fallback: conservative navigation respecting constraints
+                fallback = self._stub.propose_orders(ship)
+                result["tool_calls_validated"] = [fallback]
+                # Mark error message to surface in UI trace
+                result["error"] = "Unknown tool returned by engine; applied fallback set_nav"
+            else:
+                result["tool_calls_validated"] = [tool]
             insert_event(self._storage_engine, self._run_id, "ai.run.ship", json.dumps({
                 "ship_id": ship_id,
                 "summary_size": len(str(summary)),

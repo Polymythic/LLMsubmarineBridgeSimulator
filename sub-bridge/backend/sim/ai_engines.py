@@ -112,7 +112,8 @@ class OllamaAgentsEngine(BaseEngine):
         content = await self._chat(system, user)
         obj = _extract_json(content)
         if obj is None:
-            raise ValueError("Failed to parse FleetIntent JSON from Ollama response")
+            # Graceful no-op: return empty intent so orchestrator can continue
+            return {"objectives": [], "groups": {}, "target_priority": [], "engagement_rules": {}, "emcon": {}}
         return obj
 
     async def propose_ship_tool(self, ship: Ship, ship_summary: Dict[str, Any]) -> Dict[str, Any]:
@@ -127,7 +128,8 @@ class OllamaAgentsEngine(BaseEngine):
         content = await self._chat(system, user)
         obj = _extract_json(content)
         if obj is None:
-            raise ValueError("Failed to parse tool call JSON from Ollama response")
+            # Fallback handled by orchestrator validation; return an impossible tool to trigger fallback
+            return {"tool": "unknown", "arguments": {}}
         return obj
 
 

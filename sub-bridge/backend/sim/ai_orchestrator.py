@@ -93,16 +93,34 @@ class AgentsOrchestrator:
                 "weapons": {"tubes_ready": sum(1 for t in ship.weapons.tubes if t.state == "DoorsOpen"), "ammo": {"torpedo": ship.weapons.torpedoes_stored}},
                 "detectability": {"noise": getattr(ship.acoustics, "last_detectability", 0.0)},
             })
-        # Aggregated enemy belief: minimal placeholder (bearing-only contacts would be computed by sonar, not here)
+        # Aggregated enemy belief: TODO hook from sonar; placeholder empty
         enemy_belief: List[Dict[str, Any]] = []
+        # Mission objective provided by Simulation (if attached by creator)
+        mission_brief = getattr(self, "_mission_brief", None)
+        if isinstance(mission_brief, dict):
+            mission_roe = {"weapons_free": any(
+                isinstance(r, str) and ("Weapons release authorized" in r)
+                for r in mission_brief.get("roe", [])
+            )}
+            mission = {"objective": mission_brief.get("objective"), "roe": mission_roe}
+        else:
+            mission = {"roe": {"weapons_free": False}}
         return {
             "time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "own_fleet": own_fleet,
             "enemy_belief": enemy_belief,
-            "mission": {"roe": {"weapons_free": False}},
+            "mission": mission,
         }
 
     def _build_ship_summary(self, ship: Ship) -> Dict[str, Any]:
+        # Provide a narrow slice of fleet intent if available, e.g., guidance for this ship
+        fleet_intent = {}
+        try:
+            # world-level fleet intent is maintained by sim loop into orchestrator recent runs mirror
+            # We do not require this to exist; default to empty
+            fleet_intent = getattr(self, "_last_fleet_intent", {})
+        except Exception:
+            fleet_intent = {}
         return {
             "self": {
                 "id": ship.id,
@@ -124,7 +142,7 @@ class AgentsOrchestrator:
             # Local contacts should come from sonar; orchestrator does not have ground-truth enemy positions
             "contacts": [],
             "orders_last": {},
-            "fleet_intent": {},
+            "fleet_intent": fleet_intent,
             "detected_state": {"alert": False},
         }
 
@@ -171,6 +189,17 @@ class AgentsOrchestrator:
             })  # type: ignore[attr-defined]
         except Exception as e:
             result["error"] = str(e)
+            # Surface errors to Fleet UI recent runs
+            try:
+                if not hasattr(self, "_recent_runs"):
+                    self._recent_runs = []  # type: ignore[attr-defined]
+                self._recent_runs.append({  # type: ignore[attr-defined]
+                    "agent": "fleet",
+                    "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "error": result["error"],
+                })
+            except Exception:
+                pass
         finally:
             result["duration_ms"] = int((time.perf_counter() - started) * 1000)
         return result
@@ -213,6 +242,18 @@ class AgentsOrchestrator:
             })  # type: ignore[attr-defined]
         except Exception as e:
             result["error"] = str(e)
+            # Surface errors to Fleet UI recent runs
+            try:
+                if not hasattr(self, "_recent_runs"):
+                    self._recent_runs = []  # type: ignore[attr-defined]
+                self._recent_runs.append({  # type: ignore[attr-defined]
+                    "agent": "ship",
+                    "ship_id": ship_id,
+                    "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "error": result["error"],
+                })
+            except Exception:
+                pass
         finally:
             result["duration_ms"] = int((time.perf_counter() - started) * 1000)
         return result

@@ -68,6 +68,11 @@ class Simulation:
             try:
                 self._ai_orch.set_fleet_engine(getattr(CONFIG, "ai_fleet_engine", "stub"), getattr(CONFIG, "ai_fleet_model", "stub"))
                 self._ai_orch.set_ship_engine(getattr(CONFIG, "ai_ship_engine", "stub"), getattr(CONFIG, "ai_ship_model", "stub"))
+                # Provide mission brief for Fleet Commander inputs
+                try:
+                    setattr(self._ai_orch, "_mission_brief", self.mission_brief)
+                except Exception:
+                    pass
             except Exception:
                 pass
             # Timers (sim-time based)
@@ -329,6 +334,11 @@ class Simulation:
                         # Update world-level FleetIntent for UI only (not yet consumed by ships)
                         if tc.get("tool") == "set_fleet_intent":
                             self._fleet_intent = tc.get("arguments", {})
+                            # Also attach to orchestrator so ship summaries can see guidance slice
+                            try:
+                                setattr(self._ai_orch, "_last_fleet_intent", self._fleet_intent)
+                            except Exception:
+                                pass
                     # Mirror recent runs into sim for Fleet UI
                     self._ai_recent_runs = getattr(self._ai_orch, "_recent_runs", [])
                 t = asyncio.create_task(_fleet_job())

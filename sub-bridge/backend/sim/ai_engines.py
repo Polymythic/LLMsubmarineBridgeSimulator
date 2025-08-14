@@ -115,6 +115,21 @@ class OllamaAgentsEngine(BaseEngine):
             raise ValueError("Failed to parse FleetIntent JSON from Ollama response")
         return obj
 
+    async def propose_ship_tool(self, ship: Ship, ship_summary: Dict[str, Any]) -> Dict[str, Any]:
+        system = (
+            "You command a single ship. Make conservative, doctrine-aligned decisions based only on your local summary "
+            "and the FleetIntent. Never expose or rely on information you do not have. Output exactly one tool call in JSON."
+        )
+        user = (
+            "SHIP_SUMMARY_JSON:\n" + json.dumps(ship_summary, separators=(",", ":")) +
+            "\n\nRules:\n- Respect EMCON posture.\n- Obey ROE and captain consent requirement.\n- Use active ping only if allowed and tactically necessary.\n\nOutput a single tool call JSON."
+        )
+        content = await self._chat(system, user)
+        obj = _extract_json(content)
+        if obj is None:
+            raise ValueError("Failed to parse tool call JSON from Ollama response")
+        return obj
+
 
 class OpenAIAgentsEngine(BaseEngine):
     """Engine using OpenAI Agents SDK primitives (Agents, Tools, Handoffs).
@@ -173,22 +188,6 @@ class OpenAIAgentsEngine(BaseEngine):
         obj = _extract_json(content)
         if obj is None:
             raise ValueError("Failed to parse tool call JSON from OpenAI Agents output")
-        return obj
-
-    async def propose_ship_tool(self, ship: Ship, ship_summary: Dict[str, Any]) -> Dict[str, Any]:
-        system = (
-            "You command a single ship. Make conservative, doctrine-aligned decisions based only on your local summary "
-            "and the FleetIntent. Never expose or rely on information you do not have. Output exactly one tool call in JSON."
-        )
-        # Placeholder fleet_intent slice is expected to be embedded in ship_summary["fleet_intent"] if available
-        user = (
-            "SHIP_SUMMARY_JSON:\n" + json.dumps(ship_summary, separators=(",", ":")) +
-            "\n\nRules:\n- Respect EMCON posture.\n- Obey ROE and captain consent requirement.\n- Use active ping only if allowed and tactically necessary.\n\nOutput a single tool call JSON."
-        )
-        content = await self._chat(system, user)
-        obj = _extract_json(content)
-        if obj is None:
-            raise ValueError("Failed to parse tool call JSON from Ollama response")
         return obj
 
 

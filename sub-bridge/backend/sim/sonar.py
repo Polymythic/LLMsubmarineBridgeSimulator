@@ -65,12 +65,16 @@ def passive_contacts(self_ship: Ship, others: List[Ship]) -> List[TelemetryConta
         # Store last computed detectability on target for debug use (optional)
         other.acoustics.last_snr_db = snr_db
         other.acoustics.last_detectability = detect
+        
+        # Realistic classification based on signal quality and ship characteristics
+        classified_as = _classify_ship_passive(other, detect, snr_db, rng)
+        
         contacts.append(
             TelemetryContact(
                 id=other.id,
                 bearing=noisy_bearing,
                 strength=detect,
-                classifiedAs="SSN?",
+                classifiedAs=classified_as,
                 confidence=confidence,
                 bearingKnown=True,
                 rangeKnown=False,
@@ -123,3 +127,61 @@ def active_ping(self_ship: Ship, others: List[Ship]) -> List[Tuple[str, float, f
         strength = max(0.0, min(1.0, 1.0 / (1.0 + (rng_noise / 2000.0))))
         out.append((other.id, rng_noise, brg_noise, strength))
     return out
+
+
+def _classify_ship_passive(ship: Ship, detectability: float, snr_db: float, range_m: float) -> str:
+    """
+    Realistic passive sonar classification based on signal quality and ship characteristics.
+    
+    Args:
+        ship: Target ship
+        detectability: Detection strength (0.0 to 1.0)
+        snr_db: Signal-to-noise ratio in dB
+        range_m: Range to target in meters
+    
+    Returns:
+        Classification string with confidence indicators
+    """
+    # Base classification from ship class
+    base_class = getattr(ship, "ship_class", None)
+    
+    # Signal quality affects classification confidence
+    if detectability >= 0.8 and snr_db >= 25:
+        # Strong signal: confident classification
+        if base_class == "SSN":
+            return "SSN"  # Clear submarine signature
+        elif base_class == "Convoy":
+            return "Merchant/Convoy"  # Commercial vessel signature
+        elif base_class == "Destroyer":
+            return "Warship"  # Military vessel signature
+        elif base_class is None:
+            return "Unknown"  # No class information
+        else:
+            return base_class
+    elif detectability >= 0.6 and snr_db >= 20:
+        # Medium signal: probable classification
+        if base_class == "SSN":
+            return "SSN?"  # Probable submarine
+        elif base_class == "Convoy":
+            return "Merchant?"  # Probable commercial vessel
+        elif base_class == "Destroyer":
+            return "Warship?"  # Probable military vessel
+        elif base_class is None:
+            return "Unknown"  # No class information
+        else:
+            return f"{base_class}?"
+    elif detectability >= 0.4 and snr_db >= 15:
+        # Weak signal: possible classification
+        if base_class == "SSN":
+            return "Submarine?"  # Possible submarine
+        elif base_class == "Convoy":
+            return "Vessel?"  # Possible vessel
+        elif base_class == "Destroyer":
+            return "Contact?"  # Possible contact
+        elif base_class is None:
+            return "Unknown"  # No class information
+        else:
+            return "Contact?"
+    else:
+        # Very weak signal: uncertain
+        return "Unknown"

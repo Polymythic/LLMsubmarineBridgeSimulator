@@ -110,8 +110,11 @@ class AgentsOrchestrator:
                     cid = getattr(c, "id", None)
                     if not cid:
                         continue
+                    # Find the actual ship to get side information
+                    target_ship = next((s for s in blue_ships if s.id == cid), None)
                     merged[cid] = {
                         "id": cid,
+                        "side": target_ship.side if target_ship else "Unknown",  # Critical for friendly identification
                         "bearing": float(getattr(c, "bearing", 0.0)),
                         "confidence": float(getattr(c, "confidence", 0.0)),
                         "class": str(getattr(c, "classifiedAs", "Unknown")),
@@ -132,6 +135,7 @@ class AgentsOrchestrator:
                                 brg_true = (math.degrees(math.atan2(dx, dy)) % 360.0)
                                 merged[blu.id] = {
                                     "id": blu.id,
+                                    "side": blu.side,  # Critical for friendly identification
                                     "bearing": float(brg_true),
                                     "range_est": float(rng),
                                     "confidence": 0.85,
@@ -225,8 +229,11 @@ class AgentsOrchestrator:
             contacts = _passive_contacts(ship, others)
             by_id: Dict[str, Dict[str, Any]] = {}
             for c in contacts:
+                # Find the actual ship to get side information
+                target_ship = next((s for s in others if s.id == getattr(c, "id", "")), None)
                 by_id[getattr(c, "id", "")] = {
                     "id": getattr(c, "id", ""),
+                    "side": target_ship.side if target_ship else "Unknown",  # Critical for friendly identification
                     "bearing": float(getattr(c, "bearing", 0.0)),
                     "class": str(getattr(c, "classifiedAs", "Unknown")),
                     "confidence": float(getattr(c, "confidence", 0.0)),
@@ -244,6 +251,7 @@ class AgentsOrchestrator:
                             by_id[oth.id] = {
                                 **(by_id.get(oth.id, {})),
                                 "id": oth.id,
+                                "side": oth.side,  # Critical for friendly identification
                                 "bearing": float(brg_true),
                                 "range_est": float(rng),
                                 "class": str(getattr(oth, "ship_class", "Unknown")),

@@ -16,8 +16,8 @@ def test_helm_degraded_and_failed_effects():
     assert own.hull.turn_rate_max == 7.0
     assert own.systems.rudder_ok is True
 
-    # Degraded reduces turn authority
-    sim._apply_stage_penalties(own, "helm", "degraded")
+    # Failing reduces turn authority
+    sim._apply_stage_penalties(own, "helm", "failing")
     assert own.hull.turn_rate_max < 7.0
 
     # Failed disables rudder
@@ -35,7 +35,7 @@ def test_sonar_degradation_penalties():
     assert getattr(own.acoustics, "active_bearing_noise_extra", 0.0) == 0.0
     assert own.systems.sonar_ok is True
 
-    sim._apply_stage_penalties(own, "sonar", "degraded")
+    sim._apply_stage_penalties(own, "sonar", "failing")
     assert own.acoustics.passive_snr_penalty_db > 0.0
     assert own.acoustics.active_range_noise_add_m > 0.0
     assert own.acoustics.active_bearing_noise_extra > 0.0
@@ -52,7 +52,7 @@ def test_weapons_degradation_and_failure():
     assert base_mult == 1.0
     assert own.systems.tubes_ok is True
 
-    sim._apply_stage_penalties(own, "weapons", "degraded")
+    sim._apply_stage_penalties(own, "weapons", "failing")
     assert own.weapons.time_penalty_multiplier > base_mult
 
     sim._apply_stage_penalties(own, "weapons", "failed")
@@ -70,7 +70,7 @@ def test_task_escalation_applies_penalties():
         system="rudder",
         key="helm.rudder.lube",
         title="Rudder Lubricate",
-        stage="normal",
+        stage="task",
         progress=0.0,
         started=False,
         base_deadline_s=5.0,
@@ -83,7 +83,7 @@ def test_task_escalation_applies_penalties():
     before_turn = own.hull.turn_rate_max
     sim._step_station_tasks(own, dt=0.1)
     after_turn = own.hull.turn_rate_max
-    assert sim._active_tasks["helm"][0].stage in ("degraded", "damaged", "failed")
+    assert sim._active_tasks["helm"][0].stage in ("failing", "failed")
     assert after_turn <= before_turn
 
 
@@ -94,14 +94,14 @@ def test_aggregated_penalties_use_worst_stage():
     # Prevent auto-spawn during this test
     sim._task_spawn_timers = {k: 1e9 for k in sim._task_spawn_timers.keys()}
 
-    # Seed two HELM tasks: one degraded and one failed
+    # Seed two HELM tasks: one failing and one failed
     t_deg = MaintenanceTask(
         id="t_deg",
         station="helm",
         system="rudder",
         key="helm.rudder.linkage",
         title="Rudder Linkage Adjust",
-        stage="degraded",
+        stage="failing",
         progress=0.0,
         started=False,
         base_deadline_s=20.0,
@@ -169,8 +169,8 @@ def test_per_task_repair_only_advances_selected_task():
     own = sim.world.get_ship("ownship")
     sim._task_spawn_timers = {k: 1e9 for k in sim._task_spawn_timers.keys()}
     # Seed two SONAR tasks
-    t1 = MaintenanceTask(id="a", station="sonar", system="sonar", key="sonar.hydro.cal", title="Hydrophone Calibration", stage="normal", progress=0.0, started=False, base_deadline_s=20.0, time_remaining_s=10.0, created_at=0.0)
-    t2 = MaintenanceTask(id="b", station="sonar", system="sonar", key="sonar.preamp", title="Preamp Gain Trim", stage="normal", progress=0.0, started=False, base_deadline_s=20.0, time_remaining_s=10.0, created_at=0.0)
+    t1 = MaintenanceTask(id="a", station="sonar", system="sonar", key="sonar.hydro.cal", title="Hydrophone Calibration", stage="task", progress=0.0, started=False, base_deadline_s=20.0, time_remaining_s=10.0, created_at=0.0)
+    t2 = MaintenanceTask(id="b", station="sonar", system="sonar", key="sonar.preamp", title="Preamp Gain Trim", stage="task", progress=0.0, started=False, base_deadline_s=20.0, time_remaining_s=10.0, created_at=0.0)
     sim._active_tasks["sonar"] = [t1, t2]
     own.power.helm = own.power.weapons = own.power.engineering = 0.0
     own.power.sonar = 1.0

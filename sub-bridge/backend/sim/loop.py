@@ -171,7 +171,7 @@ class Simulation:
         tid = f"{station}-{int(now_s*1000)%100000}-{random.randint(100,999)}"
         self._active_tasks[station].append(MaintenanceTask(
             id=tid, station=station, system=system, key=key, title=title,
-            stage="normal", progress=0.0, base_deadline_s=base_deadline, time_remaining_s=base_deadline, created_at=now_s
+            stage="task", progress=0.0, base_deadline_s=base_deadline, time_remaining_s=base_deadline, created_at=now_s
         ))
 
     def _station_power_fraction(self, ship: Ship, station: str) -> float:
@@ -181,25 +181,25 @@ class Simulation:
     def _apply_stage_penalties(self, ship: Ship, station: str, stage: str) -> None:
         # Apply degradation effects per station and stage
         if station == "helm":
-            factor = {"normal": 1.0, "degraded": 0.7, "damaged": 0.4, "failed": 0.0}[stage]
+            # Map new stages: task (no penalty), failing (moderate), failed (worst)
+            factor = {"task": 1.0, "failing": 0.7, "failed": 0.0}.get(stage, 1.0)
             ship.hull.turn_rate_max = 7.0 * factor
             if stage == "failed":
                 ship.systems.rudder_ok = False
-            # Additional helm-related effects keyed to tasks
-            if stage in ("degraded", "damaged", "failed"):
-                # Depth/pressure sensors affect cavitation/thermocline modeling indirectly; here we bias thermocline and cav warn
+            # Additional helm-related effects keyed to degraded states
+            if stage in ("failing", "failed"):
                 ship.acoustics.thermocline_on = True
         elif station == "sonar":
-            extra = {"normal": 0.0, "degraded": 3.0, "damaged": 7.0, "failed": 12.0}[stage]
+            extra = {"task": 0.0, "failing": 3.0, "failed": 12.0}.get(stage, 0.0)
             ship.acoustics.bearing_noise_extra = extra
             if stage == "failed":
                 ship.systems.sonar_ok = False
-            if stage in ("degraded", "damaged", "failed"):
-                ship.acoustics.passive_snr_penalty_db = 3.0 if stage == "degraded" else (6.0 if stage == "damaged" else 10.0)
-                ship.acoustics.active_range_noise_add_m = 50.0 if stage == "degraded" else (120.0 if stage == "damaged" else 250.0)
-                ship.acoustics.active_bearing_noise_extra = 0.5 if stage == "degraded" else (1.5 if stage == "damaged" else 3.0)
+            if stage in ("failing", "failed"):
+                ship.acoustics.passive_snr_penalty_db = 3.0 if stage == "failing" else 10.0
+                ship.acoustics.active_range_noise_add_m = 50.0 if stage == "failing" else 250.0
+                ship.acoustics.active_bearing_noise_extra = 0.5 if stage == "failing" else 3.0
         elif station == "weapons":
-            mult = {"normal": 1.0, "degraded": 1.4, "damaged": 1.8, "failed": 2.5}[stage]
+            mult = {"task": 1.0, "failing": 1.4, "failed": 2.5}.get(stage, 1.0)
             ship.weapons.time_penalty_multiplier = mult
             if stage == "failed":
                 ship.systems.tubes_ok = False
@@ -214,14 +214,14 @@ class Simulation:
         This prevents a completed task from resetting penalties while other degraded/failed
         tasks remain for the same station.
         """
-        # Determine worst stage order
-        stage_rank = {"normal": 0, "degraded": 1, "damaged": 2, "failed": 3}
+        # Determine worst stage order for new model
+        stage_rank = {"task": 0, "failing": 1, "failed": 2}
         # Default to normal for all stations
-        worst_by_station = {s: "normal" for s in ["helm", "sonar", "weapons", "engineering"]}
+        worst_by_station = {s: "task" for s in ["helm", "sonar", "weapons", "engineering"]}
         for station, tasks in self._active_tasks.items():
             if not tasks:
                 continue
-            worst = "normal"
+            worst = "task"
             for t in tasks:
                 if stage_rank[t.stage] > stage_rank[worst]:
                     worst = t.stage
@@ -254,15 +254,16 @@ class Simulation:
                     tasks.remove(task)
                     continue
                 if task.time_remaining_s <= 0.0:
-                    if task.stage == "normal":
-                        task.stage = "degraded"; task.base_deadline_s *= 1.25
-                    elif task.stage == "degraded":
-                        task.stage = "damaged"; task.base_deadline_s *= 1.5
-                    elif task.stage == "damaged":
-                        task.stage = "failed"
-                    if task.stage != "failed":
+                    # New escalation: task -> failing -> failed
+                    if task.stage == "task":
+                        task.stage = "failing"
+                        task.base_deadline_s *= 1.25
                         task.time_remaining_s = task.base_deadline_s
-                    ship.maintenance.levels[task.system] = max(0.0, ship.maintenance.levels.get(task.system, 1.0) - (0.05 if task.stage == "degraded" else 0.1))
+                        ship.maintenance.levels[task.system] = max(0.0, ship.maintenance.levels.get(task.system, 1.0) - 0.05)
+                    elif task.stage == "failing":
+                        task.stage = "failed"
+                        # No further timeout; keep at zero
+                        ship.maintenance.levels[task.system] = max(0.0, ship.maintenance.levels.get(task.system, 1.0) - 0.1)
         # After all updates, recompute aggregated penalties for accuracy
         self._recompute_penalties_from_tasks(ship)
 
@@ -365,7 +366,7 @@ class Simulation:
             tasks = self._active_tasks.get(station, [])
             if not tasks:
                 return "OK"
-            return "Degraded" if any(t.stage in ("degraded", "damaged") for t in tasks) else "OK"
+            return "Degraded" if any(t.stage in ("failing",) for t in tasks) else "OK"
 
         station_statuses = {
             "helm": station_status("helm", own.systems.rudder_ok),

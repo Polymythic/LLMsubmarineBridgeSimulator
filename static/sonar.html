@@ -205,7 +205,7 @@
                 // Update existing task element
                 console.log('🔄 Updating existing task:', taskId);
                 const existingEl = existingTaskElements.get(taskId);
-                const label = task.stage === 'normal' ? 'MAINTENANCE' : (task.stage === 'degraded' ? 'DEGRADED' : (task.stage === 'damaged' ? 'DAMAGED' : 'FAILED'));
+                const label = task.stage === 'task' ? 'MAINTENANCE' : (task.stage === 'failing' ? 'FAILING' : 'FAILED');
                 
                 // Update only the text content, preserve the button
                 const textSpan = existingEl.querySelector('.task-text');
@@ -219,12 +219,12 @@
                 
                 const el = document.createElement('div');
                 el.className = 'label';
-                const color = task.stage === 'normal' ? '#FACC15' : (task.stage === 'degraded' ? '#F59E0B' : (task.stage === 'damaged' ? '#F97316' : '#EF4444'));
-                const bg = task.stage === 'normal' ? 'rgba(250, 204, 21, 0.1)' : (task.stage === 'degraded' ? 'rgba(245, 158, 11, 0.1)' : (task.stage === 'damaged' ? 'rgba(249, 115, 22, 0.1)' : 'rgba(239, 68, 68, 0.1)'));
+                const color = task.stage === 'task' ? '#FACC15' : (task.stage === 'failing' ? '#F59E0B' : '#EF4444');
+                const bg = task.stage === 'task' ? 'rgba(250, 204, 21, 0.1)' : (task.stage === 'failing' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)');
                 el.style.color = color;
                 el.style.backgroundColor = bg;
                 
-                const label = task.stage === 'normal' ? 'MAINTENANCE' : (task.stage === 'degraded' ? 'DEGRADED' : (task.stage === 'damaged' ? 'DAMAGED' : 'FAILED'));
+                const label = task.stage === 'task' ? 'MAINTENANCE' : (task.stage === 'failing' ? 'FAILING' : 'FAILED');
                 
                 // Create repair button for this specific task
                 const btn = document.createElement('button');

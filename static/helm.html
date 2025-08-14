@@ -140,9 +140,9 @@
       for (let s=0; s<=max; s+=5){ const y=h - s*scale; const line=document.createElementNS(NS,'line'); line.setAttribute('x1',10); line.setAttribute('x2',80); line.setAttribute('y1',y); line.setAttribute('y2',y); line.setAttribute('stroke','#3A4674'); svg.appendChild(line); const t=document.createElementNS(NS,'text'); t.setAttribute('x',90); t.setAttribute('y',y); t.setAttribute('fill','#89B4FA'); t.setAttribute('font-size','12'); t.textContent=String(s); svg.appendChild(t);}      const ay=h - speed*scale; const a=document.createElementNS(NS,'rect'); a.setAttribute('x',4); a.setAttribute('y', ay-2); a.setAttribute('width', 8); a.setAttribute('height',4); a.setAttribute('fill','#6EE7A7'); svg.appendChild(a); const oy=h - ordered*scale; const o=document.createElementNS(NS,'rect'); o.setAttribute('x',4); o.setAttribute('y', oy-2); o.setAttribute('width', 8); o.setAttribute('height',4); o.setAttribute('fill','#EAB308'); svg.appendChild(o);
     }
 
-    function stageColor(stage){ return stage === 'normal' ? '#FACC15' : (stage === 'degraded' ? '#F59E0B' : '#EF4444'); }
-    function stageBg(stage){ return stage === 'normal' ? 'rgba(250, 204, 21, 0.1)' : (stage === 'degraded' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)'); }
-    function stageLabel(stage){ return stage === 'normal' ? 'MAINTENANCE' : (stage === 'degraded' ? 'DEGRADED' : (stage === 'damaged' ? 'DAMAGED' : 'FAILED')); }
+    function stageColor(stage){ return stage === 'task' ? '#FACC15' : (stage === 'failing' ? '#F59E0B' : '#EF4444'); }
+    function stageBg(stage){ return stage === 'task' ? 'rgba(250, 204, 21, 0.1)' : (stage === 'failing' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)'); }
+    function stageLabel(stage){ return stage === 'task' ? 'MAINTENANCE' : (stage === 'failing' ? 'FAILING' : 'FAILED'); }
     
     // Track existing task elements by ID to avoid recreation
     let existingTaskElements = new Map();

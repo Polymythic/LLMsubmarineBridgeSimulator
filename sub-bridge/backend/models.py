@@ -104,7 +104,7 @@ class MaintenanceTask(BaseModel):
     system: Literal["rudder", "sonar", "tubes", "ballast"]
     key: str
     title: str
-    stage: Literal["normal", "degraded", "damaged", "failed"] = "normal"
+    stage: Literal["task", "failing", "failed"] = "task"
     progress: float = 0.0  # 0..1
     started: bool = False
     base_deadline_s: float = 30.0

@@ -25,10 +25,10 @@
       <button id="pumpF" title="Toggle forward pump to reduce flooding">Toggle Pump FWD</button>
       <button id="pumpA" title="Toggle aft pump to reduce flooding">Toggle Pump AFT</button>
     </div>
-    <div class="panel">
+    <div class="panel" style="width:100%;">
       <h3>Maintenance</h3>
       <div class="row" id="tasksRow">
-        <div class="pill" id="task" title="Current maintenance task for Engineering">No active task</div>
+        <div class="pill" id="task" title="Current maintenance tasks">No Active Tasks</div>
       </div>
       <div class="row">
         <div class="label">Progress scales with station power allocation.</div>
@@ -182,13 +182,18 @@
                     console.log('📝 No active engineering tasks, showing default message');
                     const el = document.createElement('div'); 
                     el.className = 'pill'; 
-                    el.textContent = 'No active task'; 
+                    el.textContent = 'No Active Tasks'; 
                     el.style.color = '#D7E3FF'; 
                     el.style.borderColor = '#1B2440'; 
                     el.style.backgroundColor = '#0F162A'; 
                     row.appendChild(el); 
                 } else { 
                     // Process each task
+                    // Remove placeholder if present
+                    const placeholder = document.getElementById('task');
+                    if (placeholder) {
+                        placeholder.parentElement && placeholder.parentElement.removeChild(placeholder);
+                    }
                     tasks.forEach((task, index) => { 
                         const taskId = task.id;
                         

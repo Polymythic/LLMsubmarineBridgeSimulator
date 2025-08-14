@@ -11,11 +11,12 @@
     .row { display:flex; gap:16px; }
     .col { flex:1; }
     .pill { padding:4px 8px; border-radius:12px; background:#0F162A; border:1px solid #1B2440; margin:4px 0; }
+    .pill[id="wsStatus"] { display: inline-block; }
   </style>
 </head>
 <body>
   <div class="panel">
-    <h2>Debug</h2>
+    <h2>Debug <span class="pill" id="wsStatus" title="WebSocket connection status" style="margin-left: 8px; font-size: 14px; font-weight: normal;">WebSocket: Connecting...</span></h2>
     <div class="row" style="align-items:center">
       <button id="restart" title="Reset mission state to defaults">Restart Mission</button>
       <div>
@@ -39,6 +40,27 @@
   </div>
   <script>
     const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/debug');
+    
+    // WebSocket connection status
+    const wsStatus = document.getElementById('wsStatus');
+    
+    ws.onopen = () => {
+        wsStatus.textContent = 'WebSocket: Connected';
+        wsStatus.style.color = '#8DEB8D';
+        wsStatus.style.borderColor = '#8DEB8D';
+    };
+    
+    ws.onclose = () => {
+        wsStatus.textContent = 'WebSocket: Disconnected';
+        wsStatus.style.color = '#FF6B6B';
+        wsStatus.style.borderColor = '#FF6B6B';
+    };
+    
+    ws.onerror = (error) => {
+        wsStatus.textContent = 'WebSocket: Error';
+        wsStatus.style.color = '#FF6B6B';
+        wsStatus.style.borderColor = '#FF6B6B';
+    };
     const map = document.getElementById('map');
     const ctx = map.getContext('2d');
     const W = map.width, H = map.height;

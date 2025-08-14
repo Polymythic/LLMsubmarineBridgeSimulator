@@ -16,7 +16,7 @@
 </head>
 <body>
   <div class="panel">
-    <h2>Captain</h2>
+    <h2>Captain <span class="pill" id="wsStatus" title="WebSocket connection status" style="margin-left: 8px; font-size: 14px; font-weight: normal;">WebSocket: Connecting...</span></h2>
     <div class="row">
       <button id="consent" title="Grant temporary firing consent for interlocked weapons">Toggle Fire Consent</button>
       <span title="Periscope raised increases detection risk">Periscope <span id="periscope" class="pip off"></span></span>
@@ -57,6 +57,27 @@
   </div>
   <script>
     const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/captain');
+    
+    // WebSocket connection status
+    const wsStatus = document.getElementById('wsStatus');
+    
+    ws.onopen = () => {
+        wsStatus.textContent = 'WebSocket: Connected';
+        wsStatus.style.color = '#8DEB8D';
+        wsStatus.style.borderColor = '#8DEB8D';
+    };
+    
+    ws.onclose = () => {
+        wsStatus.textContent = 'WebSocket: Disconnected';
+        wsStatus.style.color = '#FF6B6B';
+        wsStatus.style.borderColor = '#FF6B6B';
+    };
+    
+    ws.onerror = (error) => {
+        wsStatus.textContent = 'WebSocket: Error';
+        wsStatus.style.color = '#FF6B6B';
+        wsStatus.style.borderColor = '#FF6B6B';
+    };
     const tel = document.getElementById('telemetry');
     const per = document.getElementById('periscope');
     const rad = document.getElementById('radio');

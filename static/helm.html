@@ -18,25 +18,18 @@
 </head>
 <body>
   <div class="panel">
-    <h2>Helm</h2>
+    <h2>Helm <span class="pill" id="wsStatusTitle" title="WebSocket connection status" style="margin-left: 8px; font-size: 14px; font-weight: normal;">WebSocket: Connecting...</span></h2>
     <div class="row">
       <div class="col">
         <svg id="hdgDial" viewBox="0 0 300 300" title="Heading dial (drag to set)"></svg>
         <div class="row">
           <div class="pill" id="cav" title="Cavitation increases detectability and noise">Cavitation: NO</div>
           <div class="pill" id="therm" title="Thermocline may attenuate sound; affects detection">Thermocline: ON</div>
+          <div class="pill" id="wsStatus" title="WebSocket connection status">WebSocket: Connecting...</div>
         </div>
       </div>
       <div class="col">
         <svg id="depthLadder" viewBox="0 0 120 300" title="Depth ladder"></svg>
-        <div class="panel">
-          <h3>Maintenance</h3>
-          <div class="row" id="tasksRow">
-            <div class="pill" id="task" title="Current maintenance task for Helm, if any">No active task</div>
-            <button id="repair" title="Start repairing the active task (makes it top priority)">Repair</button>
-          </div>
-          <div class="label">Progress scales with station power allocation.</div>
-        </div>
       </div>
       <div class="col">
         <svg id="speedTele" viewBox="0 0 120 300" title="Speed telegraph"></svg>
@@ -48,10 +41,52 @@
       <div class="col"><label title="Ordered keel depth in meters">Depth (m)<input id="depth" type="number" min="0" max="600" value="100"></label></div>
     </div>
     <button id="send" title="Send helm order to the sim loop">Order</button>
+    <button id="testRepair" title="Test repair button functionality" style="margin-left: 8px; background: #7C3AED; color: white;">Test Repair</button>
+    <div class="panel" style="width:100%;">
+      <h3>Maintenance</h3>
+      <div class="row" id="tasksRow">
+        <div class="pill" id="task" title="Current maintenance tasks">No Active Tasks</div>
+      </div>
+      <div class="label">Progress scales with station power allocation.</div>
+    </div>
     <pre id="telemetry" title="Ownship state and events"></pre>
   </div>
   <script>
     const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/helm');
+    
+    // WebSocket connection debugging
+    const wsStatus = document.getElementById('wsStatus');
+    const wsStatusTitle = document.getElementById('wsStatusTitle');
+    
+    ws.onopen = () => {
+        console.log('🔌 WebSocket connected to helm station');
+        wsStatus.textContent = 'WebSocket: Connected';
+        wsStatus.style.color = '#8DEB8D';
+        wsStatus.style.borderColor = '#8DEB8D';
+        wsStatusTitle.textContent = 'WebSocket: Connected';
+        wsStatusTitle.style.color = '#8DEB8D';
+        wsStatusTitle.style.borderColor = '#8DEB8D';
+    };
+    
+    ws.onclose = () => {
+        console.log('🔌 WebSocket connection closed');
+        wsStatus.textContent = 'WebSocket: Disconnected';
+        wsStatus.style.color = '#FF6B6B';
+        wsStatus.style.borderColor = '#FF6B6B';
+        wsStatusTitle.textContent = 'WebSocket: Disconnected';
+        wsStatusTitle.style.color = '#FF6B6B';
+        wsStatusTitle.style.borderColor = '#FF6B6B';
+    };
+    
+    ws.onerror = (error) => {
+        console.error('❌ WebSocket error:', error);
+        wsStatus.textContent = 'WebSocket: Error';
+        wsStatus.style.color = '#FF6B6B';
+        wsStatus.style.borderColor = '#FF6B6B';
+        wsStatusTitle.textContent = 'WebSocket: Error';
+        wsStatusTitle.style.color = '#FF6B6B';
+        wsStatusTitle.style.borderColor = '#FF6B6B';
+    };
     const tel = document.getElementById('telemetry');
     const cav = document.getElementById('cav');
     const therm = document.getElementById('therm');
@@ -109,11 +144,119 @@
     function stageColor(stage){ return stage === 'normal' ? '#FACC15' : (stage === 'degraded' ? '#F59E0B' : '#EF4444'); }
     function stageBg(stage){ return stage === 'normal' ? 'rgba(250, 204, 21, 0.1)' : (stage === 'degraded' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)'); }
     function stageLabel(stage){ return stage === 'normal' ? 'MAINTENANCE' : (stage === 'degraded' ? 'DEGRADED' : (stage === 'damaged' ? 'DAMAGED' : 'FAILED')); }
-    ws.onmessage = (ev) => { try { const m = JSON.parse(ev.data); if (m.topic === 'telemetry') { const d=m.data; tel.textContent = JSON.stringify(d, null, 2); cav.textContent = 'Cavitation: ' + (d.ownship?.cavitation ? 'YES' : 'NO'); therm.textContent = 'Thermocline: ' + ((d.thermocline ?? true) ? 'ON' : 'OFF'); drawDial(hdgDial, d.ownship.heading, d.ownship.orderedHeading); drawLadder(depthLadder, d.ownship.depth, d.ownship.orderedDepth); drawTele(speedTele, d.ownship.speed, d.ownship.orderedSpeed); const tasks = d.tasks || []; const row = document.getElementById('tasksRow'); // rebuild stack
-      row.innerHTML=''; if (tasks.length === 0) { const pill = document.createElement('div'); pill.className = 'pill'; pill.textContent = 'No active task'; pill.style.color = '#D7E3FF'; pill.style.borderColor = '#1B2440'; pill.style.backgroundColor = '#0F162A'; row.appendChild(pill); } else { tasks.forEach((t) => { const pill = document.createElement('div'); pill.className = 'pill'; const color = stageColor(t.stage); const bg = stageBg(t.stage); pill.style.color = color; pill.style.borderColor = color; pill.style.backgroundColor = bg; const btn = document.createElement('button'); btn.textContent = 'Repair'; btn.style.marginLeft = '8px'; btn.onclick = () => ws.send(JSON.stringify({topic:'station.task.start', data:{station:'helm', task_id: t.id}})); pill.innerHTML = `🔧 ${t.title} — ${stageLabel(t.stage)} ${(t.progress*100).toFixed(0)}% — time to complete ${Math.max(0, t.time_remaining_s).toFixed(0)}s${t.started ? ' (REPAIRING)' : ''}`; pill.appendChild(btn); row.appendChild(pill); }); } } } catch(e){} };
+    
+    // Track existing task elements by ID to avoid recreation
+    let existingTaskElements = new Map();
+    ws.onmessage = (ev) => { 
+        try { 
+            const m = JSON.parse(ev.data); 
+            if (m.topic === 'telemetry') { 
+                const d = m.data; 
+                console.log('📡 Received telemetry:', d);
+                
+                tel.textContent = JSON.stringify(d, null, 2); 
+                cav.textContent = 'Cavitation: ' + (d.ownship?.cavitation ? 'YES' : 'NO'); 
+                therm.textContent = 'Thermocline: ' + ((d.thermocline ?? true) ? 'ON' : 'OFF'); 
+                drawDial(hdgDial, d.ownship.heading, d.ownship.orderedHeading); 
+                drawLadder(depthLadder, d.ownship.depth, d.ownship.orderedDepth); 
+                drawTele(speedTele, d.ownship.speed, d.ownship.orderedSpeed); 
+                
+                                                const tasks = d.tasks || []; 
+                console.log('🔧 Processing tasks:', tasks);
+                
+                // Smart task update: only create new elements for new tasks
+                const row = document.getElementById('tasksRow'); 
+                
+                if (tasks.length === 0) { 
+                    // Clear all existing tasks
+                    existingTaskElements.clear();
+                    row.innerHTML = '';
+                    console.log('📝 No active tasks, showing default message');
+                    const pill = document.createElement('div'); 
+                    pill.className = 'pill'; 
+                    pill.textContent = 'No Active Tasks'; 
+                    pill.style.color = '#D7E3FF'; 
+                    pill.style.borderColor = '#1B2440'; 
+                    pill.style.backgroundColor = '#0F162A'; 
+                    row.appendChild(pill); 
+                } else { 
+                    // Remove placeholder if present
+                    const placeholder = document.getElementById('task');
+                    if (placeholder) {
+                        placeholder.parentElement && placeholder.parentElement.removeChild(placeholder);
+                    }
+                    // Process each task
+                    tasks.forEach((task, index) => { 
+                        const taskId = task.id;
+                        
+                        if (existingTaskElements.has(taskId)) {
+                            // Update existing task element
+                            console.log('🔄 Updating existing task:', taskId);
+                            const existingPill = existingTaskElements.get(taskId);
+                            
+                            // Update only the text content, preserve the button
+                            const textSpan = existingPill.querySelector('.task-text');
+                            if (textSpan) {
+                                textSpan.textContent = `🔧 ${task.title} — ${stageLabel(task.stage)} ${(task.progress*100).toFixed(0)}% — time to complete ${Math.max(0, task.time_remaining_s).toFixed(0)}s${task.started ? ' (REPAIRING)' : ''}`;
+                            }
+                        } else {
+                            // Create new task element
+                            console.log('🆕 Creating new task element:', taskId);
+                            
+                            const pill = document.createElement('div'); 
+                            pill.className = 'pill'; 
+                            const color = stageColor(task.stage); 
+                            const bg = stageBg(task.stage); 
+                            pill.style.color = color; 
+                            pill.style.borderColor = color; 
+                            pill.style.backgroundColor = bg; 
+                            
+                            const btn = document.createElement('button'); 
+                            btn.textContent = 'Repair'; 
+                            btn.style.marginLeft = '8px'; 
+                            
+                            // Add basic click logging to diagnose the issue
+                            console.log('🔧 Creating helm repair button for task:', taskId);
+                            
+                            btn.onclick = () => {
+                                console.log('🖱️ BUTTON CLICKED! Repair button clicked for task:', taskId);
+                                console.log('🔍 Button element:', btn);
+                                console.log('🔍 Button onclick property:', btn.onclick);
+                                
+                                const cmd = {topic:'station.task.start', data:{station:'helm', task_id: taskId}};
+                                console.log('📤 Sending task-specific repair command:', cmd);
+                                ws.send(JSON.stringify(cmd));
+                                console.log('📤 Task-specific repair command sent');
+                            };
+                            
+                            // Verify the handler was attached
+                            console.log('🔍 Button onclick after setup:', btn.onclick);
+                            
+                            // Create a span for the text content
+                            const textSpan = document.createElement('span');
+                            textSpan.className = 'task-text';
+                            textSpan.textContent = `🔧 ${task.title} — ${stageLabel(task.stage)} ${(task.progress*100).toFixed(0)}% — time to complete ${Math.max(0, task.time_remaining_s).toFixed(0)}s${task.started ? ' (REPAIRING)' : ''}`;
+                            
+                            pill.appendChild(textSpan);
+                            pill.appendChild(btn); 
+                            row.appendChild(pill); 
+                            
+                            // Store the element for future updates
+                            existingTaskElements.set(taskId, pill);
+                        }
+                    }); 
+                }
+                
+                
+            } else if (m.topic === 'error') {
+                console.error('❌ Server error:', m.error);
+            }
+        } catch(e) {
+            console.error('❌ Error processing message:', e);
+        } 
+    };
 
-    // Fallback: global Repair button starts the most urgent HELM task if present
-    (function(){ const btn = document.getElementById('repair'); if (btn) { btn.onclick = () => { ws.send(JSON.stringify({topic:'station.task.start', data:{station:'helm'}})); }; } })();
+
 
     // Keep simple inputs for ordering
     document.getElementById('send').onclick = () => {
@@ -121,6 +264,27 @@
       const speed = parseFloat(document.getElementById('speed').value);
       const depth = parseFloat(document.getElementById('depth').value);
       ws.send(JSON.stringify({topic:'helm.order', data:{heading, speed, depth}}));
+    };
+    
+    // Test repair button for debugging
+    document.getElementById('testRepair').onclick = () => {
+        console.log('🧪 Test repair button clicked');
+        console.log('🔍 Current WebSocket state:', ws.readyState);
+        console.log('🔍 WebSocket readyState values: 0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED');
+        
+        if (ws.readyState === WebSocket.OPEN) {
+            console.log('✅ WebSocket is open, testing repair command');
+            const cmd = {topic:'station.task.start', data:{station:'helm'}};
+            console.log('📤 Sending test repair command:', cmd);
+            try {
+                ws.send(JSON.stringify(cmd));
+                console.log('📤 Test repair command sent successfully');
+            } catch (error) {
+                console.error('❌ Error sending test repair command:', error);
+            }
+        } else {
+            console.log('❌ WebSocket is not open, current state:', ws.readyState);
+        }
     };
   </script>
 </body>

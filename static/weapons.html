@@ -21,10 +21,10 @@
     <h2>Weapons <span class="pill" id="wsStatus" title="WebSocket connection status" style="margin-left: 8px; font-size: 14px; font-weight: normal;">WebSocket: Connecting...</span></h2>
     <div id="consent" title="Captain consent requirement before firing"></div>
     <div class="tubes" id="tubes" title="Tube state machine: Empty→Flooded→DoorsOpen; timers show progress."></div>
-    <div class="panel">
+    <div class="panel" style="width:100%;">
       <h3>Maintenance</h3>
       <div class="row" id="tasksRow">
-        <div class="small" id="task" title="Current maintenance task for Weapons">No active task</div>
+        <div class="small" id="task" title="Current maintenance tasks">No Active Tasks</div>
       </div>
       <div class="row">
         <div class="small">Progress scales with station power allocation.</div>
@@ -110,7 +110,7 @@
             row.innerHTML = '';
             const el = document.createElement('div');
             el.className = 'small';
-            el.textContent = 'No active task';
+            el.textContent = 'No Active Tasks';
             el.style.color = '#D7E3FF';
             el.style.borderColor = '#1B2440';
             el.style.backgroundColor = '#0F162A';

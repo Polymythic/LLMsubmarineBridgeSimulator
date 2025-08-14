@@ -26,10 +26,10 @@
         <button id="testRepair" title="Test repair button functionality" style="margin-left: 8px; background: #7C3AED; color: white;">Test Repair</button>
         <div title="Ping cooldown in seconds">Ping cooldown: <span id="cd">0</span>s</div>
         <div class="label" title="Current EMCON risk from acoustics">EMCON: <span id="emcon">low</span></div>
-        <div class="panel">
+        <div class="panel" style="width:100%;">
           <h3>Maintenance</h3>
           <div class="row" id="tasksRow">
-            <div class="label" id="task" title="Current maintenance task for Sonar, if any"></div>
+            <div class="label" id="task" title="Current maintenance tasks">No Active Tasks</div>
           </div>
           <div class="row">
             <div class="label">Progress scales with station power allocation.</div>
@@ -196,12 +196,17 @@
             row.innerHTML = '';
             const el = document.createElement('div');
             el.className = 'label';
-            el.textContent = 'No active task';
+            el.textContent = 'No Active Tasks';
             el.style.color = '#D7E3FF';
             row.appendChild(el);
           } else {
             console.log('📝 Found', tasks.length, 'tasks, processing them...');
             // Process each task
+            // Remove placeholder if present
+            const placeholder = document.getElementById('task');
+            if (placeholder) {
+              placeholder.parentElement && placeholder.parentElement.removeChild(placeholder);
+            }
             tasks.forEach((task, index) => {
               console.log('🔍 Processing task', index + 1, 'of', tasks.length, ':', task);
               console.log('🔍 Task ID:', task.id);

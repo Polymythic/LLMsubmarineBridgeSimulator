@@ -8,6 +8,7 @@ import random
 from ..bus import BUS
 from ..config import CONFIG, reload_from_env
 from ..models import Ship, Kinematics, Hull, Acoustics, WeaponsSuite, Reactor, DamageState, MaintenanceTask, SHIP_CATALOG
+from ..assets import load_ship_catalog, load_mission_by_id, apply_mission_to_world
 from ..storage import init_engine, create_run, insert_snapshot, insert_event
 from .ecs import World
 from .physics import integrate_kinematics
@@ -38,24 +39,30 @@ class Simulation:
         self._transient_events = []  # cleared every tick
         self._last_ping_responses = []
         self._last_ping_at = None
+        # Load external assets
+        try:
+            load_ship_catalog()
+        except Exception:
+            pass
         self._init_default_world()
         # Station task state
         self._active_tasks: Dict[str, list[MaintenanceTask]] = {s: [] for s in ["helm", "sonar", "weapons", "engineering"]}
         self._task_spawn_timers: Dict[str, float] = {s: CONFIG.first_task_delay_s for s in ["helm", "sonar", "weapons", "engineering"]}
-        # Mission briefing and ROE
-        self.mission_brief = {
-            "title": "Patrol Box KILO-7",
-            "objective": "Shadow contact RED-01, maintain undetected posture, do not fire unless fired upon.",
-            "roe": [
-                "Weapons free upon hostile engagement or direct order.",
-                "Avoid active sonar unless necessary for navigation or identification.",
-                "Maintain EMCON; minimize mast raises."
-            ],
-            "comms_schedule": [
-                {"at_s": 120.0, "msg": "FLASH: New tasking window opens at 18:00Z. Await further instructions."},
-                {"at_s": 300.0, "msg": "INFO: Intel suggests RED-01 may alter course east within 10 minutes."}
-            ],
-        }
+        # Mission briefing and ROE (only set defaults if not set by mission assets)
+        if not hasattr(self, "mission_brief"):
+            self.mission_brief = {
+                "title": "Patrol Box KILO-7",
+                "objective": "Shadow contact RED-01, maintain undetected posture, do not fire unless fired upon.",
+                "roe": [
+                    "Weapons free upon hostile engagement or direct order.",
+                    "Avoid active sonar unless necessary for navigation or identification.",
+                    "Maintain EMCON; minimize mast raises."
+                ],
+                "comms_schedule": [
+                    {"at_s": 120.0, "msg": "FLASH: New tasking window opens at 18:00Z. Await further instructions."},
+                    {"at_s": 300.0, "msg": "INFO: Intel suggests RED-01 may alter course east within 10 minutes."}
+                ],
+            }
         self._delivered_comms_idx = -1
         # EMCON and storms
         self._emcon_high_timer = 0.0
@@ -84,34 +91,49 @@ class Simulation:
     def _init_default_world(self) -> None:
         # Clear existing world and set to original game state
         self.world = World()
-        own = Ship(
-            id="ownship",
-            side="BLUE",
-            kin=Kinematics(depth=100.0, heading=270.0, speed=8.0),
-            hull=SHIP_CATALOG["SSN"].default_hull.model_copy(deep=True),
-            acoustics=SHIP_CATALOG["SSN"].default_acoustics.model_copy(deep=True),
-            weapons=SHIP_CATALOG["SSN"].default_weapons.model_copy(deep=True),
-            reactor=Reactor(output_mw=60.0, max_mw=100.0),
-            damage=DamageState(),
-            ship_class="SSN",
-            capabilities=SHIP_CATALOG["SSN"].capabilities.model_copy(deep=True),
-        )
-        red = Ship(
-            id="red-01",
-            side="RED",
-            kin=Kinematics(x=3000.0, y=0.0, depth=120.0, heading=90.0, speed=8.0),
-            hull=Hull(max_speed=28.0),
-            acoustics=Acoustics(),
-            weapons=WeaponsSuite(),
-            reactor=Reactor(output_mw=50.0, max_mw=100.0),
-            damage=DamageState(),
-            ai_profile=None,
-            ship_class="SSN",
-            capabilities=SHIP_CATALOG["SSN"].capabilities.model_copy(deep=True),
-        )
-        self.world.add_ship(own)
-        self.world.add_ship(red)
-        self.ordered = {"heading": own.kin.heading, "speed": own.kin.speed, "depth": own.kin.depth}
+        # Try to load mission from assets; fallback to code-defined defaults
+        mid = getattr(CONFIG, "mission_id", "")
+        mission = load_mission_by_id(mid) if mid else None
+        if mission:
+            def _set_mission(brief: dict) -> None:
+                self.mission_brief = brief
+            apply_mission_to_world(mission, lambda: self.world, _set_mission)
+        else:
+            own = Ship(
+                id="ownship",
+                side="BLUE",
+                kin=Kinematics(depth=100.0, heading=270.0, speed=8.0),
+                hull=SHIP_CATALOG["SSN"].default_hull.model_copy(deep=True),
+                acoustics=SHIP_CATALOG["SSN"].default_acoustics.model_copy(deep=True),
+                weapons=SHIP_CATALOG["SSN"].default_weapons.model_copy(deep=True),
+                reactor=Reactor(output_mw=60.0, max_mw=100.0),
+                damage=DamageState(),
+                ship_class="SSN",
+                capabilities=SHIP_CATALOG["SSN"].capabilities.model_copy(deep=True),
+            )
+            red = Ship(
+                id="red-01",
+                side="RED",
+                kin=Kinematics(x=3000.0, y=0.0, depth=120.0, heading=90.0, speed=8.0),
+                hull=Hull(max_speed=28.0),
+                acoustics=Acoustics(),
+                weapons=WeaponsSuite(),
+                reactor=Reactor(output_mw=50.0, max_mw=100.0),
+                damage=DamageState(),
+                ai_profile=None,
+                ship_class="SSN",
+                capabilities=SHIP_CATALOG["SSN"].capabilities.model_copy(deep=True),
+            )
+            self.world.add_ship(own)
+            self.world.add_ship(red)
+        # Set ordered state from ownship (from mission or default spawn)
+        try:
+            own_ref = self.world.get_ship("ownship")
+        except Exception:
+            # Fallback: first BLUE ship or first ship
+            ships = self.world.all_ships()
+            own_ref = next((s for s in ships if getattr(s, "side", "") == "BLUE"), ships[0])
+        self.ordered = {"heading": own_ref.kin.heading, "speed": own_ref.kin.speed, "depth": own_ref.kin.depth}
         # Reset toggles and ping state
         self._pump_fwd = False
         self._pump_aft = False

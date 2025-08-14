@@ -1,0 +1,30 @@
+{
+  "id": "surface_training",
+  "title": "Surface Vessel Intercept (Training)",
+  "objective": "Escort convoy ship red-01 safely across sector; training shot optional.",
+  "roe": [
+    "Weapons release authorized for training shot.",
+    "Minimize active sonar to preserve EMCON."
+  ],
+  "target_wp": [100.0, 100.0],
+  "environment": { "timeOfDay": "dawn", "weather": "calm" },
+  "ships": [
+    {
+      "id": "ownship",
+      "side": "BLUE",
+      "class": "SSN",
+      "spawn": { "x": 0, "y": 0, "depth": 100, "heading": 270, "speed": 8 }
+    },
+    {
+      "id": "red-01",
+      "side": "RED",
+      "class": "Convoy",
+      "spawn": { "x": 6000, "y": 0, "depth": 3, "heading": 90, "speed": 5 }
+    }
+  ],
+  "triggers": [
+    { "at_s": 90.0, "comms": "INFO: Surface contact maintaining 5 kn on easterly course." }
+  ]
+}
+
+

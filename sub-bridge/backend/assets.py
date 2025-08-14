@@ -1,0 +1,133 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Dict, Any, List, Optional
+
+from pydantic import BaseModel, Field, ValidationError
+
+from . import models
+
+
+ASSETS_DIR = Path(__file__).resolve().parents[2] / "assets"
+MISSIONS_DIR = ASSETS_DIR / "missions"
+SHIPS_CATALOG_PATH = ASSETS_DIR / "ships" / "catalog.json"
+
+
+class MissionShipSpawn(BaseModel):
+    id: str
+    side: str
+    class_name: str = Field(alias="class")
+    spawn: Dict[str, float]
+
+
+class MissionConfig(BaseModel):
+    id: str
+    title: str
+    objective: str
+    roe: List[str] = Field(default_factory=list)
+    target_wp: Optional[List[float]] = None
+    environment: Dict[str, Any] = Field(default_factory=dict)
+    ships: List[MissionShipSpawn]
+    triggers: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+def _read_json(path: Path) -> Any:
+    with path.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def load_ship_catalog(path: Path = SHIPS_CATALOG_PATH) -> None:
+    """Load ship catalog JSON and update models.SHIP_CATALOG in-place."""
+    if not path.exists():
+        return
+    data = _read_json(path)
+    # Build new catalog
+    new_catalog: Dict[str, models.ShipDef] = {}
+    for key, entry in data.items():
+        capabilities = models.ShipCapabilities(**entry.get("capabilities", {}))
+        hull = models.Hull(**entry.get("hull", {}))
+        # Weapons
+        w = entry.get("weapons", {}) or {}
+        tubes = w.get("tubes")
+        ws = models.WeaponsSuite(
+            tube_count=w.get("tube_count", 6),
+            torpedoes_stored=w.get("torpedoes_stored", 6),
+            reload_time_s=w.get("reload_time_s", 45.0),
+            flood_time_s=w.get("flood_time_s", 8.0),
+            doors_time_s=w.get("doors_time_s", 3.0),
+            tubes=[models.Tube(**t) for t in tubes] if isinstance(tubes, list) else models.WeaponsSuite().tubes,
+        )
+        acoustics = models.Acoustics(**entry.get("acoustics", {}))
+        new_catalog[key] = models.ShipDef(
+            name=entry.get("name", key),
+            ship_class=entry.get("ship_class", key),
+            capabilities=capabilities,
+            default_hull=hull,
+            default_weapons=ws,
+            default_acoustics=acoustics,
+        )
+    # Update in place so existing imports see the change
+    models.SHIP_CATALOG.clear()
+    models.SHIP_CATALOG.update(new_catalog)
+
+
+def load_mission_by_id(mission_id: str) -> Optional[MissionConfig]:
+    path = (MISSIONS_DIR / f"{mission_id}.json").resolve()
+    if not path.exists():
+        return None
+    try:
+        return MissionConfig(**_read_json(path))
+    except ValidationError:
+        return None
+
+
+def apply_mission_to_world(mission: MissionConfig, world_getter, set_mission_brief) -> None:
+    """Configure world state per mission. Overwrites world and sets mission brief.
+
+    - world_getter: callable returning the authoritative World object
+    - set_mission_brief: callable accepting a dict to store in Simulation.mission_brief
+    """
+    world = world_getter()
+    # Reset world
+    world.ships.clear()
+    # Spawn ships from mission using catalog defaults
+    for s in mission.ships:
+        cat = models.SHIP_CATALOG.get(s.class_name)
+        if not cat:
+            continue
+        # Build Ship
+        kin = models.Kinematics(
+            x=float(s.spawn.get("x", 0.0)),
+            y=float(s.spawn.get("y", 0.0)),
+            depth=float(s.spawn.get("depth", 0.0)),
+            heading=float(s.spawn.get("heading", 0.0)),
+            speed=float(s.spawn.get("speed", 0.0)),
+        )
+        ship = models.Ship(
+            id=s.id,
+            side=str(s.side).upper(),
+            kin=kin,
+            hull=cat.default_hull.model_copy(deep=True),
+            acoustics=cat.default_acoustics.model_copy(deep=True),
+            weapons=cat.default_weapons.model_copy(deep=True),
+            reactor=models.Reactor(output_mw=50.0, max_mw=100.0),
+            damage=models.DamageState(),
+            ship_class=cat.ship_class,
+            capabilities=cat.capabilities.model_copy(deep=True),
+        )
+        world.add_ship(ship)
+    # Mission brief for UI/AI
+    brief = {
+        "title": mission.title,
+        "objective": mission.objective,
+        "roe": mission.roe,
+        "target_wp": mission.target_wp,
+        "comms_schedule": [
+            {"at_s": float(t.get("at_s", 0.0)), "msg": t.get("comms")}
+            for t in mission.triggers if "comms" in t
+        ],
+    }
+    set_mission_brief(brief)
+
+

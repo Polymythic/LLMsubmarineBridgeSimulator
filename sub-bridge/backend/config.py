@@ -55,6 +55,8 @@ class Config:
     # Maintenance/task tuning
     first_task_delay_s: float = _get_env_float("FIRST_TASK_DELAY_S", 30.0)
     maint_spawn_scale: float = _get_env_float("MAINT_SPAWN_SCALE", 1.0)
+    # Missions/content
+    mission_id: str = os.getenv("MISSION_ID", "")
 
 
 CONFIG = Config()

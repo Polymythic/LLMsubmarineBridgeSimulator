@@ -7,6 +7,7 @@
   <style>
     body { background:#0B1020; color:#D7E3FF; font-family: ui-sans-serif, system-ui, -apple-system; }
     .panel { background:#11172B; border:1px solid #1B2440; padding:16px; margin:12px; border-radius:8px; }
+    .row { display:flex; gap:12px; flex-wrap:wrap; }
     label { display:block; margin-top:8px; }
     input { width:100%; background:#0F162A; color:#D7E3FF; border:1px solid #1B2440; padding:8px; }
     button { margin-top:12px; padding:8px 12px; background:#26406E; border:none; color:#D7E3FF; border-radius:6px; }
@@ -117,6 +118,11 @@
           } else {
             console.log('📝 Found', tasks.length, 'tasks, processing them...');
             // Process each task
+            // Clear placeholder if present
+            const placeholder = document.getElementById('task');
+            if (placeholder) {
+              placeholder.parentElement && placeholder.parentElement.removeChild(placeholder);
+            }
             tasks.forEach((task, index) => {
               console.log('🔍 Processing task', index + 1, 'of', tasks.length, ':', task);
               const taskId = task.id;
@@ -182,6 +188,7 @@
                 el.appendChild(textSpan);
                 el.appendChild(btn);
                 row.appendChild(el);
+                console.log('🆕 Appended weapons task element to row');
                 
                 // Store the element for future updates
                 existingTaskElements.set(taskId, el);

@@ -338,14 +338,16 @@ class AgentsOrchestrator:
             summary = self._build_ship_summary(ship)
             tool = await asyncio.wait_for(self._ship_decide(ship, summary), timeout=max(1.0, CONFIG.ai_poll_s))
             result["tool_calls"] = [tool]
-            # Validate tool; fallback to a conservative set_nav if invalid
+            # Validate tool; fallback to intent-driven set_nav if invalid
             tool_name = (tool or {}).get("tool") if isinstance(tool, dict) else None
             if tool_name not in ("set_nav", "fire_torpedo", "deploy_countermeasure"):
-                # Fallback: conservative navigation respecting constraints
-                fallback = self._stub.propose_orders(ship)
-                result["tool_calls_validated"] = [fallback]
+                # Try to derive navigation from FleetIntent destination
+                nav = self._nav_from_intent(ship, summary)
+                if nav is None:
+                    nav = self._stub.propose_orders(ship)
+                result["tool_calls_validated"] = [nav]
                 # Mark error message to surface in UI trace
-                result["error"] = "Unknown tool returned by engine; applied fallback set_nav"
+                result["error"] = "Unknown tool returned by engine; applied intent-driven set_nav"
             else:
                 result["tool_calls_validated"] = [tool]
             # Add concise human summary of the decision
@@ -385,6 +387,30 @@ class AgentsOrchestrator:
         finally:
             result["duration_ms"] = int((time.perf_counter() - started) * 1000)
         return result
+
+    def _nav_from_intent(self, ship: Ship, ship_summary: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        import math as _math
+        try:
+            fi = ship_summary.get("fleet_intent", {}) or {}
+            objectives = fi.get("objectives", {}) or {}
+            obj = objectives.get(ship.id)
+            if not isinstance(obj, dict):
+                return None
+            dest = obj.get("destination")
+            if not (isinstance(dest, (list, tuple)) and len(dest) == 2):
+                return None
+            # Compute bearing to destination (compass)
+            sx, sy = ship.kin.x, ship.kin.y
+            dx = float(dest[0]) - sx
+            dy = float(dest[1]) - sy
+            brg_true = (_math.degrees(_math.atan2(dx, dy)) % 360.0)
+            # Choose modest convoy speed
+            speed = min(ship.hull.max_speed, max(3.0, min(10.0, ship.kin.speed or 5.0)))
+            # Surface vessels: stay at or near surface
+            depth = 0.0
+            return {"tool": "set_nav", "arguments": {"heading": brg_true, "speed": speed, "depth": depth}}
+        except Exception:
+            return None
 
     async def health_check(self) -> Dict[str, Any]:
         """Lightweight connectivity check for configured engines."""

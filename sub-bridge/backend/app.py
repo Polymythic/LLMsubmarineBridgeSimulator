@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from .config import CONFIG
 from .bus import BUS
 from .sim.loop import Simulation
+from .assets import MISSIONS_DIR
 
 
 app = FastAPI(title="Submarine Bridge Simulator")
@@ -151,3 +152,12 @@ async def api_ai_health() -> JSONResponse:
         return JSONResponse(res)
     except Exception as e:
         return JSONResponse({"ok": False, "detail": str(e)})
+
+
+@app.get("/api/missions")
+async def api_missions() -> JSONResponse:
+    try:
+        ids = [p.stem for p in MISSIONS_DIR.glob("*.json")]
+        return JSONResponse({"missions": sorted(ids)})
+    except Exception as e:
+        return JSONResponse({"missions": [], "error": str(e)})

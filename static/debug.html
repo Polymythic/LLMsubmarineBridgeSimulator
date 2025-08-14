@@ -23,9 +23,7 @@
         <label for="mission">Mission:</label>
         <select id="mission" title="Select mission scenario">
           <option value="patrol">Patrol - Blue vs Single Red</option>
-          <option value="ambush">Ambush - Two Reds Ahead</option>
-          <option value="convoy">Convoy Escort</option>
-          <option value="surface_vessel" selected>Surface Vessel (Training)</option>
+          <option value="surface_training">Surface Training (assets)</option>
         </select>
       </div>
       <div class="pill" style="margin-left: 8px;">
@@ -138,20 +136,25 @@
     document.getElementById('restart').onclick = () => {
       const sel = document.getElementById('mission');
       const mission = sel && sel.value ? sel.value : 'patrol';
-      if (mission === 'surface_vessel') {
-        ws.send(JSON.stringify({topic:'debug.mission.surface_vessel', data:{}}));
-      } else if (mission === 'patrol') {
+      if (mission === 'patrol') {
         ws.send(JSON.stringify({topic:'debug.restart', data:{}}));
-      } else if (mission === 'ambush') {
-        // Not implemented yet; fallback to default reset
-        ws.send(JSON.stringify({topic:'debug.restart', data:{}}));
-      } else if (mission === 'convoy') {
-        // Not implemented yet; fallback to default reset
+      } else if (mission === 'surface_training') {
         ws.send(JSON.stringify({topic:'debug.restart', data:{}}));
       } else {
         ws.send(JSON.stringify({topic:'debug.restart', data:{}}));
       }
     };
+    // Populate mission dropdown from server assets
+    fetch('/api/missions').then(r=>r.json()).then(j=>{
+      const sel = document.getElementById('mission');
+      if (!sel || !j || !Array.isArray(j.missions)) return;
+      j.missions.forEach(id => {
+        if (id === 'surface_training') return; // already present by default
+        const opt = document.createElement('option');
+        opt.value = id; opt.textContent = `${id} (assets)`;
+        sel.appendChild(opt);
+      });
+    }).catch(()=>{});
     document.getElementById('toggleMaint').onclick = () => {
       const isOn = (document.getElementById('maintState').textContent || 'ON') === 'ON';
       const next = !isOn;

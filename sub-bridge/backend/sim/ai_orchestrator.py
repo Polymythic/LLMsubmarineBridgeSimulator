@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import time
+import hashlib
+import math
 from typing import Any, Dict, List, Literal, Optional, TypedDict
 import httpx
 
@@ -11,6 +13,7 @@ from .ai_engines import BaseEngine, StubEngine, OllamaAgentsEngine, OpenAIAgents
 from ..models import Ship
 from ..storage import insert_event
 from .ai_tools import LocalAIStub
+from .sonar import passive_contacts as _passive_contacts
 
 
 class RunResult(TypedDict, total=False):
@@ -94,8 +97,53 @@ class AgentsOrchestrator:
                 "detectability": {"noise": getattr(ship.acoustics, "last_detectability", 0.0)},
                 "sensors": {"passive_ok": getattr(ship.systems, 'sonar_ok', True), "has_active": getattr(getattr(ship, 'capabilities', None), 'has_active_sonar', False)},
             })
-        # Aggregated enemy belief: TODO hook from sonar; placeholder empty
+        # Aggregated enemy belief: merge passive + visual contacts from RED ships against BLUE ships
         enemy_belief: List[Dict[str, Any]] = []
+        try:
+            merged: Dict[str, Dict[str, Any]] = {}
+            blue_ships = [s for s in world.all_ships() if s.side == "BLUE"]
+            for red in world.all_ships():
+                if red.side != "RED":
+                    continue
+                contacts = _passive_contacts(red, blue_ships)
+                for c in contacts:
+                    cid = getattr(c, "id", None)
+                    if not cid:
+                        continue
+                    merged[cid] = {
+                        "id": cid,
+                        "bearing": float(getattr(c, "bearing", 0.0)),
+                        "confidence": float(getattr(c, "confidence", 0.0)),
+                        "class": str(getattr(c, "classifiedAs", "Unknown")),
+                        "detectability": float((getattr(c, "detectability", 0.0) or getattr(c, "strength", 0.0))),
+                        "last_seen": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    }
+                # Visual contacts: near-surface targets within ~15 km
+                for blu in blue_ships:
+                    try:
+                        if blu.kin.depth <= 5.0:
+                            dx = blu.kin.x - red.kin.x
+                            dy = blu.kin.y - red.kin.y
+                            rng = math.hypot(dx, dy)
+                            if rng <= 15000.0:
+                                # Calculate bearing from RED ship to BLUE ship
+                                # Compass convention: 0°=North, 90°=East, 180°=South, 270°=West
+                                # For bearing calculation: atan2(dx, dy) gives angle from Y-axis (North), which is correct
+                                brg_true = (math.degrees(math.atan2(dx, dy)) % 360.0)
+                                merged[blu.id] = {
+                                    "id": blu.id,
+                                    "bearing": float(brg_true),
+                                    "range_est": float(rng),
+                                    "confidence": 0.85,
+                                    "class": str(getattr(blu, "ship_class", "Unknown")),
+                                    "detectability": 1.0,
+                                    "last_seen": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                                }
+                    except Exception:
+                        continue
+            enemy_belief = list(merged.values())
+        except Exception:
+            enemy_belief = []
         # Mission objective provided by Simulation (if attached by creator)
         mission_brief = getattr(self, "_mission_brief", None)
         if isinstance(mission_brief, dict):
@@ -119,11 +167,45 @@ class AgentsOrchestrator:
             }
         else:
             mission = {"roe": {"weapons_free": False}}
+        # Include last FleetIntent (hash/body/summary) for stateless continuity
+        try:
+            last_intent = getattr(self, "_last_fleet_intent", {}) or {}
+        except Exception:
+            last_intent = {}
+        try:
+            runs = getattr(self, "_recent_runs", []) or []
+            last_summary = next((r.get("summary", "") for r in reversed(runs) if r.get("agent") == "fleet" and r.get("summary")), "")
+        except Exception:
+            last_summary = ""
+        try:
+            intent_hash = hashlib.sha1(json.dumps(last_intent, sort_keys=True).encode()).hexdigest()[:8]
+        except Exception:
+            intent_hash = ""
+        # Include per-ship last run summary/tool and last orders for Fleet Commander situational awareness
+        ship_last_runs: List[Dict[str, Any]] = []
+        try:
+            runs = getattr(self, "_recent_runs", []) or []
+            last_by_ship: Dict[str, Dict[str, Any]] = {}
+            for r in runs:
+                if r.get("agent") == "ship":
+                    sid = r.get("ship_id")
+                    if sid:
+                        last_by_ship[sid] = {"ship_id": sid, "summary": r.get("summary"), "tool_calls": r.get("tool_calls", [])}
+            ship_last_runs = list(last_by_ship.values())
+        except Exception:
+            ship_last_runs = []
+        try:
+            orders_last_map = getattr(self, "_orders_last_by_ship", {}) or {}
+        except Exception:
+            orders_last_map = {}
         return {
             "time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "own_fleet": own_fleet,
             "enemy_belief": enemy_belief,
             "mission": mission,
+            "fleet_intent_last": {"hash": intent_hash, "body": last_intent, "summary": last_summary},
+            "ship_last_runs": ship_last_runs,
+            "orders_last_by_ship": orders_last_map,
         }
 
     def _build_ship_summary(self, ship: Ship) -> Dict[str, Any]:
@@ -135,6 +217,49 @@ class AgentsOrchestrator:
             fleet_intent = getattr(self, "_last_fleet_intent", {})
         except Exception:
             fleet_intent = {}
+        # Build local passive + visual contacts for this ship against non-friendly ships
+        local_contacts: List[Dict[str, Any]] = []
+        try:
+            world = self._world_getter()
+            others = [s for s in world.all_ships() if s.id != ship.id and s.side != ship.side]
+            contacts = _passive_contacts(ship, others)
+            by_id: Dict[str, Dict[str, Any]] = {}
+            for c in contacts:
+                by_id[getattr(c, "id", "")] = {
+                    "id": getattr(c, "id", ""),
+                    "bearing": float(getattr(c, "bearing", 0.0)),
+                    "class": str(getattr(c, "classifiedAs", "Unknown")),
+                    "confidence": float(getattr(c, "confidence", 0.0)),
+                    "detectability": float((getattr(c, "detectability", 0.0) or getattr(c, "strength", 0.0))),
+                }
+            # Visual adds range when target is near-surface within ~15 km
+            for oth in others:
+                try:
+                    if oth.kin.depth <= 5.0:
+                        dx = oth.kin.x - ship.kin.x
+                        dy = oth.kin.y - ship.kin.y
+                        rng = math.hypot(dx, dy)
+                        if rng <= 15000.0:
+                            brg_true = (math.degrees(math.atan2(dx, dy)) % 360.0)
+                            by_id[oth.id] = {
+                                **(by_id.get(oth.id, {})),
+                                "id": oth.id,
+                                "bearing": float(brg_true),
+                                "range_est": float(rng),
+                                "class": str(getattr(oth, "ship_class", "Unknown")),
+                                "confidence": max(0.7, float(by_id.get(oth.id, {}).get("confidence", 0.0))),
+                                "detectability": max(0.8, float(by_id.get(oth.id, {}).get("detectability", 0.0))),
+                            }
+                except Exception:
+                    continue
+            local_contacts = list(by_id.values())
+        except Exception:
+            local_contacts = []
+        # Fetch last orders applied to this ship for continuity
+        try:
+            orders_last = (getattr(self, "_orders_last_by_ship", {}) or {}).get(ship.id, {})
+        except Exception:
+            orders_last = {}
         return {
             "self": {
                 "id": ship.id,
@@ -153,10 +278,17 @@ class AgentsOrchestrator:
                 "tubes": [{"idx": t.idx, "state": t.state} for t in ship.weapons.tubes],
                 "has_countermeasures": bool(getattr(ship.capabilities, "countermeasures", [])),
             },
+            "capabilities": {
+                "can_set_nav": bool(getattr(ship.capabilities, "can_set_nav", True)),
+                "has_active_sonar": bool(getattr(ship.capabilities, "has_active_sonar", False)),
+                "has_torpedoes": bool(getattr(ship.capabilities, "has_torpedoes", False)),
+                "has_guns": bool(getattr(ship.capabilities, "has_guns", False)),
+                "has_depth_charges": bool(getattr(ship.capabilities, "has_depth_charges", False)),
+            },
             "sensors": {"passive_ok": getattr(ship.systems, 'sonar_ok', True), "has_active": getattr(getattr(ship, 'capabilities', None), 'has_active_sonar', False)},
             # Local contacts should come from sonar; orchestrator does not have ground-truth enemy positions
-            "contacts": [],
-            "orders_last": {},
+            "contacts": local_contacts,
+            "orders_last": orders_last,
             "fleet_intent": fleet_intent,
             "detected_state": {"alert": False},
         }
@@ -200,6 +332,12 @@ class AgentsOrchestrator:
         }
         try:
             summary = self._build_fleet_summary()
+            # Capture full API call for debugging
+            api_call_debug = {
+                "system_prompt": "You are the Fleet Commander for a hostile flotilla. Plan strategy to achieve mission objectives while minimizing detectability and respecting ROE. You will receive a structured summary of your fleet and an uncertain belief of enemy contacts. Never assume ground-truth positions. Output only a JSON FleetIntent. Include a concise 'summary' string explaining your rationale in 1 short sentence. Do not reveal unknown truths.",
+                "user_prompt": "FLEET_SUMMARY_JSON:\n" + json.dumps(summary, separators=(",", ":")) + "\n\nCONSTRAINTS:\n- Do not reveal or rely on unknown enemy truth.\n- Prefer convoy protection unless ROE authorizes engagement.\n- If escorts are low on ammo, bias toward defensive spacing.\n\nProduce FleetIntent JSON.",
+                "summary_size": len(str(summary)),
+            }
             intent_raw = await asyncio.wait_for(self._fleet_decide(summary), timeout=max(1.0, CONFIG.ai_poll_s))
             # Normalize/augment intent to ensure objectives/guidance present
             intent = self._normalize_intent(summary, intent_raw)
@@ -208,11 +346,12 @@ class AgentsOrchestrator:
             fleet_thought = intent.get("summary") or self._summarize_fleet_intent(intent)
             # Validation/clamping would occur here (placeholder: accept as-is)
             result["tool_calls_validated"] = result["tool_calls"]
-            # Emit trace event
-            insert_event(self._storage_engine, self._run_id, "ai.run.fleet", json.dumps({
-                "summary_size": len(str(summary)),
-                "model": self._fleet_model,
-            }))
+            # Capture model response
+            api_call_debug["model_response"] = str(intent_raw)
+            api_call_debug["model"] = self._fleet_model
+            api_call_debug["duration_ms"] = int((time.perf_counter() - started) * 1000)
+            # Emit trace event with full debug info
+            insert_event(self._storage_engine, self._run_id, "ai.run.fleet", json.dumps(api_call_debug))
             # Record recent run for Fleet UI
             if not hasattr(self, "_recent_runs"):
                 self._recent_runs = []  # type: ignore[attr-defined]
@@ -221,6 +360,7 @@ class AgentsOrchestrator:
                 "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "tool_calls": result["tool_calls_validated"],
                 "summary": fleet_thought,
+                "api_call_debug": api_call_debug,
             })  # type: ignore[attr-defined]
         except Exception as e:
             result["error"] = str(e)
@@ -336,6 +476,12 @@ class AgentsOrchestrator:
             world = self._world_getter()
             ship = world.get_ship(ship_id)
             summary = self._build_ship_summary(ship)
+            # Capture full API call for debugging
+            api_call_debug = {
+                "system_prompt": "You command a single ship. Make conservative, doctrine-aligned decisions based only on your local summary and the FleetIntent. Prefer following FleetIntent; if you must deviate due to local threats/opportunities, you may, but briefly explain by prefixing the 'summary' with 'deviate:'. Never expose or rely on unknown information. Output exactly one JSON object with keys: 'tool', 'arguments', 'summary'. Do not wrap with markdown or prose. Allowed tools: set_nav(heading: float 0-359.9, speed: float >=0, depth: float >=0); fire_torpedo(tube: int, bearing: float 0-359.9, run_depth: float, enable_range: float); deploy_countermeasure(type: 'noisemaker'|'decoy'). Only use tools supported by your capabilities.",
+                "user_prompt": "SHIP_SUMMARY_JSON:\n" + json.dumps(summary, separators=(",", ":")) + "\n\nRules:\n- Strongly prefer the FleetIntent, but you may deviate if local conditions warrant; note 'deviate:' in summary.\n- Respect EMCON posture.\n- Obey ROE and captain consent requirement.\n- Use only allowed tools and only if supported by your capabilities (e.g., if has_torpedoes=false, never fire_torpedo).\n- Output one JSON with keys {tool, arguments, summary}. No markdown fences, no extra keys.\n",
+                "summary_size": len(str(summary)),
+            }
             tool = await asyncio.wait_for(self._ship_decide(ship, summary), timeout=max(1.0, CONFIG.ai_poll_s))
             result["tool_calls"] = [tool]
             # Validate tool; fallback to intent-driven set_nav if invalid
@@ -356,10 +502,15 @@ class AgentsOrchestrator:
                 ship_thought = (chosen.get("summary") if isinstance(chosen, dict) else None) or self._summarize_ship_tool(ship_id, chosen)
             except Exception:
                 ship_thought = None
+            # Capture model response
+            api_call_debug["model_response"] = str(tool)
+            api_call_debug["model"] = self._ship_model
+            api_call_debug["duration_ms"] = int((time.perf_counter() - started) * 1000)
             insert_event(self._storage_engine, self._run_id, "ai.run.ship", json.dumps({
                 "ship_id": ship_id,
                 "summary_size": len(str(summary)),
                 "model": self._ship_model,
+                "api_call_debug": api_call_debug,
             }))
             if not hasattr(self, "_recent_runs"):
                 self._recent_runs = []  # type: ignore[attr-defined]
@@ -369,6 +520,7 @@ class AgentsOrchestrator:
                 "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "tool_calls": result["tool_calls_validated"],
                 "summary": ship_thought,
+                "api_call_debug": api_call_debug,
             })  # type: ignore[attr-defined]
         except Exception as e:
             result["error"] = str(e)

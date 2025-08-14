@@ -24,6 +24,31 @@ def _extract_json(text: str) -> Optional[Dict[str, Any]]:
             return json.loads(candidate)
         except Exception:
             pass
+    
+    # Try to find JSON after common prefixes
+    prefixes = ["Here's the FleetIntent:", "FleetIntent:", "JSON:", "Response:", "Here's the plan:"]
+    for prefix in prefixes:
+        if prefix in text:
+            start = text.find(prefix) + len(prefix)
+            # Find first { after prefix
+            brace_start = text.find("{", start)
+            if brace_start != -1:
+                # Find matching closing brace
+                depth = 0
+                for i in range(brace_start, len(text)):
+                    ch = text[i]
+                    if ch == '{':
+                        depth += 1
+                    elif ch == '}':
+                        depth -= 1
+                        if depth == 0:
+                            candidate = text[brace_start:i+1]
+                            try:
+                                return json.loads(candidate)
+                            except Exception:
+                                break
+                break
+    
     # General path: find first balanced { ... }
     start = text.find("{")
     while start != -1:
@@ -41,6 +66,19 @@ def _extract_json(text: str) -> Optional[Dict[str, Any]]:
                     except Exception:
                         break
         start = text.find("{", start + 1)
+    
+    # Last resort: try to clean up common Ollama formatting issues
+    cleaned = text.strip()
+    if cleaned.startswith("```") and cleaned.endswith("```"):
+        cleaned = cleaned[3:-3].strip()
+    if cleaned.startswith("```json"):
+        cleaned = cleaned[7:].strip()
+    
+    try:
+        return json.loads(cleaned)
+    except Exception:
+        pass
+    
     return None
 
 
@@ -102,8 +140,14 @@ class OllamaAgentsEngine(BaseEngine):
         system = (
             "You are the Fleet Commander for a hostile flotilla. Plan strategy to achieve mission objectives "
             "while minimizing detectability and respecting ROE. You will receive a structured summary of your fleet "
-            "and an uncertain belief of enemy contacts. Never assume ground-truth positions. Output only a JSON FleetIntent. "
-            "Include a concise 'summary' string explaining your rationale in 1 short sentence. Do not reveal unknown truths."
+            "and an uncertain belief of enemy contacts. Never assume ground-truth positions. "
+            "You must output ONLY a valid JSON object with this exact structure:\n"
+            "{\n"
+            '  "objectives": {"ship_id": {"destination": [x, y]}},\n'
+            '  "engagement_rules": {"weapons_free": false},\n'
+            '  "summary": "Brief explanation of your plan"\n'
+            "}\n"
+            "Do not include any text before or after the JSON. Do not use markdown fences."
         )
         hint = fleet_summary.get("_prompt_hint")
         fs = dict(fleet_summary)
@@ -112,20 +156,29 @@ class OllamaAgentsEngine(BaseEngine):
             (f"MISSION_HINT:\n{hint}\n\n" if hint else "") +
             "FLEET_SUMMARY_JSON:\n" + json.dumps(fs, separators=(",", ":")) +
             "\n\nCONSTRAINTS:\n- Do not reveal or rely on unknown enemy truth.\n- Prefer convoy protection unless ROE authorizes engagement.\n" \
-            "- If escorts are low on ammo, bias toward defensive spacing.\n\nProduce FleetIntent JSON."
+            "- If escorts are low on ammo, bias toward defensive spacing.\n\n"
+            "IMPORTANT: Output ONLY the JSON object. No markdown, no prose, no explanations outside the JSON. "
+            "Use the exact structure shown in the system prompt."
         )
         content = await self._chat(system, user)
+        print(f"Ollama Fleet Commander response: {content[:200]}...")  # Debug: show first 200 chars
         obj = _extract_json(content)
         if obj is None:
+            print(f"Failed to extract JSON from: {content}")  # Debug: show full response on failure
             # Graceful no-op: return empty intent so orchestrator can continue
             return {"objectives": [], "groups": {}, "target_priority": [], "engagement_rules": {}, "emcon": {}}
+        print(f"Extracted FleetIntent: {obj}")  # Debug: show parsed result
         return obj
 
     async def propose_ship_tool(self, ship: Ship, ship_summary: Dict[str, Any]) -> Dict[str, Any]:
         system = (
             "You command a single ship. Make conservative, doctrine-aligned decisions based only on your local summary "
-            "and the FleetIntent. Never expose or rely on information you do not have. Output exactly one tool call in JSON. "
-            "Include a concise 'summary' string field in the same JSON explaining your rationale in 1 short sentence."
+            "and the FleetIntent. Prefer following FleetIntent; if you must deviate due to local threats/opportunities, you may, "
+            "but briefly explain by prefixing the 'summary' with 'deviate:'. Never expose or rely on unknown information. "
+            "Output exactly one JSON object with keys: 'tool', 'arguments', 'summary'. Do not wrap with markdown or prose. "
+            "Allowed tools: set_nav(heading: float 0-359.9, speed: float >=0, depth: float >=0); "
+            "fire_torpedo(tube: int, bearing: float 0-359.9, run_depth: float, enable_range: float); "
+            "deploy_countermeasure(type: 'noisemaker'|'decoy'). Only use tools supported by your capabilities."
         )
         hint = ship_summary.get("_prompt_hint")
         ss = dict(ship_summary)
@@ -133,7 +186,11 @@ class OllamaAgentsEngine(BaseEngine):
         user = (
             ("PROMPT_HINT:\n" + hint + "\n\n" if hint else "") +
             "SHIP_SUMMARY_JSON:\n" + json.dumps(ss, separators=(",", ":")) +
-            "\n\nRules:\n- Respect EMCON posture.\n- Obey ROE and captain consent requirement.\n- Use active ping only if allowed and tactically necessary.\n\nOutput a single tool call JSON."
+            "\n\nRules:\n"
+            "- Strongly prefer the FleetIntent, but you may deviate if local conditions warrant; note 'deviate:' in summary.\n"
+            "- Respect EMCON posture.\n- Obey ROE and captain consent requirement.\n"
+            "- Use only allowed tools and only if supported by your capabilities (e.g., if has_torpedoes=false, never fire_torpedo).\n"
+            "- Output one JSON with keys {tool, arguments, summary}. No markdown fences, no extra keys.\n"
         )
         content = await self._chat(system, user)
         obj = _extract_json(content)

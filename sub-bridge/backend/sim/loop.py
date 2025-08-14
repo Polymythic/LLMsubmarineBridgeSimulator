@@ -404,9 +404,24 @@ class Simulation:
                                 except Exception:
                                     continue
                                 tgt.kin.heading = float(args.get("heading", tgt.kin.heading)) % 360.0
-                                tgt.kin.speed = max(0.0, float(args.get("speed", tgt.kin.speed)))
-                                tgt.kin.depth = max(0.0, float(args.get("depth", tgt.kin.depth)))
+                                # Clamp against platform limits
+                                spd = float(args.get("speed", tgt.kin.speed))
+                                dpt = float(args.get("depth", tgt.kin.depth))
+                                tgt.kin.speed = max(0.0, min(tgt.hull.max_speed, spd))
+                                tgt.kin.depth = max(0.0, min(tgt.hull.max_depth, dpt))
                                 insert_event(self.engine, self.run_id, "ai.tool.apply", json.dumps({"ship_id": _sid, **tc}))
+                                # Record last orders per ship for agent continuity
+                                try:
+                                    if hasattr(self, "_ai_orch") and getattr(self, "_ai_orch", None) is not None:
+                                        if not hasattr(self._ai_orch, "_orders_last_by_ship"):
+                                            self._ai_orch._orders_last_by_ship = {}
+                                        self._ai_orch._orders_last_by_ship[_sid] = {
+                                            "heading": float(tgt.kin.heading),
+                                            "speed": float(tgt.kin.speed),
+                                            "depth": float(tgt.kin.depth),
+                                        }
+                                except Exception:
+                                    pass
                             # Other tools (fire_torpedo, deploy_countermeasure) are ignored for non-ownship for now
                             break
                         # Mirror recent runs into sim for Fleet UI
@@ -547,6 +562,7 @@ class Simulation:
             # Compass bearing: 0=N, 90=E, 180=S, 270=W
             dx = sx - own.kin.x
             dy = sy - own.kin.y
+            # For bearing calculation: atan2(dx, dy) gives angle from Y-axis (North), which is correct
             brg_true = (math.degrees(math.atan2(dx, dy)) % 360.0)
             brg_rel = (brg_true - own.kin.heading + 360.0) % 360.0
             return {"bearing_true": brg_true, "bearing_rel": brg_rel, "heading_to_face": brg_true}

@@ -13,6 +13,8 @@
     #log { max-height: 180px; overflow-y: auto; white-space: pre-wrap; }
     .row { display:flex; gap:12px; align-items:center; }
     .pill { padding:2px 8px; border-radius:999px; background:#1B2440; color:#C8D5FF; font-size:12px; }
+
+    .debug-content.show { display:block; }
   </style>
   <script>
     let ws;
@@ -52,11 +54,13 @@
             const when = r.at || new Date().toISOString();
              if (r.agent === 'fleet') {
                const summary = r.summary ? ` | ${r.summary}` : '';
-               appendLog(`${when} - fleet commander - planning from ${lastEngines.fleet.engine}:${lastEngines.fleet.model} - call ${r.tool_calls && r.tool_calls.length ? 'success' : 'no-op'}${summary}`);
+               const tool = r.tool_calls && r.tool_calls.length ? r.tool_calls[0].tool : 'no-op';
+               appendLog(`${when} - fleet commander - ${tool}${summary}`);
             } else if (r.agent === 'ship') {
               const sid = r.ship_id || 'unknown';
                const summary = r.summary ? ` | ${r.summary}` : '';
-               appendLog(`${when} - ${sid} - planning from ${lastEngines.ship.engine}:${lastEngines.ship.model} - ${r.tool_calls && r.tool_calls.length ? 'success' : 'no-op'}${summary}`);
+               const tool = r.tool_calls && r.tool_calls.length ? r.tool_calls[0].tool : 'no-op';
+               appendLog(`${when} - ${sid} - ${tool}${summary}`);
             } else if (r.agent === 'system' && r.tool_calls && r.tool_calls[0] && r.tool_calls[0].tool === 'health_check') {
               const okFleet = r.tool_calls[0].arguments && r.tool_calls[0].arguments.fleet && r.tool_calls[0].arguments.fleet.ok;
               const okShip = r.tool_calls[0].arguments && r.tool_calls[0].arguments.ship && r.tool_calls[0].arguments.ship.ok;
@@ -66,6 +70,7 @@
         } catch {}
       };
     }
+
     async function healthCheck(){
       try{
         const r = await fetch(`/api/ai/health`);

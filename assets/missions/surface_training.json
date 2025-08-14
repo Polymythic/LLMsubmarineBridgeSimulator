@@ -21,11 +21,27 @@
       "side": "RED",
       "class": "Convoy",
       "spawn": { "x": 6000, "y": 0, "depth": 3, "heading": 90, "speed": 5 }
+    },
+    {
+      "id": "red-02",
+      "side": "RED",
+      "class": "Convoy",
+      "spawn": { "x":5800, "y": 10, "depth": 3, "heading": 90, "speed": 5 }
+    },
+    {
+      "id": "red-03",
+      "side": "RED",
+      "class": "Convoy",
+      "spawn": { "x":5600, "y": 20, "depth": 3, "heading": 90, "speed": 5 }
     }
+
   ],
-  "ai_fleet_prompt": "You are a fleet commander. In this mission you command a surface vessel red-01. Your mission is to get red-01 safely to grid 100,100. There is a rumor of an enemy submarine operating in the area. Issue prudent, doctrine-aligned guidance.",
+  "ai_fleet_prompt": "You are a fleet commander. In this mission you command a convoy of surface vessels red-01, red-02, and red-03. Your mission is to get them safely to grid 100,100. There is a rumor of an enemy submarine operating in the area. Issue prudent, doctrine-aligned guidance.",
   "ai_ship_prompts": {
-    "red-01": "You are red-01, a surface vessel. You receive orders from the Fleet Commander. Execute guidance to reach grid 100,100 while maintaining prudent seamanship and avoiding threats."
+    "red-01": "You are red-01, a surface supply vessel with no weapons. You receive orders from the Fleet Commander. Execute guidance while maintaining prudent seamanship and avoiding threats.",
+    "red-02": "You are red-02, a surface supply vessel with no weapons. You receive orders from the Fleet Commander. Execute guidance while maintaining prudent seamanship and avoiding threats.",
+    "red-03": "You are red-03, a surface supply vessel with no weapons. You receive orders from the Fleet Commander. Execute guidance while maintaining prudent seamanship and avoiding threats."
+
   },
   "triggers": [
     { "at_s": 90.0, "comms": "INFO: Surface contact maintaining 5 kn on easterly course." }

@@ -81,7 +81,8 @@ def load_mission_by_id(mission_id: str) -> Optional[MissionConfig]:
     if not path.exists():
         return None
     try:
-        return MissionConfig(**_read_json(path))
+        data = _read_json(path)
+        return MissionConfig(**data)
     except ValidationError:
         return None
 

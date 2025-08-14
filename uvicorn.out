@@ -1,0 +1,162 @@
+INFO:     Will watch for changes in these directories: ['/Users/stevestruebing/workspace/submarineBridgeSimulator']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [4613] using WatchFiles
+INFO:     Started server process [4679]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:52392 - "GET /debug HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52392 - "GET /api/missions HTTP/1.1" 200 OK
+INFO:     ('127.0.0.1', 52395) - "WebSocket /ws/debug" [accepted]
+INFO:     connection open
+INFO:     ('127.0.0.1', 52404) - "WebSocket /ws/fleet" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:52393 - "GET /api/ai/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52423 - "GET /helm HTTP/1.1" 200 OK
+INFO:     ('127.0.0.1', 52426) - "WebSocket /ws/helm" [accepted]
+INFO:     connection open
+INFO:     connection closed
+WARNING:  WatchFiles detected changes in 'sub-bridge/backend/sim/ai_orchestrator.py'. Reloading...
+INFO:     Shutting down
+INFO:     connection closed
+INFO:     connection closed
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [4679]
+INFO:     Started server process [6302]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'sub-bridge/backend/sim/ai_orchestrator.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [6302]
+INFO:     Started server process [6318]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'sub-bridge/backend/sim/loop.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [6318]
+INFO:     Started server process [6344]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'sub-bridge/backend/sim/loop.py', 'sub-bridge/backend/sim/ai_orchestrator.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [6344]
+INFO:     Started server process [6398]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'sub-bridge/backend/sim/ai_orchestrator.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [6398]
+INFO:     Started server process [6886]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'sub-bridge/backend/sim/loop.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [6886]
+INFO:     Started server process [6893]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'sub-bridge/backend/sim/loop.py', 'sub-bridge/backend/sim/ai_orchestrator.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [6893]
+INFO:     Started server process [6938]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'sub-bridge/backend/sim/ai_orchestrator.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [6938]
+INFO:     Started server process [7294]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'sub-bridge/backend/sim/ai_orchestrator.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [7294]
+INFO:     Started server process [7301]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'sub-bridge/backend/sim/ai_orchestrator.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [7301]
+INFO:     Started server process [7312]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'sub-bridge/backend/sim/ai_orchestrator.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [7312]
+INFO:     Started server process [7322]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'sub-bridge/backend/sim/ai_orchestrator.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [7322]
+INFO:     Started server process [7331]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'sub-bridge/backend/sim/ai_engines.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [7331]
+INFO:     Started server process [7757]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'sub-bridge/backend/sim/ai_engines.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [7757]
+INFO:     Started server process [8827]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:53565 - "GET /debug HTTP/1.1" 200 OK
+INFO:     ('127.0.0.1', 53568) - "WebSocket /ws/debug" [accepted]
+INFO:     127.0.0.1:53565 - "GET /api/missions HTTP/1.1" 200 OK
+INFO:     connection open
+INFO:     127.0.0.1:53566 - "GET /api/missions HTTP/1.1" 200 OK
+INFO:     ('127.0.0.1', 53577) - "WebSocket /ws/debug" [accepted]
+INFO:     connection open
+INFO:     connection closed
+INFO:     127.0.0.1:53575 - "GET /fleet HTTP/1.1" 200 OK
+INFO:     ('127.0.0.1', 53583) - "WebSocket /ws/fleet" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:53575 - "GET /api/ai/health HTTP/1.1" 200 OK
+INFO:     ('127.0.0.1', 53599) - "WebSocket /ws/fleet" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:53581 - "GET /api/ai/health HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     127.0.0.1:53606 - "GET /helm HTTP/1.1" 200 OK
+INFO:     ('127.0.0.1', 53609) - "WebSocket /ws/helm" [accepted]
+INFO:     connection open
+INFO:     connection closed
+INFO:     127.0.0.1:53607 - "GET /api/ai/health HTTP/1.1" 200 OK
+INFO:     ('127.0.0.1', 53618) - "WebSocket /ws/fleet" [accepted]
+INFO:     connection open
+INFO:     connection closed
+INFO:     connection closed
+INFO:     connection closed
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [8827]
+INFO:     Stopping reloader process [4613]

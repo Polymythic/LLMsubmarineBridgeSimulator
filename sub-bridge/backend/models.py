@@ -153,7 +153,10 @@ SHIP_CATALOG: Dict[str, ShipDef] = {
         ),
         default_hull=Hull(max_depth=20.0, max_speed=20.0, quiet_speed=5.0),
         default_weapons=WeaponsSuite(tube_count=0, torpedoes_stored=0, tubes=[]),
-        default_acoustics=Acoustics(thermocline_on=False),
+        default_acoustics=Acoustics(
+            thermocline_on=False,
+            source_level_by_speed={5: 120.0, 10: 130.0, 15: 140.0},
+        ),
     ),
     "Destroyer": ShipDef(
         name="Destroyer (ASW)",
@@ -168,7 +171,10 @@ SHIP_CATALOG: Dict[str, ShipDef] = {
         ),
         default_hull=Hull(max_depth=50.0, max_speed=32.0, quiet_speed=8.0),
         default_weapons=WeaponsSuite(tube_count=0, torpedoes_stored=0, tubes=[]),
-        default_acoustics=Acoustics(thermocline_on=False),
+        default_acoustics=Acoustics(
+            thermocline_on=False,
+            source_level_by_speed={5: 125.0, 15: 140.0, 25: 150.0},
+        ),
     ),
 }
 
@@ -242,6 +248,10 @@ class TelemetryContact(BaseModel):
     confidence: float
     bearingKnown: bool = True
     rangeKnown: bool = False
+    # Passive sonar enhancements (optional fields)
+    detectability: Optional[float] = None
+    snrDb: Optional[float] = None
+    bearingSigmaDeg: Optional[float] = None
 
 
 class TelemetryMessage(BaseModel):

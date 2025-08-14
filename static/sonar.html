@@ -123,7 +123,7 @@
       (contacts || []).forEach(c => {
         const bearing = ((c.bearing % 360) + 360) % 360;
         const x = xForBearing(bearing, W);
-        const strength = Math.max(0, Math.min(1, c.strength || 0));
+        const strength = Math.max(0, Math.min(1, (c.detectability != null ? c.detectability : c.strength) || 0));
         const glow = Math.floor(60 + strength * 180);
         for (let dx = -1; dx <= 1; dx++){
           const xi = Math.max(0, Math.min(W-1, x + dx));
@@ -286,7 +286,8 @@
             const li = document.createElement('li');
             li.title = 'Passive contact; bearing-only with noisy measurement.';
             const bearingText = (c.bearingKnown ? `${c.bearing.toFixed(0)}°` : 'unknown');
-            li.textContent = `ID ${c.id} brg ${bearingText} str ${c.strength.toFixed(2)} conf ${c.confidence.toFixed(2)}`;
+            const det = (c.detectability != null ? c.detectability : c.strength);
+            li.textContent = `ID ${c.id} brg ${bearingText} det ${det.toFixed(2)} conf ${c.confidence.toFixed(2)}`;
             list.appendChild(li);
           });
           prList.innerHTML = '';

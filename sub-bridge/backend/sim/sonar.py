@@ -64,6 +64,9 @@ def passive_contacts(self_ship: Ship, others: List[Ship]) -> List[TelemetryConta
                 confidence=confidence,
                 bearingKnown=True,
                 rangeKnown=False,
+                detectability=detect,
+                snrDb=snr_db,
+                bearingSigmaDeg=sigma,
             )
         )
     return contacts

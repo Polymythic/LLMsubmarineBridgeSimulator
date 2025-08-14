@@ -13,6 +13,16 @@
 - Consent interlock: captain grants 3–5 s window; events logged.
 - Periscope spotting (Mission 1 help): precise bearing/range/class when at periscope depth with scope raised.
 
+### Implementation Status (MVP) — 2025-08-14
+- Implemented: Tube FSM (Empty → Loaded → Flooded → DoorsOpen → Fired → Empty) with timers (reload/flood/doors) and degradation multiplier.
+- Implemented: Fire command fields — `tube`, `bearing_true` (UI/WS field `bearing`), `run_depth_m` (`run_depth`), `enable_range_m` (`enable_range`), and `doctrine` (locked to `passive_then_active`). `wire_guided` not yet supported.
+- Implemented: Kinematics — fixed speed, turn limit (20°/s), seeker cone, arming at enable range, proximity fuze; PN guidance with proportional error term when seeker active.
+- Implemented: Safety — pre‑arm avoidance turn away from ownship; post‑arm self‑destruct if too close to ownship (after 3 s grace).
+- Implemented: UI — Weapons page shows per‑tube states/timers and interlock readiness; inputs for bearing/run depth/enable range; doctrine selector locked to Passive→Active.
+- Implemented: Tests — coverage for tube FSM, arming, PN guidance trending toward target, and safety behavior.
+- Partial: Consent interlock — boolean Captain consent gate is enforced; TTL countdown window not yet implemented.
+- Not yet: Wire guidance; explicit passive→active seeker mode transition; BOL doctrine; countermeasure effects beyond simple spoof window.
+
 ### Tube Lifecycle & Interlocks
 - Preconditions: cannot open doors unless Flooded; cannot Fire unless DoorsOpen and consent valid.
 - Timers: reload/flood/doors scale with Weapons power and maintenance; jams possible when degraded (later).

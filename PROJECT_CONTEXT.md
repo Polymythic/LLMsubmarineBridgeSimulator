@@ -61,12 +61,38 @@
 
 ### Enemy Agent (LLM Tool-Calling)
 - Runs locally (Ollama/llama.cpp/text-gen-server or stub).
-- Sim summarizes state every 1–3 s and calls a local HTTP endpoint or in-process stub.
+- Calls are asynchronous and never block the 20 Hz loop. Timeouts/failures fall back to a rule-based stub.
 - Tool schema:
   - `set_nav(heading: 0–359.9, speed: knots ≥0, depth: m ≥0)`
   - `fire_torpedo(tube: int, bearing: 0–359.9, run_depth: m)`
   - `deploy_countermeasure(type: "noisemaker"|"decoy")`
-- Server clamps results to Hull/Weapons limits and enqueues for next tick; rule-based fallback on failure.
+- Server validates and clamps results to Hull/Weapons limits, ROE, and EMCON posture, then enqueues for the next tick.
+
+### Two-Tier Enemy AI: Fleet Commander + Ship Commanders
+
+#### Roles and Cadence
+- **Fleet Commander** (global): plans fleet-level objectives and formations on a slow cadence (30–60 s). Writes a shared `FleetIntent` into sim state.
+- **Ship Commanders** (per hostile ship): execute local actions via tool calls on a normal cadence (20 s) or an alert cadence (10 s) if detected/threatened (e.g., actively pinged, torpedo inbound, or confirmed counter-detection).
+
+#### Strict Information Boundaries
+- No AI agent may access hidden truth about the player submarine or any entity beyond what sensors and communications would provide.
+- Fleet Commander receives:
+  - Full state of friendly fleet (types, kinematics, health, weapons readiness, detectability flags).
+  - Mission/ROE and global context (time/weather) as appropriate.
+  - Aggregated enemy belief: contacts/classifications with uncertainty derived from sensor reports; never ground-truth positions.
+- Ship Commander receives:
+  - Its own kinematics, constraints, health, weapons readiness, maintenance state relevant to availability.
+  - Local contacts view (bearing-only, noisy; active ping returns as applicable) and local events (e.g., torpedo inbound).
+  - Last applied orders and the current `FleetIntent` subset relevant to its group/role.
+
+#### FleetIntent (shared strategy scaffold)
+- Example fields: `objectives`, `waypoints`/formations per group, `target_priority`, `engagement_rules` (weapons_free, min_confidence), `emcon` posture (active ping allowed, radio discipline), and optional convoy lanes/patrol boxes.
+- Ships are expected to bias decisions toward achieving `FleetIntent` while respecting local constraints and sensor reality.
+
+#### Engine Abstraction and Safety
+- Pluggable engine per agent: stub, local LLM (Ollama), remote LLM (OpenAI). Configurable via `config.py` and Debug UI.
+- All agent outputs are parsed, validated, and clamped. Invalid outputs are rejected and replaced with a conservative rule-based fallback.
+- Decisions, summaries (hashed), and applied orders are logged to persistence for observability and replay.
 
 #### LLM State Summary (example JSON)
 ```json

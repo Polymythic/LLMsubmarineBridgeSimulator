@@ -7,6 +7,7 @@ from typing import Dict, Set
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from .config import CONFIG
 from .bus import BUS
@@ -83,7 +84,12 @@ async def debug() -> FileResponse:
     return FileResponse(station_file("debug"))
 
 
-_station_clients: Dict[str, Set[WebSocket]] = {s: set() for s in ["captain", "helm", "sonar", "weapons", "engineering", "debug"]}
+@app.get("/fleet")
+async def fleet() -> FileResponse:
+    return FileResponse(station_file("fleet"))
+
+
+_station_clients: Dict[str, Set[WebSocket]] = {s: set() for s in ["captain", "helm", "sonar", "weapons", "engineering", "debug", "fleet"]}
 
 
 @app.websocket("/ws/{station}")
@@ -101,6 +107,7 @@ async def ws_station(ws: WebSocket, station: str) -> None:
         "weapons": "tick:weapons",
         "engineering": "tick:engineering",
         "debug": "tick:debug",
+        "fleet": "tick:fleet",
     }
     forward_topic = topic_map.get(station, "tick:all")
 
@@ -130,3 +137,17 @@ async def ws_station(ws: WebSocket, station: str) -> None:
     finally:
         fwd.cancel()
         _station_clients[station].discard(ws)
+
+
+@app.get("/api/ai/health")
+async def api_ai_health() -> JSONResponse:
+    if not getattr(CONFIG, "use_ai_orchestrator", False):
+        return JSONResponse({"ok": False, "detail": "orchestrator disabled"})
+    orch = getattr(sim, "_ai_orch", None)
+    if orch is None:
+        return JSONResponse({"ok": False, "detail": "orchestrator not initialized"})
+    try:
+        res = await orch.health_check()
+        return JSONResponse(res)
+    except Exception as e:
+        return JSONResponse({"ok": False, "detail": str(e)})

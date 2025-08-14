@@ -6,7 +6,7 @@ import math
 from typing import Dict, Optional
 import random
 from ..bus import BUS
-from ..config import CONFIG
+from ..config import CONFIG, reload_from_env
 from ..models import Ship, Kinematics, Hull, Acoustics, WeaponsSuite, Reactor, DamageState, MaintenanceTask, SHIP_CATALOG
 from ..storage import init_engine, create_run, insert_snapshot, insert_event
 from .ecs import World
@@ -14,6 +14,7 @@ from .physics import integrate_kinematics
 from .sonar import passive_contacts, ActivePingState, active_ping
 from .weapons import try_load_tube, try_flood_tube, try_set_doors, try_fire, step_torpedo, step_tubes
 from .ai_tools import LocalAIStub
+from .ai_orchestrator import AgentsOrchestrator
 from .damage import step_damage, step_engineering
 
 
@@ -30,7 +31,8 @@ class Simulation:
         self._radio_raised = False
         self._pump_fwd = False
         self._pump_aft = False
-        self._stop = asyncio.Event()
+        # Lazily initialize asyncio.Event to avoid requiring an event loop during tests
+        self._stop: Optional[asyncio.Event] = None
         self._last_snapshot = 0.0
         self._last_ai = 0.0
         self._transient_events = []  # cleared every tick
@@ -60,6 +62,18 @@ class Simulation:
         self._storm_timer = 0.0
         # Debug control: suppress spawning new maintenance tasks
         self._suppress_maintenance_spawns = False
+        # AI orchestrator (optional)
+        if CONFIG.use_ai_orchestrator:
+            self._ai_orch = AgentsOrchestrator(lambda: self.world, self.engine, self.run_id)
+            try:
+                self._ai_orch.set_fleet_engine(getattr(CONFIG, "ai_fleet_engine", "stub"), getattr(CONFIG, "ai_fleet_model", "stub"))
+                self._ai_orch.set_ship_engine(getattr(CONFIG, "ai_ship_engine", "stub"), getattr(CONFIG, "ai_ship_model", "stub"))
+            except Exception:
+                pass
+            # Timers (sim-time based)
+            self._ai_fleet_timer = 0.0
+            self._ai_ship_timers: Dict[str, float] = {}
+            self._ai_pending: set[asyncio.Task] = set()
 
     def _init_default_world(self) -> None:
         # Clear existing world and set to original game state
@@ -114,6 +128,12 @@ class Simulation:
             self._storm_timer = 0.0
 
     def stop(self) -> None:
+        if self._stop is None:
+            try:
+                self._stop = asyncio.Event()
+            except Exception:
+                # As a last resort, set a simple attribute; run loop will honor if already stopping
+                self._stop = asyncio.Event()
         self._stop.set()
 
     def set_captain_consent(self, consent: bool) -> None:
@@ -275,6 +295,8 @@ class Simulation:
         self._recompute_penalties_from_tasks(ship)
 
     async def run(self) -> None:
+        if self._stop is None:
+            self._stop = asyncio.Event()
         last = time.perf_counter()
         while not self._stop.is_set():
             now = time.perf_counter()
@@ -288,7 +310,72 @@ class Simulation:
     async def tick(self, dt: float) -> None:
         own = self.world.get_ship("ownship")
 
-        if CONFIG.use_enemy_ai:
+        if CONFIG.use_ai_orchestrator:
+            # Advance orchestrator timers
+            self._ai_fleet_timer += dt
+            # Default cadences
+            fleet_cadence = 45.0
+            ship_normal_cadence = 20.0
+            ship_alert_cadence = 10.0
+            # Schedule fleet run
+            if self._ai_fleet_timer >= fleet_cadence:
+                self._ai_fleet_timer = 0.0
+                async def _fleet_job():
+                    res = await self._ai_orch.run_fleet()
+                    # Persist tool calls for trace
+                    for tc in res.get("tool_calls_validated", []):
+                        insert_event(self.engine, self.run_id, "ai.tool.fleet", json.dumps(tc))
+                        # Update world-level FleetIntent for UI only (not yet consumed by ships)
+                        if tc.get("tool") == "set_fleet_intent":
+                            self._fleet_intent = tc.get("arguments", {})
+                    # Mirror recent runs into sim for Fleet UI
+                    self._ai_recent_runs = getattr(self._ai_orch, "_recent_runs", [])
+                t = asyncio.create_task(_fleet_job())
+                self._ai_pending.add(t)
+                t.add_done_callback(lambda _t: self._ai_pending.discard(_t))
+            # Schedule per-ship runs (RED side only)
+            for ship in self.world.all_ships():
+                if ship.side != "RED":
+                    continue
+                sid = ship.id
+                if sid not in self._ai_ship_timers:
+                    self._ai_ship_timers[sid] = 0.0
+                self._ai_ship_timers[sid] += dt
+                # Detection-aware cadence (non-leaking heuristic):
+                # - If ownship recently active pinged (cooldown active), enemies go alert
+                # - If close to noisy ownship while EMCON alert is high
+                dx = ship.kin.x - own.kin.x
+                dy = ship.kin.y - own.kin.y
+                dist_m = (dx * dx + dy * dy) ** 0.5
+                recent_active_ping = self.active_ping_state.timer > 0.0
+                close_and_noisy = (dist_m <= 7000.0) and (self._emcon_high_timer >= 10.0)
+                is_alert = recent_active_ping or close_and_noisy
+                cadence = ship_alert_cadence if is_alert else ship_normal_cadence
+                if self._ai_ship_timers[sid] >= cadence:
+                    self._ai_ship_timers[sid] = 0.0
+                    async def _ship_job(_sid: str = sid):
+                        res = await self._ai_orch.run_ship(_sid)
+                        # Apply first validated tool call (set_nav only for now)
+                        for tc in res.get("tool_calls_validated", []):
+                            tool = tc.get("tool")
+                            args = tc.get("arguments", {})
+                            if tool == "set_nav":
+                                try:
+                                    tgt = self.world.get_ship(_sid)
+                                except Exception:
+                                    continue
+                                tgt.kin.heading = float(args.get("heading", tgt.kin.heading)) % 360.0
+                                tgt.kin.speed = max(0.0, float(args.get("speed", tgt.kin.speed)))
+                                tgt.kin.depth = max(0.0, float(args.get("depth", tgt.kin.depth)))
+                                insert_event(self.engine, self.run_id, "ai.tool.apply", json.dumps({"ship_id": _sid, **tc}))
+                            # Other tools (fire_torpedo, deploy_countermeasure) are ignored for non-ownship for now
+                            break
+                        # Mirror recent runs into sim for Fleet UI
+                        self._ai_recent_runs = getattr(self._ai_orch, "_recent_runs", [])
+                    t = asyncio.create_task(_ship_job())
+                    self._ai_pending.add(t)
+                    t.add_done_callback(lambda _t: self._ai_pending.discard(_t))
+        elif CONFIG.use_enemy_ai:
             self._last_ai += dt
             if self._last_ai >= CONFIG.ai_poll_s:
                 self._last_ai = 0.0
@@ -458,6 +545,26 @@ class Simulation:
         await BUS.publish("tick:weapons", {"topic": "telemetry", "data": tel_weapons})
         await BUS.publish("tick:engineering", {"topic": "telemetry", "data": tel_engineering})
         await BUS.publish("tick:debug", {"topic": "telemetry", "data": debug_payload})
+        # Fleet AI telemetry: intent and recent runs/tool calls
+        from ..config import CONFIG as _CFG
+        fleet_payload = {
+            **base,
+            "fleetIntent": getattr(self, "_fleet_intent", {}),
+            "aiRuns": getattr(self, "_ai_recent_runs", [])[-50:],
+            "engines": {
+                "fleet": {"engine": getattr(_CFG, "ai_fleet_engine", "stub"), "model": getattr(_CFG, "ai_fleet_model", "stub")},
+                "ship": {"engine": getattr(_CFG, "ai_ship_engine", "stub"), "model": getattr(_CFG, "ai_ship_model", "stub")},
+            },
+            "ships": [
+                {
+                    "id": s.id, "side": s.side, "class": getattr(s, "ship_class", None),
+                    "x": s.kin.x, "y": s.kin.y, "depth": s.kin.depth,
+                    "heading": s.kin.heading, "speed": s.kin.speed,
+                }
+                for s in self.world.all_ships()
+            ],
+        }
+        await BUS.publish("tick:fleet", {"topic": "telemetry", "data": fleet_payload})
 
         # Clear transient events after publishing
         self._transient_events.clear()
@@ -607,6 +714,29 @@ class Simulation:
             return None
         if topic == "debug.restart":
             # Reset to original game state
+            # Reload .env on mission restart so config changes take effect without server restart
+            try:
+                reload_from_env()
+            except Exception:
+                pass
+            # Recreate orchestrator if needed to pick up engine changes
+            if getattr(CONFIG, "use_ai_orchestrator", False):
+                self._ai_orch = AgentsOrchestrator(lambda: self.world, self.engine, self.run_id)
+                try:
+                    self._ai_orch.set_fleet_engine(getattr(CONFIG, "ai_fleet_engine", "stub"), getattr(CONFIG, "ai_fleet_model", "stub"))
+                    self._ai_orch.set_ship_engine(getattr(CONFIG, "ai_ship_engine", "stub"), getattr(CONFIG, "ai_ship_model", "stub"))
+                except Exception:
+                    pass
+                # Fleet/Ship engine health check for Fleet UI
+                try:
+                    hc = await self._ai_orch.health_check()
+                    self._ai_recent_runs = (getattr(self, "_ai_recent_runs", []) or []) + [{
+                        "agent": "system",
+                        "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        "tool_calls": [{"tool": "health_check", "arguments": hc}],
+                    }]
+                except Exception:
+                    pass
             self._init_default_world()
             return None
         if topic == "ai.tool":

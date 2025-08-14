@@ -59,6 +59,22 @@ A cooperative, local-multiplayer submarine bridge simulator. Five players occupy
   - `set_nav`: `{"ship_id":"red-01","tool":"set_nav","arguments":{"heading":120,"speed":6,"depth":0}}`
   - `fire_torpedo` and `deploy_countermeasure`: placeholders gated by capabilities.
 
+### Two-Tier AI Control (Fleet Commander + Ship Commanders)
+- **Design**: One global Fleet Commander plans strategy; each hostile ship has its own Ship Commander that executes local orders via tool calls.
+- **Cadence**:
+  - Fleet Commander: slow planning every 30–60 s.
+  - Ship Commander: every 20 s normally; every 10 s if detected/threatened.
+- **Strict Information Boundaries** (never leak hidden truth about the player sub):
+  - Fleet Commander sees: full state of its own fleet; mission/ROE; global game context that would be known (e.g., time/weather). It does not see the authoritative truth of enemy positions—only the aggregated enemy belief (contacts/classifications with uncertainty) derived from sensors and shared reports.
+  - Ship Commander sees: its own kinematics/health/weapons readiness, its local contacts (bearing-only, noisy), last orders, and the published `FleetIntent`. It never sees the debug truth map or hidden enemy data.
+- **Outputs**:
+  - Fleet Commander writes a shared `FleetIntent` (objectives, waypoints/formations, target priorities, engagement and EMCON posture).
+  - Ship Commanders issue constrained tool calls: `set_nav`, `fire_torpedo`, `deploy_countermeasure`. Server validates/clamps to platform limits and ROE before applying.
+- **Engines**: Pluggable AI engines (stub, local `ollama`, remote OpenAI). Calls run asynchronously so the 20 Hz loop remains authoritative and jitter-free.
+- **Debug/Control**: Debug panel can enable/disable fleet and per-ship AI, choose engine/model, and view last decisions. Information shown in debug never expands what the AI actually receives.
+
+See also: `docs/AI.md` for detailed schemas, prompts, scheduling, and agent-based handoff/tracing.
+
 
 ## Requirements
 - Python 3.11+
@@ -68,6 +84,7 @@ A cooperative, local-multiplayer submarine bridge simulator. Five players occupy
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+cp example.env .env  # then edit .env as needed; do NOT commit your real .env
 ```
 
 ## Run
@@ -82,5 +99,21 @@ Open:
 - http://localhost:8000/sonar
 - http://localhost:8000/weapons
 - http://localhost:8000/engineering
+ - http://localhost:8000/fleet
 
 LAN access: http://192.168.1.100:8000/ (adjust to your host IP)
+
+### Environment configuration
+- Copy `example.env` to `.env` and edit values locally. Never commit `.env`.
+- Relevant keys:
+  - `USE_AI_ORCHESTRATOR` to enable Fleet/Ship agents orchestration.
+  - `AI_FLEET_ENGINE` / `AI_SHIP_ENGINE` = `stub` | `ollama` | `openai` with corresponding `*_MODEL`.
+  - `OPENAI_API_KEY` (only in your local `.env`) if using OpenAI; `OLLAMA_HOST` for local LLMs.
+  - Legacy path: `USE_ENEMY_AI` for simple periodic stub behavior.
+
+### Fleet AI UI and health checks
+- Open `/fleet` to view:
+  - Current FleetIntent (if any), recent agent runs/tool calls, engine/model banner, and a live call log.
+  - A health-check is issued via `GET /api/ai/health` shortly after page load to verify engine connectivity.
+- Press “Restart Mission” in `/debug` after changing `.env`. The server reloads `.env` and re-initializes the orchestrator without full server restart.
+- Default Debug mission selection is set to “Surface Vessel (Training)” for quick testing.

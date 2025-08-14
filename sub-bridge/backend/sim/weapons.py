@@ -90,6 +90,9 @@ def try_fire(ship: Ship, tube_idx: int, bearing_deg: float, run_depth: float, en
         "spoofed_timer": 0.0,
         "run_depth": run_depth,
         "doctrine": doctrine,
+        # PN guidance state
+        "pn_nav_const": 3.0,
+        "los_prev": None,
     }
     tube.weapon = None
     tube.state = "Empty"
@@ -110,6 +113,28 @@ def step_torpedo(t: dict, world, dt: float, on_event: Optional[Callable[[str, di
     # Spoof timer decay
     if t.get("spoofed_timer", 0.0) > 0.0:
         t["spoofed_timer"] = max(0.0, t["spoofed_timer"] - dt)
+
+    # Self-preservation: avoid ownship
+    own = world.ships.get("ownship")
+    own_rng = math.hypot(own.kin.x - t["x"], own.kin.y - t["y"]) if own else 1e9
+    if not t["armed"]:
+        # If ownship is within 300 m and ahead within 60°, bias heading away pre-arm
+        if own and own_rng < 300.0:
+            bearing_to_own = (math.degrees(math.atan2(own.kin.x - t["x"], own.kin.y - t["y"])) % 360.0)
+            off = abs(((bearing_to_own - t["heading"] + 540) % 360) - 180)
+            if off < 60.0:
+                # Turn away by up to 30°/s pre-arm
+                away = (bearing_to_own + 180.0) % 360.0
+                dh = ((away - t["heading"] + 540) % 360) - 180
+                max_turn = 30.0 * dt
+                t["heading"] = (t["heading"] + max(-max_turn, min(max_turn, dh))) % 360
+    else:
+        # Post-arm: self-destruct if dangerously close to ownship (safety), but allow initial departure
+        if own and own_rng < 200.0 and t.get("run_time", 0.0) > 3.0:
+            if on_event:
+                on_event("torpedo.self_destruct", {"reason": "ownship_proximity", "range_m": own_rng})
+            t["run_time"] = t["max_run_time"] + 1.0
+            return
 
     # Detonation check against opposing ships
     for ship in world.all_ships():
@@ -132,18 +157,42 @@ def step_torpedo(t: dict, world, dt: float, on_event: Optional[Callable[[str, di
             t["spoofed_timer"] = 3.0
             if on_event:
                 on_event("torpedo.spoofed", {"seconds": t["spoofed_timer"]})
-        # Compute desired heading using compass bearing (0°=N, 90°=E)
+        # Compute LOS angle and rate for proportional navigation (PN)
         dx = target.kin.x - t["x"]
         dy = target.kin.y - t["y"]
-        desired = (math.degrees(math.atan2(dx, dy)) % 360.0)
-        dh = ((desired - t["heading"] + 540) % 360) - 180
-        # If spoofed, add jitter and reduce turn authority
-        if t.get("spoofed_timer", 0.0) > 0.0:
-            dh += random.uniform(-30.0, 30.0)
-            max_turn = 10.0 * dt
+        los = (math.degrees(math.atan2(dx, dy)) % 360.0)
+        # If no previous LOS, fall back to proportional-to-error for the first frame
+        if t.get("los_prev") is None:
+            dh = ((los - t["heading"] + 540) % 360) - 180
+            if t.get("spoofed_timer", 0.0) > 0.0:
+                dh += random.uniform(-30.0, 30.0)
+                max_turn_rate = 10.0
+            else:
+                max_turn_rate = 20.0
+            applied_turn = max(-max_turn_rate, min(max_turn_rate, dh)) * dt
+            t["heading"] = (t["heading"] + applied_turn) % 360
+            t["los_prev"] = los
         else:
-            max_turn = 20.0 * dt
-        t["heading"] = (t["heading"] + max(-max_turn, min(max_turn, dh))) % 360
+            # LOS rate (deg/s) approximated by finite difference
+            los_prev = t.get("los_prev")
+            # Normalize smallest angle difference
+            los_rate = (((los - los_prev + 540) % 360) - 180) / max(1e-6, dt)
+            t["los_prev"] = los
+            nav_const = float(t.get("pn_nav_const", 3.0))
+            commanded_turn_rate = nav_const * los_rate
+            # Blend in proportional-to-error term to ensure decisive slewing toward LOS
+            dh_err = ((los - t["heading"] + 540) % 360) - 180
+            k_error = 1.0  # deg/s per deg of error (will be clamped by max_turn_rate below)
+            commanded_turn_rate += k_error * dh_err
+            # Jitter and reduced authority when spoofed
+            if t.get("spoofed_timer", 0.0) > 0.0:
+                commanded_turn_rate += random.uniform(-30.0, 30.0)
+                max_turn_rate = 10.0
+            else:
+                max_turn_rate = 20.0
+            # Clamp and apply turn over dt
+            applied_turn = max(-max_turn_rate, min(max_turn_rate, commanded_turn_rate)) * dt
+            t["heading"] = (t["heading"] + applied_turn) % 360
 
     # Move torpedo using compass convention (0°=N, 90°=E)
     mps = t["speed"] * 0.514444

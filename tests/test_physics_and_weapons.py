@@ -60,3 +60,72 @@ def test_tube_state_machine_timing():
     torp = try_fire(ship, 1, 90.0, 100.0)
     assert torp is not None
     assert t1.state == "Empty"
+
+
+def test_torpedo_arming_and_pn_guidance_and_safety():
+    ship = make_own()
+    # Prepare tube and fire
+    assert try_load_tube(ship, 1, "Mk48")
+    # Fast-forward load
+    for _ in range(50):
+        step_tubes(ship, 1.0)
+    assert try_flood_tube(ship, 1)
+    for _ in range(10):
+        step_tubes(ship, 1.0)
+    assert try_set_doors(ship, 1, True)
+    for _ in range(5):
+        step_tubes(ship, 1.0)
+    torp = try_fire(ship, 1, 0.0, 50.0, enable_range_m=500.0)
+    assert torp is not None
+    # World with one target ahead at ~1500 m
+    from backend.sim.ecs import World
+    from backend.models import Ship as MShip
+    world = World()
+    world.add_ship(ship)
+    target = MShip(
+        id="red-01", side="RED",
+        kin=Kinematics(x=0.0, y=1500.0, depth=50.0, heading=180.0, speed=0.0),
+        hull=Hull(), acoustics=Acoustics(), weapons=WeaponsSuite(), reactor=Reactor(), damage=DamageState()
+    )
+    world.add_ship(target)
+    # Step until armed
+    run = 0.0
+    while not torp["armed"] and run < 60.0:
+        from backend.sim.weapons import step_torpedo
+        step_torpedo(torp, world, dt=1.0)
+        run += 1.0
+    assert torp["armed"]
+    # After arming, heading should trend toward target bearing (0° to 0 for target at North)
+    h0 = torp["heading"]
+    from backend.sim.weapons import step_torpedo
+    for _ in range(5):
+        step_torpedo(torp, world, dt=1.0)
+    h1 = torp["heading"]
+    # Heading deviation should reduce toward 0°
+    def angdiff(a,b):
+        return abs(((a-b+540)%360)-180)
+    assert angdiff(h1, 0.0) <= angdiff(h0, 0.0) + 1e-3
+    # Safety: place ownship very close ahead pre-arm and ensure it turns away (simulate new torpedo)
+    # Reload and prep again for second fire
+    assert try_load_tube(ship, 1, "Mk48")
+    for _ in range(50):
+        step_tubes(ship, 1.0)
+    assert try_flood_tube(ship, 1)
+    for _ in range(10):
+        step_tubes(ship, 1.0)
+    assert try_set_doors(ship, 1, True)
+    for _ in range(5):
+        step_tubes(ship, 1.0)
+    torp2 = try_fire(ship, 1, 0.0, 50.0, enable_range_m=1000.0)
+    assert torp2 is not None
+    ship.kin.x = 0.0; ship.kin.y = 10.0
+    run2 = 0.0
+    turned = False
+    while not torp2["armed"] and run2 < 3.0:
+        h_before = torp2["heading"]
+        step_torpedo(torp2, world, dt=0.5)
+        h_after = torp2["heading"]
+        if angdiff(h_after, 180.0) < angdiff(h_before, 180.0):
+            turned = True
+        run2 += 0.5
+    assert turned

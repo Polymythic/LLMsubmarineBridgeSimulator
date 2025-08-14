@@ -25,6 +25,7 @@
           <option value="patrol">Patrol - Blue vs Single Red</option>
           <option value="ambush">Ambush - Two Reds Ahead</option>
           <option value="convoy">Convoy Escort</option>
+          <option value="surface_vessel">Surface Vessel (Training)</option>
         </select>
       </div>
       <div class="pill" style="margin-left: 8px;">
@@ -128,11 +129,23 @@
     }
 
     ws.onmessage = (ev) => { try { const m = JSON.parse(ev.data); if (m.topic === 'telemetry') { ownEl.textContent = `hdg ${m.data.ownship.heading.toFixed(0)} spd ${m.data.ownship.speed.toFixed(1)} dpt ${m.data.ownship.depth.toFixed(0)}`; render(m.data); const maint = (m.data.maintenance && typeof m.data.maintenance.spawnsEnabled === 'boolean') ? m.data.maintenance.spawnsEnabled : true; const maintState = document.getElementById('maintState'); maintState.textContent = maint ? 'ON' : 'OFF'; maintState.style.color = maint ? '#8DEB8D' : '#FF6B6B'; } } catch(e){} };
-    document.getElementById('restart').onclick = () => { ws.send(JSON.stringify({topic:'debug.restart', data:{}})); };
-    const mission1 = document.createElement('button'); mission1.textContent = 'Mission 1'; mission1.onclick = () => { ws.send(JSON.stringify({topic:'debug.mission1', data:{}})); };
-    document.body.appendChild(mission1);
-    const surfaceBtn = document.createElement('button'); surfaceBtn.textContent = 'Surface Vessel Mission'; surfaceBtn.style.marginLeft = '8px'; surfaceBtn.onclick = () => { ws.send(JSON.stringify({topic:'debug.mission.surface_vessel', data:{}})); };
-    document.body.appendChild(surfaceBtn);
+    document.getElementById('restart').onclick = () => {
+      const sel = document.getElementById('mission');
+      const mission = sel && sel.value ? sel.value : 'patrol';
+      if (mission === 'surface_vessel') {
+        ws.send(JSON.stringify({topic:'debug.mission.surface_vessel', data:{}}));
+      } else if (mission === 'patrol') {
+        ws.send(JSON.stringify({topic:'debug.restart', data:{}}));
+      } else if (mission === 'ambush') {
+        // Not implemented yet; fallback to default reset
+        ws.send(JSON.stringify({topic:'debug.restart', data:{}}));
+      } else if (mission === 'convoy') {
+        // Not implemented yet; fallback to default reset
+        ws.send(JSON.stringify({topic:'debug.restart', data:{}}));
+      } else {
+        ws.send(JSON.stringify({topic:'debug.restart', data:{}}));
+      }
+    };
     document.getElementById('toggleMaint').onclick = () => {
       const isOn = (document.getElementById('maintState').textContent || 'ON') === 'ON';
       const next = !isOn;

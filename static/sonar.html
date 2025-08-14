@@ -26,15 +26,6 @@
         <button id="testRepair" title="Test repair button functionality" style="margin-left: 8px; background: #7C3AED; color: white;">Test Repair</button>
         <div title="Ping cooldown in seconds">Ping cooldown: <span id="cd">0</span>s</div>
         <div class="label" title="Current EMCON risk from acoustics">EMCON: <span id="emcon">low</span></div>
-        <div class="panel" style="width:100%;">
-          <h3>Maintenance</h3>
-          <div class="row" id="tasksRow">
-            <div class="label" id="task" title="Current maintenance tasks">No Active Tasks</div>
-          </div>
-          <div class="row">
-            <div class="label">Progress scales with station power allocation.</div>
-          </div>
-        </div>
         <h3>Contacts</h3>
         <ul id="contacts" title="Bearing-only passive contacts"></ul>
         <h3>Ping Responses</h3>
@@ -44,6 +35,15 @@
         <div class="label" title="Bearing axis centered at 0°; time flows downward">Passive Waterfall</div>
         <canvas id="legend" width="720" height="24" title="Bearing ticks (270 | 0 | 90)"></canvas>
         <canvas id="waterfall" width="720" height="220" title="Bearing-time-intensity display (0° centered)"></canvas>
+      </div>
+    </div>
+    <div class="panel" style="width:100%;">
+      <h3>Maintenance</h3>
+      <div class="row" id="tasksRow">
+        <div class="label" id="task" title="Current maintenance tasks">No Active Tasks</div>
+      </div>
+      <div class="row">
+        <div class="label">Progress scales with station power allocation.</div>
       </div>
     </div>
     <pre id="telemetry" title="Station telemetry and events"></pre>

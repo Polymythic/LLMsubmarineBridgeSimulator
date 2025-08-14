@@ -437,6 +437,10 @@ class Simulation:
                     "capabilities": (getattr(s, "capabilities", None).dict() if getattr(s, "capabilities", None) else None),
                     "x": s.kin.x, "y": s.kin.y, "depth": s.kin.depth,
                     "heading": s.kin.heading, "speed": s.kin.speed,
+                    # Passive detectability breakdown for debug
+                    "slDb": getattr(s.acoustics, "last_snr_db", 0.0) + (20.0 * 0),
+                    "snrDb": getattr(s.acoustics, "last_snr_db", 0.0),
+                    "passiveDetect": getattr(s.acoustics, "last_detectability", 0.0),
                     **bearings_to(s.kin.x, s.kin.y),
                     "range_from_own": (( ( (s.kin.x - own.kin.x)**2 + (s.kin.y - own.kin.y)**2 ) ** 0.5 )),
                 }

@@ -32,26 +32,34 @@ def passive_contacts(self_ship: Ship, others: List[Ship]) -> List[TelemetryConta
         rel = angle_diff(brg, self_ship.kin.heading)
         if abs(rel) > 180 - BAFFLES_DEG / 2:
             continue
-        speed_key = min(sorted(self_ship.acoustics.source_level_by_speed.keys()), key=lambda k: abs(k - abs(other.kin.speed)))
+        # Source level from target class/speed (fallback to default curve)
+        speed_key = min(sorted(other.acoustics.source_level_by_speed.keys()), key=lambda k: abs(k - abs(other.kin.speed)))
         src_lvl = other.acoustics.source_level_by_speed.get(speed_key, 110.0)
-        tl = 20 * math.log10(max(1.0, rng))
+        # Transmission loss with simple absorption toggle via thermocline
+        tl_geo = 20.0 * math.log10(max(1.0, rng))
+        layer_atten = 4.0 if self_ship.acoustics.thermocline_on else 0.0
+        tl = tl_geo + layer_atten
         ambient = 60.0
         # Apply passive SNR penalty from degraded systems
         penalty = getattr(self_ship.acoustics, "passive_snr_penalty_db", 0.0)
-        snr = max(0.0, src_lvl - tl - ambient - penalty)
-        strength = max(0.0, min(1.0, snr / 30.0))
+        snr_db = max(0.0, src_lvl - tl - ambient - penalty)
+        # Detectability soft-knee mapping to 0..1
+        detect = max(0.0, min(1.0, snr_db / 30.0))
         # Gate very weak signals: hide from UI and mark bearing/range unknown
-        if strength < 0.15:
+        if detect < 0.15:
             continue
         # Bearing error grows as target slows (harder to localize) and with ownship degradation
         sigma = max(1.0, 10.0 - other.kin.speed * 0.3 + self_ship.acoustics.bearing_noise_extra)
         noisy_bearing = normalize_angle_deg(brg + random.gauss(0, sigma))
-        confidence = min(1.0, strength * 1.2)
+        confidence = min(1.0, detect * 1.2)
+        # Store last computed detectability on target for debug use (optional)
+        other.acoustics.last_snr_db = snr_db
+        other.acoustics.last_detectability = detect
         contacts.append(
             TelemetryContact(
                 id=other.id,
                 bearing=noisy_bearing,
-                strength=strength,
+                strength=detect,
                 classifiedAs="SSN?",
                 confidence=confidence,
                 bearingKnown=True,

@@ -123,7 +123,13 @@
         const bTrue = (s.bearing_true ?? 0).toFixed(0);
         const bRel = (s.bearing_rel ?? 0).toFixed(0);
         const rng = (s.range_from_own ?? 0).toFixed(0);
-        li.textContent = `${s.id} hdg ${s.heading.toFixed(0)} spd ${s.speed.toFixed(1)} dpt ${s.depth.toFixed(0)} brgT ${bTrue} brgR ${bRel} rng ${rng}`;
+        const det = Math.round(((s.passiveDetect || 0) * 100));
+        li.textContent = `${s.id} hdg ${s.heading.toFixed(0)} spd ${s.speed.toFixed(1)} dpt ${s.depth.toFixed(0)} brgT ${bTrue} brgR ${bRel} rng ${rng} detect ${det}%`;
+        // Color pip based on detectability
+        if (det >= 70) { li.style.color = '#FF6B6B'; }
+        else if (det >= 40) { li.style.color = '#FACC15'; }
+        else { li.style.color = '#8DEB8D'; }
+        li.title = `Passive detect: ${det}%  | snrDb: ${((s.snrDb||0)).toFixed(1)}`;
         list.appendChild(li);
       });
     }

@@ -38,6 +38,9 @@ class Acoustics(BaseModel):
     active_range_noise_add_m: float = 0.0
     active_bearing_noise_extra: float = 0.0
     thermocline_bias: float = 0.0  # >0 worsens propagation model
+    # Derived detectability for debug/telemetry
+    last_snr_db: float = 0.0
+    last_detectability: float = 0.0
 
 
 class PowerAllocations(BaseModel):

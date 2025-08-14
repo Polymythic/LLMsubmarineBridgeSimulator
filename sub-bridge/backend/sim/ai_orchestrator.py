@@ -202,6 +202,8 @@ class AgentsOrchestrator:
             # Normalize/augment intent to ensure objectives/guidance present
             intent = self._normalize_intent(summary, intent_raw)
             result["tool_calls"] = [{"tool": "set_fleet_intent", "arguments": intent}]
+            # Add concise human summary
+            fleet_thought = self._summarize_fleet_intent(intent)
             # Validation/clamping would occur here (placeholder: accept as-is)
             result["tool_calls_validated"] = result["tool_calls"]
             # Emit trace event
@@ -216,6 +218,7 @@ class AgentsOrchestrator:
                 "agent": "fleet",
                 "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "tool_calls": result["tool_calls_validated"],
+                "summary": fleet_thought,
             })  # type: ignore[attr-defined]
         except Exception as e:
             result["error"] = str(e)
@@ -272,6 +275,49 @@ class AgentsOrchestrator:
         intent["notes"] = notes
         return intent
 
+    def _summarize_fleet_intent(self, intent: Dict[str, Any]) -> str:
+        try:
+            dests = []
+            for sid, obj in (intent.get("objectives") or {}).items():
+                if isinstance(obj, dict) and "destination" in obj:
+                    d = obj["destination"]
+                    if isinstance(d, (list, tuple)) and len(d) == 2:
+                        dests.append(f"{sid}→[{float(d[0]):.0f},{float(d[1]):.0f}]")
+            notes = "; ".join([n.get("text", "") for n in (intent.get("notes") or []) if isinstance(n, dict)])
+            wf = intent.get("engagement_rules", {}).get("weapons_free")
+            er = "WF" if wf else "HOLD"
+            parts = []
+            if dests:
+                parts.append("Objectives: " + ", ".join(dests))
+            parts.append(f"ROE:{er}")
+            if notes:
+                parts.append(notes)
+            return " | ".join(parts)
+        except Exception:
+            return ""
+
+    def _summarize_ship_tool(self, ship_id: str, tool: Dict[str, Any] | None) -> str:
+        try:
+            if not tool or not isinstance(tool, dict):
+                return ""
+            name = tool.get("tool")
+            args = tool.get("arguments", {}) or {}
+            if name == "set_nav":
+                h = float(args.get("heading", 0.0))
+                s = float(args.get("speed", 0.0))
+                d = float(args.get("depth", 0.0))
+                return f"{ship_id}: set_nav hdg {h:.0f} spd {s:.1f} dpt {d:.0f}"
+            if name == "fire_torpedo":
+                b = float(args.get("bearing", 0.0))
+                rd = float(args.get("run_depth", 0.0))
+                return f"{ship_id}: fire torpedo brg {b:.0f} dpt {rd:.0f}"
+            if name == "deploy_countermeasure":
+                t = str(args.get("type", ""))
+                return f"{ship_id}: deploy {t}"
+            return ""
+        except Exception:
+            return ""
+
     async def run_ship(self, ship_id: str, parent_run_id: Optional[str] = None) -> RunResult:
         started = time.perf_counter()
         result: RunResult = {
@@ -300,6 +346,12 @@ class AgentsOrchestrator:
                 result["error"] = "Unknown tool returned by engine; applied fallback set_nav"
             else:
                 result["tool_calls_validated"] = [tool]
+            # Add concise human summary of the decision
+            try:
+                chosen = result["tool_calls_validated"][0] if result.get("tool_calls_validated") else None
+                ship_thought = self._summarize_ship_tool(ship_id, chosen)
+            except Exception:
+                ship_thought = None
             insert_event(self._storage_engine, self._run_id, "ai.run.ship", json.dumps({
                 "ship_id": ship_id,
                 "summary_size": len(str(summary)),
@@ -312,6 +364,7 @@ class AgentsOrchestrator:
                 "ship_id": ship_id,
                 "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "tool_calls": result["tool_calls_validated"],
+                "summary": ship_thought,
             })  # type: ignore[attr-defined]
         except Exception as e:
             result["error"] = str(e)

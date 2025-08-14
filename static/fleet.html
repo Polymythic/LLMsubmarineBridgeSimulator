@@ -37,6 +37,7 @@
           const runs = d.aiRuns || [];
           document.getElementById('intent').textContent = JSON.stringify(intent, null, 2);
           document.getElementById('runs').textContent = JSON.stringify(runs.slice(-20), null, 2);
+          // Show concise summaries inline in log for quick human read
           const ships = d.ships || [];
           document.getElementById('ships').textContent = JSON.stringify(ships, null, 2);
           const engines = d.engines || {};
@@ -49,11 +50,13 @@
             if (processedKeys.has(key)) continue;
             processedKeys.add(key);
             const when = r.at || new Date().toISOString();
-            if (r.agent === 'fleet') {
-              appendLog(`${when} - fleet commander - planning from ${lastEngines.fleet.engine}:${lastEngines.fleet.model} - call ${r.tool_calls && r.tool_calls.length ? 'success' : 'no-op'}`);
+             if (r.agent === 'fleet') {
+               const summary = r.summary ? ` | ${r.summary}` : '';
+               appendLog(`${when} - fleet commander - planning from ${lastEngines.fleet.engine}:${lastEngines.fleet.model} - call ${r.tool_calls && r.tool_calls.length ? 'success' : 'no-op'}${summary}`);
             } else if (r.agent === 'ship') {
               const sid = r.ship_id || 'unknown';
-              appendLog(`${when} - ${sid} - planning from ${lastEngines.ship.engine}:${lastEngines.ship.model} - ${r.tool_calls && r.tool_calls.length ? 'success' : 'no-op'}`);
+               const summary = r.summary ? ` | ${r.summary}` : '';
+               appendLog(`${when} - ${sid} - planning from ${lastEngines.ship.engine}:${lastEngines.ship.model} - ${r.tool_calls && r.tool_calls.length ? 'success' : 'no-op'}${summary}`);
             } else if (r.agent === 'system' && r.tool_calls && r.tool_calls[0] && r.tool_calls[0].tool === 'health_check') {
               const okFleet = r.tool_calls[0].arguments && r.tool_calls[0].arguments.fleet && r.tool_calls[0].arguments.fleet.ok;
               const okShip = r.tool_calls[0].arguments && r.tool_calls[0].arguments.ship && r.tool_calls[0].arguments.ship.ok;

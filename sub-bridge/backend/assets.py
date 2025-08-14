@@ -30,6 +30,10 @@ class MissionConfig(BaseModel):
     environment: Dict[str, Any] = Field(default_factory=dict)
     ships: List[MissionShipSpawn]
     triggers: List[Dict[str, Any]] = Field(default_factory=list)
+    # New fields for richer UX and AI prompting
+    captain_summary: Optional[str] = None
+    ai_fleet_prompt: Optional[str] = None
+    ai_ship_prompts: Dict[str, str] = Field(default_factory=dict)
 
 
 def _read_json(path: Path) -> Any:
@@ -123,6 +127,10 @@ def apply_mission_to_world(mission: MissionConfig, world_getter, set_mission_bri
         "objective": mission.objective,
         "roe": mission.roe,
         "target_wp": mission.target_wp,
+        "captain_summary": mission.captain_summary,
+        # Pass AI prompts through for orchestrator use
+        "ai_fleet_prompt": mission.ai_fleet_prompt,
+        "ai_ship_prompts": mission.ai_ship_prompts,
         "comms_schedule": [
             {"at_s": float(t.get("at_s", 0.0)), "msg": t.get("comms")}
             for t in mission.triggers if "comms" in t

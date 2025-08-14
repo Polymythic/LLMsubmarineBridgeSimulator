@@ -2,6 +2,7 @@
   "id": "surface_training",
   "title": "Surface Vessel Intercept (Training)",
   "objective": "Escort convoy ship red-01 safely across sector; training shot optional.",
+  "captain_summary": "Training mission. You will shadow a single surface contact (red-01) and practice contact management and weapons procedures. Maintain EMCON; take a training shot when safe.",
   "roe": [
     "Weapons release authorized for training shot.",
     "Minimize active sonar to preserve EMCON."
@@ -22,6 +23,10 @@
       "spawn": { "x": 6000, "y": 0, "depth": 3, "heading": 90, "speed": 5 }
     }
   ],
+  "ai_fleet_prompt": "You are a fleet commander. In this mission you command a surface vessel red-01. Your mission is to get red-01 safely to grid 100,100. There is a rumor of an enemy submarine operating in the area. Issue prudent, doctrine-aligned guidance.",
+  "ai_ship_prompts": {
+    "red-01": "You are red-01, a surface vessel. You receive orders from the Fleet Commander. Execute guidance to reach grid 100,100 while maintaining prudent seamanship and avoiding threats."
+  },
   "triggers": [
     { "at_s": 90.0, "comms": "INFO: Surface contact maintaining 5 kn on easterly course." }
   ]

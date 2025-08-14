@@ -104,8 +104,12 @@ class OllamaAgentsEngine(BaseEngine):
             "while minimizing detectability and respecting ROE. You will receive a structured summary of your fleet "
             "and an uncertain belief of enemy contacts. Never assume ground-truth positions. Output only a JSON FleetIntent."
         )
+        hint = fleet_summary.get("_prompt_hint")
+        fs = dict(fleet_summary)
+        fs.pop("_prompt_hint", None)
         user = (
-            "FLEET_SUMMARY_JSON:\n" + json.dumps(fleet_summary, separators=(",", ":")) +
+            (f"MISSION_HINT:\n{hint}\n\n" if hint else "") +
+            "FLEET_SUMMARY_JSON:\n" + json.dumps(fs, separators=(",", ":")) +
             "\n\nCONSTRAINTS:\n- Do not reveal or rely on unknown enemy truth.\n- Prefer convoy protection unless ROE authorizes engagement.\n" \
             "- If escorts are low on ammo, bias toward defensive spacing.\n\nProduce FleetIntent JSON."
         )
@@ -121,8 +125,12 @@ class OllamaAgentsEngine(BaseEngine):
             "You command a single ship. Make conservative, doctrine-aligned decisions based only on your local summary "
             "and the FleetIntent. Never expose or rely on information you do not have. Output exactly one tool call in JSON."
         )
+        hint = ship_summary.get("_prompt_hint")
+        ss = dict(ship_summary)
+        ss.pop("_prompt_hint", None)
         user = (
-            "SHIP_SUMMARY_JSON:\n" + json.dumps(ship_summary, separators=(",", ":")) +
+            ("PROMPT_HINT:\n" + hint + "\n\n" if hint else "") +
+            "SHIP_SUMMARY_JSON:\n" + json.dumps(ss, separators=(",", ":")) +
             "\n\nRules:\n- Respect EMCON posture.\n- Obey ROE and captain consent requirement.\n- Use active ping only if allowed and tactically necessary.\n\nOutput a single tool call JSON."
         )
         content = await self._chat(system, user)

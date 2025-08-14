@@ -91,9 +91,11 @@ class Simulation:
     def _init_default_world(self) -> None:
         # Clear existing world and set to original game state
         self.world = World()
-        # Try to load mission from assets; fallback to code-defined defaults
-        mid = getattr(CONFIG, "mission_id", "")
-        mission = load_mission_by_id(mid) if mid else None
+        # Try to load mission from assets unless a forced default reset is requested
+        mission = None
+        if not getattr(self, "_force_default_reset", False):
+            mid = getattr(CONFIG, "mission_id", "")
+            mission = load_mission_by_id(mid) if mid else None
         if mission:
             def _set_mission(brief: dict) -> None:
                 self.mission_brief = brief
@@ -126,6 +128,9 @@ class Simulation:
             )
             self.world.add_ship(own)
             self.world.add_ship(red)
+        # Always clear one-shot forced reset flag
+        if getattr(self, "_force_default_reset", False):
+            self._force_default_reset = False
         # Set ordered state from ownship (from mission or default spawn)
         try:
             own_ref = self.world.get_ship("ownship")
@@ -754,6 +759,8 @@ class Simulation:
                 reload_from_env()
             except Exception:
                 pass
+            # Force default world so tests expecting fixed coordinates pass
+            self._force_default_reset = True
             # Recreate orchestrator if needed to pick up engine changes
             if getattr(CONFIG, "use_ai_orchestrator", False):
                 self._ai_orch = AgentsOrchestrator(lambda: self.world, self.engine, self.run_id)

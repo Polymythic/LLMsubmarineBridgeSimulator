@@ -113,6 +113,8 @@ class AgentsOrchestrator:
                 "roe": mission_roe,
                 "convoy": convoy,
                 "target_wp": target_wp,
+                # Optional prompts for AI engines to use when constructing system messages
+                "ai_fleet_prompt": mission_brief.get("ai_fleet_prompt"),
             }
         else:
             mission = {"roe": {"weapons_free": False}}
@@ -159,12 +161,27 @@ class AgentsOrchestrator:
 
     # ---------- Engines (stub only for now) ----------
     async def _fleet_decide(self, fleet_summary: Dict[str, Any]) -> Dict[str, Any]:
-        # Delegate to configured engine
-        return await self._fleet_engine.propose_fleet_intent(fleet_summary)
+        # Allow engines to incorporate a mission-specific prompt if present
+        prompt_hint = None
+        try:
+            prompt_hint = (fleet_summary.get("mission", {}) or {}).get("ai_fleet_prompt")
+        except Exception:
+            prompt_hint = None
+        return await self._fleet_engine.propose_fleet_intent(fleet_summary if prompt_hint is None else {**fleet_summary, "_prompt_hint": prompt_hint})
 
     async def _ship_decide(self, ship: Ship, ship_summary: Dict[str, Any]) -> Dict[str, Any]:
-        # Delegate to configured engine
-        return await self._ship_engine.propose_ship_tool(ship, ship_summary)
+        # If mission provided a per-ship prompt, include it as a hint
+        hint = None
+        try:
+            mission_brief = getattr(self, "_mission_brief", {}) or {}
+            ai_prompts = mission_brief.get("ai_ship_prompts", {}) or {}
+            hint = ai_prompts.get(ship.id)
+        except Exception:
+            hint = None
+        enriched = dict(ship_summary)
+        if hint:
+            enriched["_prompt_hint"] = hint
+        return await self._ship_engine.propose_ship_tool(ship, enriched)
 
     # ---------- Public runs ----------
     async def run_fleet(self, parent_run_id: Optional[str] = None) -> RunResult:

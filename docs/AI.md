@@ -132,15 +132,16 @@ This document defines the Fleet Commander + Ship Commander AI architecture, stri
 - Selection is configurable per agent via debug UI or config.
 
 ### Scheduling
-- Each agent has a next-run timestamp.
+- Each agent has a next-run timestamp (configurable cadences via `.env`).
 - On each sim tick, agents that are due run in background tasks:
   1) Build summary JSON within the agent’s information boundary
   2) Call engine with timeout
   3) Parse → validate → clamp → enqueue orders for next tick
-- Detection-aware cadence: switch ship cadence to 10 s if threatened/detected (actively pinged, torpedo inbound, or counter-detected), otherwise 20 s.
+- Detection-aware cadence: switch ship cadence to `AI_SHIP_ALERT_CADENCE_S` if threatened/detected (actively pinged, torpedo inbound, or counter-detected), otherwise `AI_SHIP_CADENCE_S`.
 
 ### Validation and Clamping
 - `set_nav`: clamp heading 0–359.9, speed ≥0 and ≤ ship max, depth ≥0 and ≤ ship max depth.
+  - For surface vessels (e.g., Convoy), hull.max_depth is near-surface; depth is clamped accordingly.
 - `fire_torpedo`: tube must be ready; captain consent/ROE must allow; geometry must be plausible (enable range, seeker cone).
 - `deploy_countermeasure`: must be supported; rate-limited by platform.
 - If validation fails, reject and fall back to conservative rule-based behavior; log the decision and reason.
@@ -162,7 +163,7 @@ This document defines the Fleet Commander + Ship Commander AI architecture, stri
   - `AI_FLEET_ENGINE` / `AI_SHIP_ENGINE` = `stub` | `ollama` | `openai`
   - `AI_FLEET_MODEL` / `AI_SHIP_MODEL` = engine-specific identifiers
 - Ollama-first (local, no cloud calls):
-  - `AI_*_ENGINE=ollama`, `AI_*_MODEL=llama3.1:8b` (or any installed model), `OLLAMA_HOST=http://localhost:11434`
+  - `AI_*_ENGINE=ollama`, `AI_*_MODEL=llama3.1:8b` (or small ships model like `llama3.2:3b`), `OLLAMA_HOST=http://localhost:11434`
   - Expect higher latency than cloud; runs are async and won’t block the 20 Hz loop.
 - OpenAI Agents SDK (cloud):
   - `AI_*_ENGINE=openai`, `AI_*_MODEL=gpt-4o-mini` (example), `OPENAI_API_KEY=...`
@@ -177,7 +178,7 @@ This document defines the Fleet Commander + Ship Commander AI architecture, stri
 
 #### Fleet Commander (system prompt)
 ```
-You are the Fleet Commander for a hostile flotilla. Plan strategy to achieve mission objectives while minimizing detectability and respecting ROE. You will receive a structured summary of your fleet and an uncertain belief of enemy contacts. Never assume ground-truth positions. Output only a JSON FleetIntent.
+You are the Fleet Commander for a hostile flotilla. Plan strategy to achieve mission objectives while minimizing detectability and respecting ROE. You will receive a structured summary of your fleet and an uncertain belief of enemy contacts. Never assume ground-truth positions. Output only a JSON FleetIntent. Include a concise 'summary' string.
 ```
 
 #### Fleet Commander (user message with variables)
@@ -195,7 +196,7 @@ Produce FleetIntent JSON.
 
 #### Ship Commander (system prompt)
 ```
-You command a single ship. Make conservative, doctrine-aligned decisions based only on your local summary and the FleetIntent. Never expose or rely on information you do not have. Output exactly one tool call in JSON.
+You command a single ship. Make conservative, doctrine-aligned decisions based only on your local summary and the FleetIntent. Never expose or rely on information you do not have. Output exactly one tool call in JSON. Include a concise 'summary' string.
 ```
 
 #### Ship Commander (user message with variables)

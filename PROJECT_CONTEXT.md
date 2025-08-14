@@ -60,19 +60,20 @@
 - Persistence: tables for `runs`, `snapshots`, `events`, and optionally `ships`, `torpedoes`.
 
 ### Enemy Agent (LLM Tool-Calling)
-- Runs locally (Ollama/llama.cpp/text-gen-server or stub).
+- Runs locally (Ollama) or stub.
 - Calls are asynchronous and never block the 20 Hz loop. Timeouts/failures fall back to a rule-based stub.
 - Tool schema:
   - `set_nav(heading: 0–359.9, speed: knots ≥0, depth: m ≥0)`
   - `fire_torpedo(tube: int, bearing: 0–359.9, run_depth: m)`
   - `deploy_countermeasure(type: "noisemaker"|"decoy")`
 - Server validates and clamps results to Hull/Weapons limits, ROE, and EMCON posture, then enqueues for the next tick.
+ - For surface vessels, depth is clamped to hull.max_depth (e.g., Convoy ships at surface).
 
 ### Two-Tier Enemy AI: Fleet Commander + Ship Commanders
 
 #### Roles and Cadence
-- **Fleet Commander** (global): plans fleet-level objectives and formations on a slow cadence (30–60 s). Writes a shared `FleetIntent` into sim state.
-- **Ship Commanders** (per hostile ship): execute local actions via tool calls on a normal cadence (20 s) or an alert cadence (10 s) if detected/threatened (e.g., actively pinged, torpedo inbound, or confirmed counter-detection).
+- **Fleet Commander** (global): plans fleet-level objectives and formations on a slow cadence (config: `AI_FLEET_CADENCE_S`, default 45 s). Writes a shared `FleetIntent` into sim state.
+- **Ship Commanders** (per hostile ship): execute local actions via tool calls on a normal cadence (`AI_SHIP_CADENCE_S`, default 20 s) or an alert cadence (`AI_SHIP_ALERT_CADENCE_S`, default 10 s) if detected/threatened.
 
 #### Strict Information Boundaries
 - No AI agent may access hidden truth about the player submarine or any entity beyond what sensors and communications would provide.
@@ -88,6 +89,7 @@
 #### FleetIntent (shared strategy scaffold)
 - Example fields: `objectives`, `waypoints`/formations per group, `target_priority`, `engagement_rules` (weapons_free, min_confidence), `emcon` posture (active ping allowed, radio discipline), and optional convoy lanes/patrol boxes.
 - Ships are expected to bias decisions toward achieving `FleetIntent` while respecting local constraints and sensor reality.
+ - Intent normalization: if missions provide a `target_wp` and objectives are missing, default per-ship `destination` objectives are derived. Advisory `notes` may be added from mission hints (e.g., suspected submarine).
 
 #### Engine Abstraction and Safety
 - Pluggable engine per agent: stub, local LLM (Ollama), remote LLM (OpenAI). Configurable via `config.py` and Debug UI.

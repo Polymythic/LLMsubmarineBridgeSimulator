@@ -48,10 +48,10 @@ A cooperative, local-multiplayer submarine bridge simulator. Five players occupy
 ## Debug and Missions
 - Debug view provides a live truth map of entities.
 - Restart Mission button resets world state.
-- Mission selector (scaffold) for presets with initial ship types/positions, captain brief text, and timed radio traffic (future expansion).
+- Mission selector with built-in Patrol and asset-driven missions. Asset missions live under `assets/missions/*.json` and include captain summary, ROE, target waypoints, and optional AI prompt hints.
 - Debug helpers:
-  - Button “Mission 1” sets a simple surface contact.
-  - Button “Surface Vessel Mission” resets and spawns a single convoy-like surface ship at ~6 km for torpedo testing.
+  - Mission dropdown fetches available missions from `/api/missions`; select and “Restart Mission” to apply changes in `.env` (via `MISSION_ID`).
+  - Surface Training mission spawns a single convoy-like surface ship at ~6 km with a target waypoint for the Fleet Commander.
 
 ## AI Tooling
 - Each `Ship` now carries `ship_class` (e.g., `SSN`, `Convoy`, `Destroyer`) and `capabilities` (navigation, sensors, weapons, countermeasures).
@@ -61,17 +61,20 @@ A cooperative, local-multiplayer submarine bridge simulator. Five players occupy
 
 ### Two-Tier AI Control (Fleet Commander + Ship Commanders)
 - **Design**: One global Fleet Commander plans strategy; each hostile ship has its own Ship Commander that executes local orders via tool calls.
-- **Cadence**:
-  - Fleet Commander: slow planning every 30–60 s.
-  - Ship Commander: every 20 s normally; every 10 s if detected/threatened.
+- **Cadence** (configurable in `.env`):
+  - Fleet Commander: `AI_FLEET_CADENCE_S` (default 45 s)
+  - Ship Commander: `AI_SHIP_CADENCE_S` (default 20 s), `AI_SHIP_ALERT_CADENCE_S` (default 10 s)
 - **Strict Information Boundaries** (never leak hidden truth about the player sub):
   - Fleet Commander sees: full state of its own fleet; mission/ROE; global game context that would be known (e.g., time/weather). It does not see the authoritative truth of enemy positions—only the aggregated enemy belief (contacts/classifications with uncertainty) derived from sensors and shared reports.
   - Ship Commander sees: its own kinematics/health/weapons readiness, its local contacts (bearing-only, noisy), last orders, and the published `FleetIntent`. It never sees the debug truth map or hidden enemy data.
 - **Outputs**:
   - Fleet Commander writes a shared `FleetIntent` (objectives, waypoints/formations, target priorities, engagement and EMCON posture).
   - Ship Commanders issue constrained tool calls: `set_nav`, `fire_torpedo`, `deploy_countermeasure`. Server validates/clamps to platform limits and ROE before applying.
+- Fleet/Ship runs include a concise human-readable `summary` of rationale. If a model omits it, the server auto-generates one.
+- Intent normalization: if an asset mission defines `target_wp` and no objectives are returned, objectives per ship are derived automatically. Advisory notes (e.g., "possible enemy submarine") may be added from mission hints.
 - **Engines**: Pluggable AI engines (stub, local `ollama`, remote OpenAI). Calls run asynchronously so the 20 Hz loop remains authoritative and jitter-free.
 - **Debug/Control**: Debug panel can enable/disable fleet and per-ship AI, choose engine/model, and view last decisions. Information shown in debug never expands what the AI actually receives.
+  - `/fleet` shows current FleetIntent, recent runs, engines/models, and a live call log with summaries.
 
 See also: `docs/AI.md` for detailed schemas, prompts, scheduling, and agent-based handoff/tracing.
 
@@ -110,6 +113,8 @@ LAN access: http://192.168.1.100:8000/ (adjust to your host IP)
   - `AI_FLEET_ENGINE` / `AI_SHIP_ENGINE` = `stub` | `ollama` | `openai` with corresponding `*_MODEL`.
   - `OPENAI_API_KEY` (only in your local `.env`) if using OpenAI; `OLLAMA_HOST` for local LLMs.
   - Legacy path: `USE_ENEMY_AI` for simple periodic stub behavior.
+  - Agent cadences: `AI_FLEET_CADENCE_S`, `AI_SHIP_CADENCE_S`, `AI_SHIP_ALERT_CADENCE_S`.
+  - Missions: `MISSION_ID` selects `assets/missions/<id>.json`.
 
 ### Fleet AI UI and health checks
 - Open `/fleet` to view:

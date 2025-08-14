@@ -25,7 +25,6 @@
         <div class="row">
           <div class="pill" id="cav" title="Cavitation increases detectability and noise">Cavitation: NO</div>
           <div class="pill" id="therm" title="Thermocline may attenuate sound; affects detection">Thermocline: ON</div>
-          <div class="pill" id="wsStatus" title="WebSocket connection status">WebSocket: Connecting...</div>
         </div>
       </div>
       <div class="col">
@@ -53,14 +52,10 @@
     const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/helm');
     
     // WebSocket connection debugging
-    const wsStatus = document.getElementById('wsStatus');
     const wsStatusTitle = document.getElementById('wsStatusTitle');
     
     ws.onopen = () => {
         console.log('🔌 WebSocket connected to helm station');
-        wsStatus.textContent = 'WebSocket: Connected';
-        wsStatus.style.color = '#8DEB8D';
-        wsStatus.style.borderColor = '#8DEB8D';
         wsStatusTitle.textContent = 'WebSocket: Connected';
         wsStatusTitle.style.color = '#8DEB8D';
         wsStatusTitle.style.borderColor = '#8DEB8D';
@@ -68,9 +63,6 @@
     
     ws.onclose = () => {
         console.log('🔌 WebSocket connection closed');
-        wsStatus.textContent = 'WebSocket: Disconnected';
-        wsStatus.style.color = '#FF6B6B';
-        wsStatus.style.borderColor = '#FF6B6B';
         wsStatusTitle.textContent = 'WebSocket: Disconnected';
         wsStatusTitle.style.color = '#FF6B6B';
         wsStatusTitle.style.borderColor = '#FF6B6B';
@@ -78,9 +70,6 @@
     
     ws.onerror = (error) => {
         console.error('❌ WebSocket error:', error);
-        wsStatus.textContent = 'WebSocket: Error';
-        wsStatus.style.color = '#FF6B6B';
-        wsStatus.style.borderColor = '#FF6B6B';
         wsStatusTitle.textContent = 'WebSocket: Error';
         wsStatusTitle.style.color = '#FF6B6B';
         wsStatusTitle.style.borderColor = '#FF6B6B';

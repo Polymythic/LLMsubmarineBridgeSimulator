@@ -49,6 +49,15 @@ A cooperative, local-multiplayer submarine bridge simulator. Five players occupy
 - Debug view provides a live truth map of entities.
 - Restart Mission button resets world state.
 - Mission selector (scaffold) for presets with initial ship types/positions, captain brief text, and timed radio traffic (future expansion).
+- Debug helpers:
+  - Button “Mission 1” sets a simple surface contact.
+  - Button “Surface Vessel Mission” resets and spawns a single convoy-like surface ship at ~6 km for torpedo testing.
+
+## AI Tooling
+- Each `Ship` now carries `ship_class` (e.g., `SSN`, `Convoy`, `Destroyer`) and `capabilities` (navigation, sensors, weapons, countermeasures).
+- A debug `ai.tool` command applies minimal tool calls for LLM control:
+  - `set_nav`: `{"ship_id":"red-01","tool":"set_nav","arguments":{"heading":120,"speed":6,"depth":0}}`
+  - `fire_torpedo` and `deploy_countermeasure`: placeholders gated by capabilities.
 
 
 ## Requirements

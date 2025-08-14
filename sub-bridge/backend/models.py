@@ -98,6 +98,78 @@ class WeaponsSuite(BaseModel):
     time_penalty_multiplier: float = 1.0
 
 
+class ShipCapabilities(BaseModel):
+    # Navigation control
+    can_set_nav: bool = True
+    # Sensors
+    has_active_sonar: bool = True
+    # Weapons
+    has_torpedoes: bool = True
+    has_guns: bool = False
+    has_depth_charges: bool = False
+    # Countermeasures available to deploy via tool calls
+    countermeasures: List[Literal["noisemaker", "decoy"]] = Field(default_factory=list)
+
+
+class ShipDef(BaseModel):
+    name: str
+    ship_class: Literal["SSN", "Convoy", "Destroyer"]
+    capabilities: ShipCapabilities
+    # Defaults that tune ships of this class; applied on spawn/assignment
+    default_hull: Hull = Hull()
+    default_weapons: WeaponsSuite = WeaponsSuite()
+    default_acoustics: Acoustics = Acoustics()
+
+
+SHIP_CATALOG: Dict[str, ShipDef] = {
+    "SSN": ShipDef(
+        name="Nuclear Attack Submarine",
+        ship_class="SSN",
+        capabilities=ShipCapabilities(
+            can_set_nav=True,
+            has_active_sonar=True,
+            has_torpedoes=True,
+            has_guns=False,
+            has_depth_charges=False,
+            countermeasures=["noisemaker", "decoy"],
+        ),
+        default_hull=Hull(max_depth=300.0, max_speed=30.0, quiet_speed=5.0),
+        default_weapons=WeaponsSuite(),
+        default_acoustics=Acoustics(),
+    ),
+    "Convoy": ShipDef(
+        name="Convoy Cargo Vessel",
+        ship_class="Convoy",
+        capabilities=ShipCapabilities(
+            can_set_nav=True,
+            has_active_sonar=False,
+            has_torpedoes=False,
+            has_guns=False,
+            has_depth_charges=False,
+            countermeasures=[],
+        ),
+        default_hull=Hull(max_depth=20.0, max_speed=20.0, quiet_speed=5.0),
+        default_weapons=WeaponsSuite(tube_count=0, torpedoes_stored=0, tubes=[]),
+        default_acoustics=Acoustics(thermocline_on=False),
+    ),
+    "Destroyer": ShipDef(
+        name="Destroyer (ASW)",
+        ship_class="Destroyer",
+        capabilities=ShipCapabilities(
+            can_set_nav=True,
+            has_active_sonar=True,
+            has_torpedoes=False,  # placeholder until depth charges/ASROC modeled
+            has_guns=True,
+            has_depth_charges=True,
+            countermeasures=[],
+        ),
+        default_hull=Hull(max_depth=50.0, max_speed=32.0, quiet_speed=8.0),
+        default_weapons=WeaponsSuite(tube_count=0, torpedoes_stored=0, tubes=[]),
+        default_acoustics=Acoustics(thermocline_on=False),
+    ),
+}
+
+
 class MaintenanceTask(BaseModel):
     id: str
     station: Literal["helm", "sonar", "weapons", "engineering"]
@@ -146,6 +218,9 @@ class Ship(BaseModel):
     systems: SystemsStatus = SystemsStatus()
     maintenance: MaintenanceState = MaintenanceState()
     ai_profile: Optional[AIProfile] = None
+    # Classification & capabilities for AI and UI
+    ship_class: Optional[Literal["SSN", "Convoy", "Destroyer"]] = None
+    capabilities: Optional[ShipCapabilities] = None
 
 
 class TelemetryOwnship(BaseModel):

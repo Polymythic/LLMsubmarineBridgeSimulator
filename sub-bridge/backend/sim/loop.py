@@ -7,7 +7,7 @@ from typing import Dict, Optional
 import random
 from ..bus import BUS
 from ..config import CONFIG
-from ..models import Ship, Kinematics, Hull, Acoustics, WeaponsSuite, Reactor, DamageState, MaintenanceTask
+from ..models import Ship, Kinematics, Hull, Acoustics, WeaponsSuite, Reactor, DamageState, MaintenanceTask, SHIP_CATALOG
 from ..storage import init_engine, create_run, insert_snapshot, insert_event
 from .ecs import World
 from .physics import integrate_kinematics
@@ -68,11 +68,13 @@ class Simulation:
             id="ownship",
             side="BLUE",
             kin=Kinematics(depth=100.0, heading=270.0, speed=8.0),
-            hull=Hull(),
-            acoustics=Acoustics(),
-            weapons=WeaponsSuite(),
+            hull=SHIP_CATALOG["SSN"].default_hull.model_copy(deep=True),
+            acoustics=SHIP_CATALOG["SSN"].default_acoustics.model_copy(deep=True),
+            weapons=SHIP_CATALOG["SSN"].default_weapons.model_copy(deep=True),
             reactor=Reactor(output_mw=60.0, max_mw=100.0),
             damage=DamageState(),
+            ship_class="SSN",
+            capabilities=SHIP_CATALOG["SSN"].capabilities.model_copy(deep=True),
         )
         red = Ship(
             id="red-01",
@@ -84,6 +86,8 @@ class Simulation:
             reactor=Reactor(output_mw=50.0, max_mw=100.0),
             damage=DamageState(),
             ai_profile=None,
+            ship_class="SSN",
+            capabilities=SHIP_CATALOG["SSN"].capabilities.model_copy(deep=True),
         )
         self.world.add_ship(own)
         self.world.add_ship(red)
@@ -361,7 +365,18 @@ class Simulation:
             "events": list(self._transient_events),
         }
 
-        tel_all = dict(base)
+        # Broadcast class/capabilities in the general telemetry for downstream consumers/AI
+        tel_all = {**base, "ships": [
+            {
+                "id": s.id,
+                "side": s.side,
+                "class": getattr(s, "ship_class", None),
+                "capabilities": (getattr(s, "capabilities", None).dict() if getattr(s, "capabilities", None) else None),
+                "x": s.kin.x, "y": s.kin.y, "depth": s.kin.depth,
+                "heading": s.kin.heading, "speed": s.kin.speed,
+            }
+            for s in self.world.all_ships()
+        ]}
         # Station status aggregation for captain dashboard
         def station_status(station: str, ok_flag: bool) -> str:
             if not ok_flag:
@@ -418,6 +433,8 @@ class Simulation:
             "ships": [
                 {
                     "id": s.id, "side": s.side,
+                    "class": getattr(s, "ship_class", None),
+                    "capabilities": (getattr(s, "capabilities", None).dict() if getattr(s, "capabilities", None) else None),
                     "x": s.kin.x, "y": s.kin.y, "depth": s.kin.depth,
                     "heading": s.kin.heading, "speed": s.kin.speed,
                     **bearings_to(s.kin.x, s.kin.y),
@@ -588,10 +605,72 @@ class Simulation:
             # Reset to original game state
             self._init_default_world()
             return None
+        if topic == "ai.tool":
+            # Apply an AI tool call to a specified ship (default RED-01)
+            ship_id = str(data.get("ship_id", "red-01"))
+            try:
+                tgt = self.world.get_ship(ship_id)
+            except Exception:
+                return "Unknown ship"
+            tool = str(data.get("tool", "")).strip()
+            args = data.get("arguments", {}) or {}
+            # Respect platform capabilities
+            caps = getattr(tgt, "capabilities", None)
+            if tool == "set_nav":
+                if caps and not caps.can_set_nav:
+                    return "Tool not supported"
+                tgt.kin.heading = float(args.get("heading", tgt.kin.heading)) % 360.0
+                tgt.kin.speed = max(0.0, float(args.get("speed", tgt.kin.speed)))
+                tgt.kin.depth = max(0.0, float(args.get("depth", tgt.kin.depth)))
+                return None
+            if tool == "fire_torpedo":
+                if not caps or not caps.has_torpedoes:
+                    return "Tool not supported"
+                # For now, only ownship can launch torpedoes in the sim; ignore others
+                return "Not implemented for non-ownship"
+            if tool == "deploy_countermeasure":
+                if not caps or not caps.countermeasures:
+                    return "Tool not supported"
+                # Placeholder: accept command without effect yet
+                return None
+            return "Unknown tool"
         if topic == "debug.maintenance.spawns":
             # Toggle spawning of new maintenance tasks; existing tasks remain
             enabled = bool(data.get("enabled", True))
             self._suppress_maintenance_spawns = (not enabled)
+            return None
+        if topic == "debug.mission.surface_vessel":
+            # Reset to base world, then configure a single slow surface contact (convoy ship)
+            self._init_default_world()
+            own = self.world.get_ship("ownship")
+            # Reconfigure the default RED contact as a surface vessel at ~6km, slow speed
+            for ship in self.world.all_ships():
+                if ship.id != own.id and ship.side == "RED":
+                    ship.kin.x = 6000.0
+                    ship.kin.y = 0.0
+                    ship.kin.depth = 3.0  # surface contact
+                    ship.kin.heading = 90.0
+                    ship.kin.speed = 5.0
+                    # Assign convoy class and capabilities; lower max speed per catalog
+                    ship.ship_class = "Convoy"
+                    if 'Convoy' in SHIP_CATALOG:
+                        ship.capabilities = SHIP_CATALOG["Convoy"].capabilities
+                        ship.hull.max_speed = min(ship.hull.max_speed, SHIP_CATALOG["Convoy"].default_hull.max_speed)
+                    else:
+                        ship.hull.max_speed = min(ship.hull.max_speed, 20.0)
+                    break
+            # Update mission brief to reflect this scenario
+            self.mission_brief = {
+                "title": "Surface Vessel Intercept (Training)",
+                "objective": "Approach undetected, classify, and conduct a training torpedo shot on a single surface contact.",
+                "roe": [
+                    "Weapons release authorized for training shot.",
+                    "Minimize active sonar to preserve EMCON.",
+                ],
+                "comms_schedule": [
+                    {"at_s": 90.0, "msg": "INFO: Surface contact maintaining 5 kn on easterly course."},
+                ],
+            }
             return None
         if topic == "debug.mission1":
             # Configure a slow-moving surface contact for torpedo testing

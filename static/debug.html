@@ -27,6 +27,10 @@
           <option value="convoy">Convoy Escort</option>
         </select>
       </div>
+      <div class="pill" style="margin-left: 8px;">
+        Maint Spawns: <span id="maintState">ON</span>
+        <button id="toggleMaint" style="margin-left:8px;">Toggle</button>
+      </div>
     </div>
     <div class="row">
       <div class="col">
@@ -123,10 +127,15 @@
       });
     }
 
-    ws.onmessage = (ev) => { try { const m = JSON.parse(ev.data); if (m.topic === 'telemetry') { ownEl.textContent = `hdg ${m.data.ownship.heading.toFixed(0)} spd ${m.data.ownship.speed.toFixed(1)} dpt ${m.data.ownship.depth.toFixed(0)}`; render(m.data); } } catch(e){} };
+    ws.onmessage = (ev) => { try { const m = JSON.parse(ev.data); if (m.topic === 'telemetry') { ownEl.textContent = `hdg ${m.data.ownship.heading.toFixed(0)} spd ${m.data.ownship.speed.toFixed(1)} dpt ${m.data.ownship.depth.toFixed(0)}`; render(m.data); const maint = (m.data.maintenance && typeof m.data.maintenance.spawnsEnabled === 'boolean') ? m.data.maintenance.spawnsEnabled : true; const maintState = document.getElementById('maintState'); maintState.textContent = maint ? 'ON' : 'OFF'; maintState.style.color = maint ? '#8DEB8D' : '#FF6B6B'; } } catch(e){} };
     document.getElementById('restart').onclick = () => { ws.send(JSON.stringify({topic:'debug.restart', data:{}})); };
     const mission = document.createElement('button'); mission.textContent = 'Mission 1'; mission.onclick = () => { ws.send(JSON.stringify({topic:'debug.mission1', data:{}})); };
     document.body.appendChild(mission);
+    document.getElementById('toggleMaint').onclick = () => {
+      const isOn = (document.getElementById('maintState').textContent || 'ON') === 'ON';
+      const next = !isOn;
+      ws.send(JSON.stringify({topic:'debug.maintenance.spawns', data:{enabled: next}}));
+    };
   </script>
 </body>
 </html>

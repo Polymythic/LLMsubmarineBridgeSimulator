@@ -58,6 +58,8 @@ class Simulation:
         # EMCON and storms
         self._emcon_high_timer = 0.0
         self._storm_timer = 0.0
+        # Debug control: suppress spawning new maintenance tasks
+        self._suppress_maintenance_spawns = False
 
     def _init_default_world(self) -> None:
         # Clear existing world and set to original game state
@@ -236,7 +238,8 @@ class Simulation:
         for station in self._active_tasks.keys():
             self._task_spawn_timers[station] -= dt
             if self._task_spawn_timers[station] <= 0.0:
-                self._spawn_task_for(station, now_s)
+                if not self._suppress_maintenance_spawns:
+                    self._spawn_task_for(station, now_s)
                 base = random.uniform(60.0, 120.0)
                 self._task_spawn_timers[station] = base / max(0.2, CONFIG.maint_spawn_scale)
 
@@ -411,6 +414,7 @@ class Simulation:
                 "x": own.kin.x, "y": own.kin.y, "depth": own.kin.depth,
                 "heading": own.kin.heading, "speed": own.kin.speed,
             },
+            "maintenance": {"spawnsEnabled": (not self._suppress_maintenance_spawns)},
             "ships": [
                 {
                     "id": s.id, "side": s.side,
@@ -583,6 +587,11 @@ class Simulation:
         if topic == "debug.restart":
             # Reset to original game state
             self._init_default_world()
+            return None
+        if topic == "debug.maintenance.spawns":
+            # Toggle spawning of new maintenance tasks; existing tasks remain
+            enabled = bool(data.get("enabled", True))
+            self._suppress_maintenance_spawns = (not enabled)
             return None
         if topic == "debug.mission1":
             # Configure a slow-moving surface contact for torpedo testing

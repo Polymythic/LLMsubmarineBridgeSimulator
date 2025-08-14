@@ -15,7 +15,7 @@
 </head>
 <body>
   <div class="panel">
-    <h2>Engineering</h2>
+    <h2>Engineering <span class="pill" id="wsStatus" title="WebSocket connection status" style="margin-left: 8px; font-size: 14px; font-weight: normal;">WebSocket: Connecting...</span></h2>
     <div id="toast" style="position:fixed;top:8px;right:8px;background:#2B0F14;color:#FFD1D1;border:1px solid #5F1B25;padding:8px 12px;border-radius:6px;display:none;">Error</div>
     <div title="Reactor output and SCRAM state">Reactor MW <span id="mwv">60</span> / <span id="mwmax">100</span> <span class="pill" id="scramState">SCRAM: OFF</span></div>
     <input id="mw" type="range" min="0" max="100" step="1" value="60" title="Adjust reactor power (MW)" />
@@ -29,9 +29,10 @@
       <h3>Maintenance</h3>
       <div class="row" id="tasksRow">
         <div class="pill" id="task" title="Current maintenance task for Engineering">No active task</div>
-        <button id="repair" title="Start repairing the active engineering task">Repair</button>
       </div>
-      <div class="label">Progress scales with station power allocation.</div>
+      <div class="row">
+        <div class="label">Progress scales with station power allocation.</div>
+      </div>
     </div>
     <div class="panel">
       <h3>Current Power Allocation</h3>
@@ -58,6 +59,7 @@
         <span id="pErr" style="color:#FF6B6B"></span>
       </div>
       <button id="applyAlloc" title="Apply power allocations (must not exceed 100%)">Apply Allocation</button>
+    <button id="testRepair" title="Test repair button functionality" style="margin-left: 8px; background: #7C3AED; color: white;">Test Repair</button>
     </div>
     <div class="row">
       <div class="pill">Rudder: <span id="rudderOk">OK</span></div>
@@ -76,6 +78,27 @@
   </div>
   <script>
     const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/engineering');
+    
+    // WebSocket connection status
+    const wsStatus = document.getElementById('wsStatus');
+    
+    ws.onopen = () => {
+        wsStatus.textContent = 'WebSocket: Connected';
+        wsStatus.style.color = '#8DEB8D';
+        wsStatus.style.borderColor = '#8DEB8D';
+    };
+    
+    ws.onclose = () => {
+        wsStatus.textContent = 'WebSocket: Disconnected';
+        wsStatus.style.color = '#FF6B6B';
+        wsStatus.style.borderColor = '#FF6B6B';
+    };
+    
+    ws.onerror = (error) => {
+        wsStatus.textContent = 'WebSocket: Error';
+        wsStatus.style.color = '#FF6B6B';
+        wsStatus.style.borderColor = '#FF6B6B';
+    };
     const tel = document.getElementById('telemetry');
     const mw = document.getElementById('mw');
     const mwv = document.getElementById('mwv');
@@ -112,6 +135,9 @@
     const tubesOk = document.getElementById('tubesOk');
     mw.oninput = () => mwv.textContent = mw.value;
     function showToast(msg){ const t=document.getElementById('toast'); t.textContent = msg; t.style.display='block'; setTimeout(()=>t.style.display='none', 2500); }
+    
+    // Track existing task elements by ID to avoid recreation
+    let existingTaskElements = new Map();
 
     ws.onmessage = (ev) => {
       try { const m = JSON.parse(ev.data); if (m.topic === 'telemetry') {
@@ -143,7 +169,93 @@
         const setOk = (el, ok) => { el.textContent = ok ? 'OK' : 'FAIL'; el.style.color = ok ? '#8DEB8D' : '#FF6B6B'; };
         setOk(rudderOk, !!sys.rudder_ok); setOk(ballastOk, !!sys.ballast_ok); setOk(sonarOk, !!sys.sonar_ok);
         setOk(radioOk, !!sys.radio_ok); setOk(periscopeOk, !!sys.periscope_ok); setOk(tubesOk, !!sys.tubes_ok);
-        const tasks = m.data.tasks || []; const row = document.getElementById('tasksRow'); row.innerHTML=''; if (tasks.length === 0) { const el=document.createElement('div'); el.className='pill'; el.textContent='No active task'; el.style.color='#D7E3FF'; el.style.borderColor='#1B2440'; el.style.backgroundColor='#0F162A'; row.appendChild(el);} else { tasks.forEach((t)=>{ const el=document.createElement('div'); el.className='pill'; const color = t.stage === 'normal' ? '#FACC15' : (t.stage === 'degraded' ? '#F59E0B' : (t.stage === 'damaged' ? '#F97316' : '#EF4444')); const bg = t.stage === 'normal' ? 'rgba(250, 204, 21, 0.1)' : (t.stage === 'degraded' ? 'rgba(245, 158, 11, 0.1)' : (t.stage === 'damaged' ? 'rgba(249, 115, 22, 0.1)' : 'rgba(239, 68, 68, 0.1)')); el.style.color=color; el.style.borderColor=color; el.style.backgroundColor=bg; const label = t.stage === 'normal' ? 'MAINTENANCE' : (t.stage === 'degraded' ? 'DEGRADED' : (t.stage === 'damAGED' ? 'DAMAGED' : 'FAILED')); const btn = document.createElement('button'); btn.textContent='Repair'; btn.style.marginLeft='8px'; btn.onclick = () => ws.send(JSON.stringify({topic:'station.task.start', data:{station:'engineering', task_id: t.id}})); el.textContent = `🔧 ${t.title} — ${label} ${(t.progress*100).toFixed(0)}% — time to complete ${Math.max(0, t.time_remaining_s).toFixed(0)}s${t.started ? ' (REPAIRING)' : ''}`; el.appendChild(btn); row.appendChild(el); }); } 
+                const tasks = m.data.tasks || []; 
+                console.log('🔧 Processing engineering tasks:', tasks);
+                
+                // Smart task update: only create new elements for new tasks
+                const row = document.getElementById('tasksRow'); 
+                
+                if (tasks.length === 0) { 
+                    // Clear all existing tasks
+                    existingTaskElements.clear();
+                    row.innerHTML = '';
+                    console.log('📝 No active engineering tasks, showing default message');
+                    const el = document.createElement('div'); 
+                    el.className = 'pill'; 
+                    el.textContent = 'No active task'; 
+                    el.style.color = '#D7E3FF'; 
+                    el.style.borderColor = '#1B2440'; 
+                    el.style.backgroundColor = '#0F162A'; 
+                    row.appendChild(el); 
+                } else { 
+                    // Process each task
+                    tasks.forEach((task, index) => { 
+                        const taskId = task.id;
+                        
+                        if (existingTaskElements.has(taskId)) {
+                            // Update existing task element
+                            console.log('🔄 Updating existing engineering task:', taskId);
+                            const existingEl = existingTaskElements.get(taskId);
+                            const label = task.stage === 'normal' ? 'MAINTENANCE' : (task.stage === 'degraded' ? 'DEGRADED' : (task.stage === 'damaged' ? 'DAMAGED' : 'FAILED'));
+                            
+                            // Update only the text content, preserve the button
+                            const textSpan = existingEl.querySelector('.task-text');
+                            if (textSpan) {
+                                textSpan.textContent = `🔧 ${task.title} — ${label} ${(task.progress*100).toFixed(0)}% — time to complete ${Math.max(0, task.time_remaining_s).toFixed(0)}s${task.started ? ' (REPAIRING)' : ''}`;
+                            }
+                        } else {
+                            // Create new task element
+                            console.log('🆕 Creating new engineering task element:', taskId);
+                            
+                            const el = document.createElement('div'); 
+                            el.className = 'pill'; 
+                            const color = task.stage === 'normal' ? '#FACC15' : (task.stage === 'degraded' ? '#F59E0B' : (task.stage === 'damaged' ? '#F97316' : '#EF4444')); 
+                            const bg = task.stage === 'normal' ? 'rgba(250, 204, 21, 0.1)' : (task.stage === 'degraded' ? 'rgba(245, 158, 11, 0.1)' : (task.stage === 'damaged' ? 'rgba(249, 115, 22, 0.1)' : 'rgba(239, 68, 68, 0.1)')); 
+                            el.style.color = color; 
+                            el.style.borderColor = color; 
+                            el.style.backgroundColor = bg; 
+                            
+                            const label = task.stage === 'normal' ? 'MAINTENANCE' : (task.stage === 'degraded' ? 'DEGRADED' : (task.stage === 'damaged' ? 'DAMAGED' : 'FAILED')); 
+                            
+                            const btn = document.createElement('button'); 
+                            btn.textContent = 'Repair'; 
+                            btn.style.marginLeft = '8px'; 
+                            
+                            // Capture the task ID directly to avoid closure issues
+                            
+                            // Add basic click logging to diagnose the issue
+                            console.log('🔧 Creating engineering repair button for task:', taskId);
+                            
+                            btn.onclick = () => {
+                                console.log('🖱️ BUTTON CLICKED! Engineering repair button clicked for task:', taskId);
+                                console.log('🔍 Button element:', btn);
+                                console.log('🔍 Button onclick property:', btn.onclick);
+                                
+                                const cmd = {topic:'station.task.start', data:{station:'engineering', task_id: taskId}};
+                                console.log('📤 Sending engineering task-specific repair command:', cmd);
+                                ws.send(JSON.stringify(cmd));
+                                console.log('📤 Engineering task-specific repair command sent');
+                            };
+                            
+                            // Verify the handler was attached
+                            console.log('🔍 Button onclick after setup:', btn.onclick); 
+                            
+                            // Create a span for the text content
+                            const textSpan = document.createElement('span');
+                            textSpan.className = 'task-text';
+                            textSpan.textContent = `🔧 ${task.title} — ${label} ${(task.progress*100).toFixed(0)}% — time to complete ${Math.max(0, task.time_remaining_s).toFixed(0)}s${task.started ? ' (REPAIRING)' : ''}`;
+                            
+                            el.appendChild(textSpan);
+                            el.appendChild(btn); 
+                            row.appendChild(el); 
+                            
+                            // Store the element for future updates
+                            existingTaskElements.set(taskId, el);
+                        }
+                    }); 
+                }
+        
+ 
       } else if (m.topic === 'error') { showToast(m.error || 'Error'); }
       } catch(e){}
     };
@@ -180,7 +292,28 @@
       if (total > 1.0){ pErr.textContent = 'Exceeds 100% budget'; showToast('Exceeds 100% budget'); return; }
       ws.send(JSON.stringify({topic:'engineering.power.allocate', data:{helm, weapons, sonar, engineering}}));
     };
-    document.getElementById('repair').onclick = () => { ws.send(JSON.stringify({topic:'station.task.start', data:{station:'engineering'}})); };
+
+    
+    // Test repair button for debugging
+    document.getElementById('testRepair').onclick = () => {
+        console.log('🧪 Engineering test repair button clicked');
+        console.log('🔍 Current WebSocket state:', ws.readyState);
+        console.log('🔍 WebSocket readyState values: 0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED');
+        
+        if (ws.readyState === WebSocket.OPEN) {
+            console.log('✅ WebSocket is open, testing engineering repair command');
+            const cmd = {topic:'station.task.start', data:{station:'engineering'}};
+            console.log('📤 Sending engineering test repair command:', cmd);
+            try {
+                ws.send(JSON.stringify(cmd));
+                console.log('📤 Engineering test repair command sent successfully');
+            } catch (error) {
+                console.error('❌ Error sending engineering test repair command:', error);
+            }
+        } else {
+            console.log('❌ WebSocket is not open, current state:', ws.readyState);
+        }
+    };
   </script>
 </body>
 </html>

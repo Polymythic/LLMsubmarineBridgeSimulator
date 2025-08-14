@@ -19,19 +19,21 @@
 </head>
 <body>
   <div class="panel">
-    <h2>Sonar</h2>
+    <h2>Sonar <span class="pill" id="wsStatus" title="WebSocket connection status" style="margin-left: 8px; font-size: 14px; font-weight: normal;">WebSocket: Connecting...</span></h2>
     <div class="row">
       <div class="col">
         <button id="ping" title="Send an active ping; reveals ownship and returns noisy range+bearing">Active Ping</button>
+        <button id="testRepair" title="Test repair button functionality" style="margin-left: 8px; background: #7C3AED; color: white;">Test Repair</button>
         <div title="Ping cooldown in seconds">Ping cooldown: <span id="cd">0</span>s</div>
         <div class="label" title="Current EMCON risk from acoustics">EMCON: <span id="emcon">low</span></div>
         <div class="panel">
           <h3>Maintenance</h3>
           <div class="row" id="tasksRow">
             <div class="label" id="task" title="Current maintenance task for Sonar, if any"></div>
-            <button id="repair" title="Start repairing the active sonar task">Repair</button>
           </div>
-          <div class="label">Progress scales with station power allocation.</div>
+          <div class="row">
+            <div class="label">Progress scales with station power allocation.</div>
+          </div>
         </div>
         <h3>Contacts</h3>
         <ul id="contacts" title="Bearing-only passive contacts"></ul>
@@ -48,6 +50,50 @@
   </div>
   <script>
     const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/sonar');
+    
+    // WebSocket connection status
+    const wsStatus = document.getElementById('wsStatus');
+    
+    ws.onopen = () => {
+        wsStatus.textContent = 'WebSocket: Connected';
+        wsStatus.style.color = '#8DEB8D';
+        wsStatus.style.borderColor = '#8DEB8D';
+    };
+    
+    ws.onclose = () => {
+        wsStatus.textContent = 'WebSocket: Disconnected';
+        wsStatus.style.color = '#FF6B6B';
+        wsStatus.style.borderColor = '#FF6B6B';
+    };
+    
+    ws.onerror = (error) => {
+        wsStatus.textContent = 'WebSocket: Error';
+        wsStatus.style.color = '#FF6B6B';
+        wsStatus.style.borderColor = '#FF6B6B';
+    };
+    
+
+    
+    // Test repair button for debugging
+    document.getElementById('testRepair').onclick = () => {
+        console.log('🧪 Sonar test repair button clicked');
+        console.log('🔍 Current WebSocket state:', ws.readyState);
+        console.log('🔍 WebSocket readyState values: 0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED');
+        
+        if (ws.readyState === WebSocket.OPEN) {
+            console.log('✅ WebSocket is open, testing sonar repair command');
+            const cmd = {topic:'station.task.start', data:{station:'sonar'}};
+            console.log('📤 Sending sonar test repair command:', cmd);
+            try {
+                ws.send(JSON.stringify(cmd));
+                console.log('📤 Sonar test repair command sent successfully');
+            } catch (error) {
+                console.error('❌ Error sending sonar test repair command:', error);
+            }
+        } else {
+            console.log('❌ WebSocket is not open, current state:', ws.readyState);
+        }
+    };
     const tel = document.getElementById('telemetry');
     const cd = document.getElementById('cd');
     const list = document.getElementById('contacts');
@@ -123,6 +169,9 @@
       row = (row + 1) % H;
     }
 
+    // Track existing task elements by ID to avoid recreation
+    let existingTaskElements = new Map();
+    
     ws.onmessage = (ev) => {
       try {
         const m = JSON.parse(ev.data);
@@ -130,7 +179,116 @@
           tel.textContent = JSON.stringify(m.data, null, 2);
           cd.textContent = (m.data.pingCooldown || 0).toFixed(1);
           if (m.data.acoustics) { emcon.textContent = (m.data.acoustics.emconRisk || 'low'); }
-          const tasks = m.data.tasks || []; const row = document.getElementById('tasksRow'); row.innerHTML=''; if (tasks.length === 0) { const el = document.createElement('div'); el.className='label'; el.textContent='No active task'; el.style.color='#D7E3FF'; row.appendChild(el);} else { tasks.forEach((t)=>{ const el=document.createElement('div'); el.className='label'; const color = t.stage === 'normal' ? '#FACC15' : (t.stage === 'degraded' ? '#F59E0B' : (t.stage === 'damaged' ? '#F97316' : '#EF4444')); const bg = t.stage === 'normal' ? 'rgba(250, 204, 21, 0.1)' : (t.stage === 'degraded' ? 'rgba(245, 158, 11, 0.1)' : (t.stage === 'damaged' ? 'rgba(249, 115, 22, 0.1)' : 'rgba(239, 68, 68, 0.1)')); el.style.color=color; el.style.backgroundColor=bg; const label = t.stage === 'normal' ? 'MAINTENANCE' : (t.stage === 'degraded' ? 'DEGRADED' : (t.stage === 'damaged' ? 'DAMAGED' : 'FAILED')); const btn = document.createElement('button'); btn.textContent = 'Repair'; btn.style.marginLeft='8px'; btn.onclick = () => ws.send(JSON.stringify({topic:'station.task.start', data:{station:'sonar', task_id: t.id}})); el.textContent=`🔧 ${t.title} — ${label} ${(t.progress*100).toFixed(0)}% — time to complete ${Math.max(0, t.time_remaining_s).toFixed(0)}s${t.started ? ' (REPAIRING)' : ''}`; el.appendChild(btn); row.appendChild(el); }); } 
+          
+          const tasks = m.data.tasks || [];
+          console.log('🔧 Processing tasks:', tasks);
+          console.log('🔍 Tasks array length:', tasks.length);
+          console.log('🔍 Tasks array type:', typeof tasks);
+          console.log('🔍 Tasks array content:', JSON.stringify(tasks, null, 2));
+          
+          // Smart task update: only create new elements for new tasks
+          const row = document.getElementById('tasksRow');
+          
+          if (tasks.length === 0) {
+            console.log('📝 No tasks found, showing default message');
+            // Clear all existing tasks
+            existingTaskElements.clear();
+            row.innerHTML = '';
+            const el = document.createElement('div');
+            el.className = 'label';
+            el.textContent = 'No active task';
+            el.style.color = '#D7E3FF';
+            row.appendChild(el);
+          } else {
+            console.log('📝 Found', tasks.length, 'tasks, processing them...');
+            // Process each task
+            tasks.forEach((task, index) => {
+              console.log('🔍 Processing task', index + 1, 'of', tasks.length, ':', task);
+              console.log('🔍 Task ID:', task.id);
+              console.log('🔍 Task title:', task.title);
+              const taskId = task.id;
+              
+              console.log('🔍 Checking if task exists in existingTaskElements:', taskId);
+              console.log('🔍 existingTaskElements size:', existingTaskElements.size);
+              console.log('🔍 existingTaskElements keys:', Array.from(existingTaskElements.keys()));
+              
+              console.log('🔍 existingTaskElements.has(taskId) result:', existingTaskElements.has(taskId));
+              console.log('🔍 taskId value:', taskId);
+              console.log('🔍 taskId type:', typeof taskId);
+              
+              if (existingTaskElements.has(taskId)) {
+                // Update existing task element
+                console.log('🔄 Updating existing task:', taskId);
+                const existingEl = existingTaskElements.get(taskId);
+                const label = task.stage === 'normal' ? 'MAINTENANCE' : (task.stage === 'degraded' ? 'DEGRADED' : (task.stage === 'damaged' ? 'DAMAGED' : 'FAILED'));
+                
+                // Update only the text content, preserve the button
+                const textSpan = existingEl.querySelector('.task-text');
+                if (textSpan) {
+                  textSpan.textContent = `🔧 ${task.title} — ${label} ${(task.progress*100).toFixed(0)}% — time to complete ${Math.max(0, task.time_remaining_s).toFixed(0)}s${task.started ? ' (REPAIRING)' : ''}`;
+                }
+              } else {
+                // Create new task element
+                console.log('🆕 Creating new task element:', taskId);
+                console.log('🆕 About to create DOM elements...');
+                
+                const el = document.createElement('div');
+                el.className = 'label';
+                const color = task.stage === 'normal' ? '#FACC15' : (task.stage === 'degraded' ? '#F59E0B' : (task.stage === 'damaged' ? '#F97316' : '#EF4444'));
+                const bg = task.stage === 'normal' ? 'rgba(250, 204, 21, 0.1)' : (task.stage === 'degraded' ? 'rgba(245, 158, 11, 0.1)' : (task.stage === 'damaged' ? 'rgba(249, 115, 22, 0.1)' : 'rgba(239, 68, 68, 0.1)'));
+                el.style.color = color;
+                el.style.backgroundColor = bg;
+                
+                const label = task.stage === 'normal' ? 'MAINTENANCE' : (task.stage === 'degraded' ? 'DEGRADED' : (task.stage === 'damaged' ? 'DAMAGED' : 'FAILED'));
+                
+                // Create repair button for this specific task
+                const btn = document.createElement('button');
+                btn.textContent = 'Repair';
+                btn.style.marginLeft = '8px';
+                
+                // Capture the task ID directly to avoid closure issues
+                
+                // Add basic click logging to diagnose the issue
+                console.log('🔧 Creating repair button for task:', taskId);
+                
+                btn.onclick = () => {
+                  console.log('🖱️ BUTTON CLICKED! Sonar task repair button clicked for task:', taskId);
+                  console.log('🔍 Button element:', btn);
+                  console.log('🔍 Button onclick property:', btn.onclick);
+                  
+                  const cmd = {topic: 'station.task.start', data: {station: 'sonar', task_id: taskId}};
+                  console.log('📤 Sending sonar task repair command:', cmd);
+                  try {
+                    ws.send(JSON.stringify(cmd));
+                    console.log('📤 Sonar task repair command sent successfully');
+                  } catch (error) {
+                    console.error('❌ Error sending sonar task repair command:', error);
+                  }
+                };
+                
+                // Verify the handler was attached
+                console.log('🔍 Button onclick after setup:', btn.onclick);
+                
+                // Create a span for the text content
+                const textSpan = document.createElement('span');
+                textSpan.className = 'task-text';
+                textSpan.textContent = `🔧 ${task.title} — ${label} ${(task.progress*100).toFixed(0)}% — time to complete ${Math.max(0, task.time_remaining_s).toFixed(0)}s${task.started ? ' (REPAIRING)' : ''}`;
+                
+                console.log('🆕 Appending text span and button to element...');
+                el.appendChild(textSpan);
+                el.appendChild(btn);
+                console.log('🆕 Appending element to row...');
+                row.appendChild(el);
+                console.log('🆕 Element appended successfully');
+                
+                // Store the element for future updates
+                console.log('🆕 Storing element in existingTaskElements for task:', taskId);
+                existingTaskElements.set(taskId, el);
+                console.log('🆕 Element stored successfully');
+              }
+            });
+          }
+          
           list.innerHTML = '';
           (m.data.contacts || []).forEach(c => {
             const li = document.createElement('li');
@@ -147,9 +305,6 @@
     };
 
     document.getElementById('ping').onclick = () => { ws.send(JSON.stringify({topic:'sonar.ping', data:{array:'bow'}})); };
-    // Fallback: global Repair button starts the most urgent SONAR task
-    const globalRepair = document.getElementById('repair');
-    if (globalRepair) { globalRepair.onclick = () => { ws.send(JSON.stringify({topic:'station.task.start', data:{station:'sonar'}})); }; }
   </script>
 </body>
 </html>

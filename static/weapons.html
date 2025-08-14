@@ -17,16 +17,17 @@
 </head>
 <body>
   <div class="panel">
-    <h2>Weapons</h2>
+    <h2>Weapons <span class="pill" id="wsStatus" title="WebSocket connection status" style="margin-left: 8px; font-size: 14px; font-weight: normal;">WebSocket: Connecting...</span></h2>
     <div id="consent" title="Captain consent requirement before firing"></div>
     <div class="tubes" id="tubes" title="Tube state machine: Empty→Flooded→DoorsOpen; timers show progress."></div>
     <div class="panel">
       <h3>Maintenance</h3>
       <div class="row" id="tasksRow">
         <div class="small" id="task" title="Current maintenance task for Weapons">No active task</div>
-        <button id="repair" title="Start repairing the active weapons task">Repair</button>
       </div>
-      <div class="small">Progress scales with station power allocation.</div>
+      <div class="row">
+        <div class="small">Progress scales with station power allocation.</div>
+      </div>
     </div>
     <label title="Select a tube to operate">Tube <input id="tube" type="number" min="1" max="6" value="1"></label>
     <div>
@@ -43,13 +44,38 @@
       </select>
     </label>
     <button id="fire" title="Fire the selected tube (interlocks apply)">Fire</button>
+    <button id="testRepair" title="Test repair button functionality" style="margin-left: 8px; background: #7C3AED; color: white;">Test Repair</button>
     <pre id="telemetry" title="Weapons telemetry and events"></pre>
   </div>
   <script>
     const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/weapons');
+    
+    // WebSocket connection status
+    const wsStatus = document.getElementById('wsStatus');
+    
+    ws.onopen = () => {
+        wsStatus.textContent = 'WebSocket: Connected';
+        wsStatus.style.color = '#8DEB8D';
+        wsStatus.style.borderColor = '#8DEB8D';
+    };
+    
+    ws.onclose = () => {
+        wsStatus.textContent = 'WebSocket: Disconnected';
+        wsStatus.style.color = '#FF6B6B';
+        wsStatus.style.borderColor = '#FF6B6B';
+    };
+    
+    ws.onerror = (error) => {
+        wsStatus.textContent = 'WebSocket: Error';
+        wsStatus.style.color = '#FF6B6B';
+        wsStatus.style.borderColor = '#FF6B6B';
+    };
     const tel = document.getElementById('telemetry');
     const tubes = document.getElementById('tubes');
     const consent = document.getElementById('consent');
+    // Track existing task elements by ID to avoid recreation
+    let existingTaskElements = new Map();
+    
     ws.onmessage = (ev) => {
       try {
         const m = JSON.parse(ev.data);
@@ -67,7 +93,101 @@
             div.innerHTML = `<div title='Tube state and weapon type'>Tube ${t.idx}: ${t.state} ${t.weapon ? '('+t.weapon.name+')' : ''}</div><div class='small' title='Time remaining on current transition'>Timer${timer}</div><div class='small'>Flood:${canFlood?'YES':'NO'} Doors:${canDoors?'YES':'NO'} Fire:${canFire?'YES':'NO'}</div>`;
             tubes.appendChild(div);
           });
-          const tasks = m.data.tasks || []; const row = document.getElementById('tasksRow'); row.innerHTML=''; if (tasks.length === 0) { const el=document.createElement('div'); el.className='small'; el.textContent='No active task'; el.style.color='#D7E3FF'; el.style.borderColor='#1B2440'; el.style.backgroundColor='#0F162A'; row.appendChild(el);} else { tasks.forEach((task)=>{ const el=document.createElement('div'); el.className='small'; const color = task.stage === 'normal' ? '#FACC15' : (task.stage === 'degraded' ? '#F59E0B' : (task.stage === 'damaged' ? '#F97316' : '#EF4444')); const bg = task.stage === 'normal' ? 'rgba(250, 204, 21, 0.1)' : (task.stage === 'degraded' ? 'rgba(245, 158, 11, 0.1)' : (task.stage === 'damaged' ? 'rgba(249, 115, 22, 0.1)' : 'rgba(239, 68, 68, 0.1)')); el.style.color=color; el.style.borderColor=color; el.style.backgroundColor=bg; const label = task.stage === 'normal' ? 'MAINTENANCE' : (task.stage === 'degraded' ? 'DEGRADED' : (task.stage === 'damaged' ? 'DAMAGED' : 'FAILED')); const btn = document.createElement('button'); btn.textContent='Repair'; btn.style.marginLeft='8px'; btn.onclick = () => ws.send(JSON.stringify({topic:'station.task.start', data:{station:'weapons', task_id: task.id}})); el.textContent = `🔧 ${task.title} — ${label} ${(task.progress*100).toFixed(0)}% — time to complete ${Math.max(0, task.time_remaining_s).toFixed(0)}s${task.started ? ' (REPAIRING)' : ''}`; el.appendChild(btn); row.appendChild(el); }); } 
+          const tasks = m.data.tasks || [];
+          console.log('🔧 Processing tasks:', tasks);
+          console.log('🔍 Tasks array length:', tasks.length);
+          console.log('🔍 Tasks array type:', typeof tasks);
+          console.log('🔍 Tasks array content:', JSON.stringify(tasks, null, 2));
+          
+          // Smart task update: only create new elements for new tasks
+          const row = document.getElementById('tasksRow');
+          
+          if (tasks.length === 0) {
+            console.log('📝 No tasks found, showing default message');
+            // Clear all existing tasks
+            existingTaskElements.clear();
+            row.innerHTML = '';
+            const el = document.createElement('div');
+            el.className = 'small';
+            el.textContent = 'No active task';
+            el.style.color = '#D7E3FF';
+            el.style.borderColor = '#1B2440';
+            el.style.backgroundColor = '#0F162A';
+            row.appendChild(el);
+          } else {
+            console.log('📝 Found', tasks.length, 'tasks, processing them...');
+            // Process each task
+            tasks.forEach((task, index) => {
+              console.log('🔍 Processing task', index + 1, 'of', tasks.length, ':', task);
+              const taskId = task.id;
+              
+              if (existingTaskElements.has(taskId)) {
+                // Update existing task element
+                console.log('🔄 Updating existing task:', taskId);
+                const existingEl = existingTaskElements.get(taskId);
+                const label = task.stage === 'normal' ? 'MAINTENANCE' : (task.stage === 'degraded' ? 'DEGRADED' : (task.stage === 'damaged' ? 'DAMAGED' : 'FAILED'));
+                
+                // Update only the text content, preserve the button
+                const textSpan = existingEl.querySelector('.task-text');
+                if (textSpan) {
+                  textSpan.textContent = `🔧 ${task.title} — ${label} ${(task.progress*100).toFixed(0)}% — time to complete ${Math.max(0, task.time_remaining_s).toFixed(0)}s${task.started ? ' (REPAIRING)' : ''}`;
+                }
+              } else {
+                // Create new task element
+                console.log('🆕 Creating new task element:', taskId);
+                
+                const el = document.createElement('div');
+                el.className = 'small';
+                const color = task.stage === 'normal' ? '#FACC15' : (task.stage === 'degraded' ? '#F59E0B' : (task.stage === 'damaged' ? '#F97316' : '#EF4444'));
+                const bg = task.stage === 'normal' ? 'rgba(250, 204, 21, 0.1)' : (task.stage === 'degraded' ? 'rgba(245, 158, 11, 0.1)' : (task.stage === 'damaged' ? 'rgba(249, 115, 22, 0.1)' : 'rgba(239, 68, 68, 0.1)'));
+                el.style.color = color;
+                el.style.borderColor = color;
+                el.style.backgroundColor = bg;
+                
+                const label = task.stage === 'normal' ? 'MAINTENANCE' : (task.stage === 'degraded' ? 'DEGRADED' : (task.stage === 'damaged' ? 'DAMAGED' : 'FAILED'));
+                
+                // Create repair button for this specific task
+                const btn = document.createElement('button');
+                btn.textContent = 'Repair';
+                btn.style.marginLeft = '8px';
+                
+                // Capture the task ID directly to avoid closure issues
+                
+                // Add basic click logging to diagnose the issue
+                console.log('🔧 Creating weapons repair button for task:', taskId);
+                
+                btn.onclick = () => {
+                  console.log('🖱️ BUTTON CLICKED! Weapons task repair button clicked for task:', taskId);
+                  console.log('🔍 Button element:', btn);
+                  console.log('🔍 Button onclick property:', btn.onclick);
+                  
+                  const cmd = {topic: 'station.task.start', data: {station: 'weapons', task_id: taskId}};
+                  console.log('📤 Sending weapons task repair command:', cmd);
+                  try {
+                    ws.send(JSON.stringify(cmd));
+                    console.log('📤 Weapons task repair command sent successfully');
+                  } catch (error) {
+                    console.error('❌ Error sending weapons task repair command:', error);
+                  }
+                };
+                
+                // Verify the handler was attached
+                console.log('🔍 Button onclick after setup:', btn.onclick);
+                
+                // Create a span for the text content
+                const textSpan = document.createElement('span');
+                textSpan.className = 'task-text';
+                textSpan.textContent = `🔧 ${task.title} — ${label} ${(task.progress*100).toFixed(0)}% — time to complete ${Math.max(0, task.time_remaining_s).toFixed(0)}s${task.started ? ' (REPAIRING)' : ''}`;
+                
+                el.appendChild(textSpan);
+                el.appendChild(btn);
+                row.appendChild(el);
+                
+                // Store the element for future updates
+                existingTaskElements.set(taskId, el);
+              }
+            });
+          }
         }
       } catch(e){}
     };
@@ -82,8 +202,28 @@
       const doctrine = document.getElementById('doctrine').value;
       ws.send(JSON.stringify({topic:'weapons.fire', data:{tube: tube(), bearing, run_depth, enable_range, doctrine}}));
     };
-    // Fallback: global Repair button starts the most urgent WEAPONS task if present
-    (function(){ const btn = document.getElementById('repair'); if (btn) { btn.onclick = () => { ws.send(JSON.stringify({topic:'station.task.start', data:{station:'weapons'}})); }; } })();
+
+    
+    // Test repair button for debugging
+    document.getElementById('testRepair').onclick = () => {
+        console.log('🧪 Weapons test repair button clicked');
+        console.log('🔍 Current WebSocket state:', ws.readyState);
+        console.log('🔍 WebSocket readyState values: 0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED');
+        
+        if (ws.readyState === WebSocket.OPEN) {
+            console.log('✅ WebSocket is open, testing weapons repair command');
+            const cmd = {topic:'station.task.start', data:{station:'weapons'}};
+            console.log('📤 Sending weapons test repair command:', cmd);
+            try {
+                ws.send(JSON.stringify(cmd));
+                console.log('📤 Weapons test repair command sent successfully');
+            } catch (error) {
+                console.error('❌ Error sending weapons test repair command:', error);
+            }
+        } else {
+            console.log('❌ WebSocket is not open, current state:', ws.readyState);
+        }
+    };
   </script>
 </body>
 </html>

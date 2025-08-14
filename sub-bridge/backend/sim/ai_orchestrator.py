@@ -102,7 +102,18 @@ class AgentsOrchestrator:
                 isinstance(r, str) and ("Weapons release authorized" in r)
                 for r in mission_brief.get("roe", [])
             )}
-            mission = {"objective": mission_brief.get("objective"), "roe": mission_roe}
+            # Include a simple convoy list and an optional target waypoint for training missions
+            convoy = [
+                {"id": s.id, "class": getattr(s, "ship_class", None)}
+                for s in world.all_ships() if s.side == "RED"
+            ]
+            target_wp = mission_brief.get("target_wp") if isinstance(mission_brief.get("target_wp", None), (list, tuple)) else None
+            mission = {
+                "objective": mission_brief.get("objective"),
+                "roe": mission_roe,
+                "convoy": convoy,
+                "target_wp": target_wp,
+            }
         else:
             mission = {"roe": {"weapons_free": False}}
         return {

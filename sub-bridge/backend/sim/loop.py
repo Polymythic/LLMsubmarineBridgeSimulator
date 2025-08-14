@@ -738,6 +738,11 @@ class Simulation:
                 try:
                     self._ai_orch.set_fleet_engine(getattr(CONFIG, "ai_fleet_engine", "stub"), getattr(CONFIG, "ai_fleet_model", "stub"))
                     self._ai_orch.set_ship_engine(getattr(CONFIG, "ai_ship_engine", "stub"), getattr(CONFIG, "ai_ship_model", "stub"))
+                    # Provide mission brief for Fleet Commander inputs after restart as well
+                    try:
+                        setattr(self._ai_orch, "_mission_brief", self.mission_brief)
+                    except Exception:
+                        pass
                 except Exception:
                     pass
                 # Fleet/Ship engine health check for Fleet UI
@@ -809,11 +814,13 @@ class Simulation:
             # Update mission brief to reflect this scenario
             self.mission_brief = {
                 "title": "Surface Vessel Intercept (Training)",
-                "objective": "Approach undetected, classify, and conduct a training torpedo shot on a single surface contact.",
+                "objective": "Escort convoy ship red-01 safely across sector; training shot optional.",
                 "roe": [
                     "Weapons release authorized for training shot.",
                     "Minimize active sonar to preserve EMCON.",
                 ],
+                # Provide a simple target waypoint for the fleet commander
+                "target_wp": [100.0, 100.0],
                 "comms_schedule": [
                     {"at_s": 90.0, "msg": "INFO: Surface contact maintaining 5 kn on easterly course."},
                 ],

@@ -802,7 +802,8 @@ class Simulation:
                     return "Tool not supported"
                 tgt.kin.heading = float(args.get("heading", tgt.kin.heading)) % 360.0
                 tgt.kin.speed = max(0.0, float(args.get("speed", tgt.kin.speed)))
-                tgt.kin.depth = max(0.0, float(args.get("depth", tgt.kin.depth)))
+                # Clamp against platform max depth so surface vessels cannot submerge
+                tgt.kin.depth = max(0.0, min(tgt.hull.max_depth, float(args.get("depth", tgt.kin.depth))))
                 return None
             if tool == "fire_torpedo":
                 if not caps or not caps.has_torpedoes:

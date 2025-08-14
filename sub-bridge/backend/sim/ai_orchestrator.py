@@ -92,6 +92,7 @@ class AgentsOrchestrator:
                 "health": {"hull": ship.damage.hull},
                 "weapons": {"tubes_ready": sum(1 for t in ship.weapons.tubes if t.state == "DoorsOpen"), "ammo": {"torpedo": ship.weapons.torpedoes_stored}},
                 "detectability": {"noise": getattr(ship.acoustics, "last_detectability", 0.0)},
+                "sensors": {"passive_ok": getattr(ship.systems, 'sonar_ok', True), "has_active": getattr(getattr(ship, 'capabilities', None), 'has_active_sonar', False)},
             })
         # Aggregated enemy belief: TODO hook from sonar; placeholder empty
         enemy_belief: List[Dict[str, Any]] = []
@@ -152,6 +153,7 @@ class AgentsOrchestrator:
                 "tubes": [{"idx": t.idx, "state": t.state} for t in ship.weapons.tubes],
                 "has_countermeasures": bool(getattr(ship.capabilities, "countermeasures", [])),
             },
+            "sensors": {"passive_ok": getattr(ship.systems, 'sonar_ok', True), "has_active": getattr(getattr(ship, 'capabilities', None), 'has_active_sonar', False)},
             # Local contacts should come from sonar; orchestrator does not have ground-truth enemy positions
             "contacts": [],
             "orders_last": {},

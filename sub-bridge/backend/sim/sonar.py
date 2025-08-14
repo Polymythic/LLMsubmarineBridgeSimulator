@@ -32,9 +32,19 @@ def passive_contacts(self_ship: Ship, others: List[Ship]) -> List[TelemetryConta
         rel = angle_diff(brg, self_ship.kin.heading)
         if abs(rel) > 180 - BAFFLES_DEG / 2:
             continue
-        # Source level from target class/speed (fallback to default curve)
+        # Source level from target class/speed (fallback to default curve), with surface/periscope penalties
         speed_key = min(sorted(other.acoustics.source_level_by_speed.keys()), key=lambda k: abs(k - abs(other.kin.speed)))
         src_lvl = other.acoustics.source_level_by_speed.get(speed_key, 110.0)
+        # If target is at/near surface, increase detectability due to wave slap/exhaust
+        if other.kin.depth <= 1.0:
+            src_lvl += 6.0
+        # If periscope or radio mast up on other side (if flags exist on that ship), add small penalty
+        mast_bonus = 0.0
+        if hasattr(other, "_periscope_raised") and getattr(other, "_periscope_raised"):
+            mast_bonus += 2.0
+        if hasattr(other, "_radio_raised") and getattr(other, "_radio_raised"):
+            mast_bonus += 2.0
+        src_lvl += mast_bonus
         # Transmission loss with simple absorption toggle via thermocline
         tl_geo = 20.0 * math.log10(max(1.0, rng))
         layer_atten = 4.0 if self_ship.acoustics.thermocline_on else 0.0

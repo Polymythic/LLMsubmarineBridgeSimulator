@@ -45,9 +45,11 @@ def integrate_kinematics(
 
     ballast_ok = getattr(ship, "systems", None) is None or ship.systems.ballast_ok
     max_depth_rate = (6.0 if ballast_boost else 3.0) if ballast_ok else 0.5
-    dz = ordered_depth - kin.depth
+    # Enforce platform depth limits for surface vessels and subs alike
+    limited_ordered_depth = clamp(ordered_depth, 0.0, hull.max_depth)
+    dz = limited_ordered_depth - kin.depth
     step = clamp(dz, -max_depth_rate * dt, max_depth_rate * dt)
-    kin.depth = max(0.0, kin.depth + step)
+    kin.depth = clamp(kin.depth + step, 0.0, hull.max_depth)
 
     # Move using compass convention (0°=North, 90°=East):
     # x increases to the East → sin(heading), y increases to the North → cos(heading)

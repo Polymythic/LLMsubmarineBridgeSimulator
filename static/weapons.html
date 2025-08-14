@@ -121,6 +121,14 @@
             if (placeholder) {
               placeholder.parentElement && placeholder.parentElement.removeChild(placeholder);
             }
+            // Remove any tasks that no longer exist
+            const currentIds = new Set(tasks.map(t => t.id));
+            for (const [tid, el] of Array.from(existingTaskElements.entries())) {
+              if (!currentIds.has(tid)) {
+                if (el && el.parentElement) el.parentElement.removeChild(el);
+                existingTaskElements.delete(tid);
+              }
+            }
             tasks.forEach((task, index) => {
               console.log('🔍 Processing task', index + 1, 'of', tasks.length, ':', task);
               const taskId = task.id;

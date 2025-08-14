@@ -554,7 +554,7 @@ class Simulation:
                     return "Unknown task"
             else:
                 # Choose the most urgent task: worst stage first, then shortest remaining time
-                stage_rank = {"normal": 0, "degraded": 1, "damaged": 2, "failed": 3}
+                stage_rank = {"task": 0, "failing": 1, "failed": 2}
                 tasks.sort(key=lambda t: (-stage_rank.get(t.stage, 0), t.time_remaining_s))
                 for i, t in enumerate(tasks):
                     t.started = (i == 0)

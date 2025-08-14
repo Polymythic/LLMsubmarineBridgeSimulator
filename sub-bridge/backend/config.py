@@ -44,6 +44,10 @@ class Config:
     ai_ship_engine: str = os.getenv("AI_SHIP_ENGINE", "stub")    # stub|ollama|openai
     ai_fleet_model: str = os.getenv("AI_FLEET_MODEL", "stub")
     ai_ship_model: str = os.getenv("AI_SHIP_MODEL", "stub")
+    # Agent cadences (seconds)
+    ai_fleet_cadence_s: float = _get_env_float("AI_FLEET_CADENCE_S", 45.0)
+    ai_ship_cadence_s: float = _get_env_float("AI_SHIP_CADENCE_S", 20.0)
+    ai_ship_alert_cadence_s: float = _get_env_float("AI_SHIP_ALERT_CADENCE_S", 10.0)
     # Engines configuration
     ollama_host: str = os.getenv("OLLAMA_HOST", "http://localhost:11434")
     openai_api_key: Optional[str] = os.getenv("OPENAI_API_KEY")

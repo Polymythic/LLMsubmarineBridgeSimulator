@@ -71,7 +71,8 @@ class Simulation:
             except Exception:
                 pass
             # Timers (sim-time based)
-            self._ai_fleet_timer = 0.0
+            # Prime timers so first runs occur quickly after startup
+            self._ai_fleet_timer = getattr(CONFIG, "ai_fleet_cadence_s", 45.0)
             self._ai_ship_timers: Dict[str, float] = {}
             self._ai_pending: set[asyncio.Task] = set()
 
@@ -313,10 +314,10 @@ class Simulation:
         if CONFIG.use_ai_orchestrator:
             # Advance orchestrator timers
             self._ai_fleet_timer += dt
-            # Default cadences
-            fleet_cadence = 45.0
-            ship_normal_cadence = 20.0
-            ship_alert_cadence = 10.0
+            # Default cadences (configurable)
+            fleet_cadence = getattr(CONFIG, "ai_fleet_cadence_s", 45.0)
+            ship_normal_cadence = getattr(CONFIG, "ai_ship_cadence_s", 20.0)
+            ship_alert_cadence = getattr(CONFIG, "ai_ship_alert_cadence_s", 10.0)
             # Schedule fleet run
             if self._ai_fleet_timer >= fleet_cadence:
                 self._ai_fleet_timer = 0.0
@@ -339,7 +340,8 @@ class Simulation:
                     continue
                 sid = ship.id
                 if sid not in self._ai_ship_timers:
-                    self._ai_ship_timers[sid] = 0.0
+                    # Trigger initial run quickly after startup for each ship
+                    self._ai_ship_timers[sid] = ship_normal_cadence
                 self._ai_ship_timers[sid] += dt
                 # Detection-aware cadence (non-leaking heuristic):
                 # - If ownship recently active pinged (cooldown active), enemies go alert
@@ -403,7 +405,8 @@ class Simulation:
         for ship in self.world.all_ships():
             if ship.id == "ownship":
                 continue
-            if CONFIG.enemy_static:
+            # Allow enemy movement when orchestrator is enabled regardless of ENEMY_STATIC
+            if CONFIG.enemy_static and not CONFIG.use_ai_orchestrator:
                 continue
             integrate_kinematics(ship, ship.kin.heading, ship.kin.speed, ship.kin.depth, dt)
 

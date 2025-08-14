@@ -58,8 +58,7 @@
         <div class="pill">Unallocated: <span id="pUnalloc">0%</span></div>
         <span id="pErr" style="color:#FF6B6B"></span>
       </div>
-      <button id="applyAlloc" title="Apply power allocations (must not exceed 100%)">Apply Allocation</button>
-    <button id="testRepair" title="Test repair button functionality" style="margin-left: 8px; background: #7C3AED; color: white;">Test Repair</button>
+    <button id="applyAlloc" title="Apply power allocations (must not exceed 100%)">Apply Allocation</button>
     </div>
     <div class="row">
       <div class="pill">Rudder: <span id="rudderOk">OK</span></div>
@@ -299,26 +298,7 @@
     };
 
     
-    // Test repair button for debugging
-    document.getElementById('testRepair').onclick = () => {
-        console.log('🧪 Engineering test repair button clicked');
-        console.log('🔍 Current WebSocket state:', ws.readyState);
-        console.log('🔍 WebSocket readyState values: 0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED');
-        
-        if (ws.readyState === WebSocket.OPEN) {
-            console.log('✅ WebSocket is open, testing engineering repair command');
-            const cmd = {topic:'station.task.start', data:{station:'engineering'}};
-            console.log('📤 Sending engineering test repair command:', cmd);
-            try {
-                ws.send(JSON.stringify(cmd));
-                console.log('📤 Engineering test repair command sent successfully');
-            } catch (error) {
-                console.error('❌ Error sending engineering test repair command:', error);
-            }
-        } else {
-            console.log('❌ WebSocket is not open, current state:', ws.readyState);
-        }
-    };
+    
   </script>
 </body>
 </html>

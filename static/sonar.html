@@ -23,7 +23,6 @@
     <div class="row">
       <div class="col">
         <button id="ping" title="Send an active ping; reveals ownship and returns noisy range+bearing">Active Ping</button>
-        <button id="testRepair" title="Test repair button functionality" style="margin-left: 8px; background: #7C3AED; color: white;">Test Repair</button>
         <div title="Ping cooldown in seconds">Ping cooldown: <span id="cd">0</span>s</div>
         <div class="label" title="Current EMCON risk from acoustics">EMCON: <span id="emcon">low</span></div>
         <h3>Contacts</h3>
@@ -74,26 +73,7 @@
     
 
     
-    // Test repair button for debugging
-    document.getElementById('testRepair').onclick = () => {
-        console.log('🧪 Sonar test repair button clicked');
-        console.log('🔍 Current WebSocket state:', ws.readyState);
-        console.log('🔍 WebSocket readyState values: 0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED');
-        
-        if (ws.readyState === WebSocket.OPEN) {
-            console.log('✅ WebSocket is open, testing sonar repair command');
-            const cmd = {topic:'station.task.start', data:{station:'sonar'}};
-            console.log('📤 Sending sonar test repair command:', cmd);
-            try {
-                ws.send(JSON.stringify(cmd));
-                console.log('📤 Sonar test repair command sent successfully');
-            } catch (error) {
-                console.error('❌ Error sending sonar test repair command:', error);
-            }
-        } else {
-            console.log('❌ WebSocket is not open, current state:', ws.readyState);
-        }
-    };
+    
     const tel = document.getElementById('telemetry');
     const cd = document.getElementById('cd');
     const list = document.getElementById('contacts');

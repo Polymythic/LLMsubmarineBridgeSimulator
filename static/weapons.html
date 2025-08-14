@@ -45,7 +45,6 @@
       </select>
     </label>
     <button id="fire" title="Fire the selected tube (interlocks apply)">Fire</button>
-    <button id="testRepair" title="Test repair button functionality" style="margin-left: 8px; background: #7C3AED; color: white;">Test Repair</button>
     <pre id="telemetry" title="Weapons telemetry and events"></pre>
   </div>
   <script>
@@ -211,26 +210,7 @@
     };
 
     
-    // Test repair button for debugging
-    document.getElementById('testRepair').onclick = () => {
-        console.log('🧪 Weapons test repair button clicked');
-        console.log('🔍 Current WebSocket state:', ws.readyState);
-        console.log('🔍 WebSocket readyState values: 0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED');
-        
-        if (ws.readyState === WebSocket.OPEN) {
-            console.log('✅ WebSocket is open, testing weapons repair command');
-            const cmd = {topic:'station.task.start', data:{station:'weapons'}};
-            console.log('📤 Sending weapons test repair command:', cmd);
-            try {
-                ws.send(JSON.stringify(cmd));
-                console.log('📤 Weapons test repair command sent successfully');
-            } catch (error) {
-                console.error('❌ Error sending weapons test repair command:', error);
-            }
-        } else {
-            console.log('❌ WebSocket is not open, current state:', ws.readyState);
-        }
-    };
+    
   </script>
 </body>
 </html>

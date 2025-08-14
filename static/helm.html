@@ -41,7 +41,6 @@
       <div class="col"><label title="Ordered keel depth in meters">Depth (m)<input id="depth" type="number" min="0" max="600" value="100"></label></div>
     </div>
     <button id="send" title="Send helm order to the sim loop">Order</button>
-    <button id="testRepair" title="Test repair button functionality" style="margin-left: 8px; background: #7C3AED; color: white;">Test Repair</button>
     <div class="panel" style="width:100%;">
       <h3>Maintenance</h3>
       <div class="row" id="tasksRow">
@@ -266,26 +265,7 @@
       ws.send(JSON.stringify({topic:'helm.order', data:{heading, speed, depth}}));
     };
     
-    // Test repair button for debugging
-    document.getElementById('testRepair').onclick = () => {
-        console.log('🧪 Test repair button clicked');
-        console.log('🔍 Current WebSocket state:', ws.readyState);
-        console.log('🔍 WebSocket readyState values: 0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED');
-        
-        if (ws.readyState === WebSocket.OPEN) {
-            console.log('✅ WebSocket is open, testing repair command');
-            const cmd = {topic:'station.task.start', data:{station:'helm'}};
-            console.log('📤 Sending test repair command:', cmd);
-            try {
-                ws.send(JSON.stringify(cmd));
-                console.log('📤 Test repair command sent successfully');
-            } catch (error) {
-                console.error('❌ Error sending test repair command:', error);
-            }
-        } else {
-            console.log('❌ WebSocket is not open, current state:', ws.readyState);
-        }
-    };
+    
   </script>
 </body>
 </html>

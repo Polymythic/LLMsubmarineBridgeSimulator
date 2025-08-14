@@ -46,7 +46,6 @@
       <div class="row" id="tasksRow">
         <div class="pill" id="task" title="Current maintenance tasks">No Active Tasks</div>
       </div>
-      <div class="label">Progress scales with station power allocation.</div>
     </div>
     <pre id="telemetry" title="Ownship state and events"></pre>
   </div>
@@ -174,6 +173,7 @@
                     const pill = document.createElement('div'); 
                     pill.className = 'pill'; 
                     pill.textContent = 'No Active Tasks'; 
+                    pill.id = 'task';
                     pill.style.color = '#D7E3FF'; 
                     pill.style.borderColor = '#1B2440'; 
                     pill.style.backgroundColor = '#0F162A'; 

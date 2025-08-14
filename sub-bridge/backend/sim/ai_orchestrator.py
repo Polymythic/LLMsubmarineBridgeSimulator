@@ -203,7 +203,7 @@ class AgentsOrchestrator:
             intent = self._normalize_intent(summary, intent_raw)
             result["tool_calls"] = [{"tool": "set_fleet_intent", "arguments": intent}]
             # Add concise human summary
-            fleet_thought = self._summarize_fleet_intent(intent)
+            fleet_thought = intent.get("summary") or self._summarize_fleet_intent(intent)
             # Validation/clamping would occur here (placeholder: accept as-is)
             result["tool_calls_validated"] = result["tool_calls"]
             # Emit trace event
@@ -349,7 +349,7 @@ class AgentsOrchestrator:
             # Add concise human summary of the decision
             try:
                 chosen = result["tool_calls_validated"][0] if result.get("tool_calls_validated") else None
-                ship_thought = self._summarize_ship_tool(ship_id, chosen)
+                ship_thought = (chosen.get("summary") if isinstance(chosen, dict) else None) or self._summarize_ship_tool(ship_id, chosen)
             except Exception:
                 ship_thought = None
             insert_event(self._storage_engine, self._run_id, "ai.run.ship", json.dumps({

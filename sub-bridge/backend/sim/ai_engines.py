@@ -102,7 +102,8 @@ class OllamaAgentsEngine(BaseEngine):
         system = (
             "You are the Fleet Commander for a hostile flotilla. Plan strategy to achieve mission objectives "
             "while minimizing detectability and respecting ROE. You will receive a structured summary of your fleet "
-            "and an uncertain belief of enemy contacts. Never assume ground-truth positions. Output only a JSON FleetIntent."
+            "and an uncertain belief of enemy contacts. Never assume ground-truth positions. Output only a JSON FleetIntent. "
+            "Include a concise 'summary' string explaining your rationale in 1 short sentence. Do not reveal unknown truths."
         )
         hint = fleet_summary.get("_prompt_hint")
         fs = dict(fleet_summary)
@@ -123,7 +124,8 @@ class OllamaAgentsEngine(BaseEngine):
     async def propose_ship_tool(self, ship: Ship, ship_summary: Dict[str, Any]) -> Dict[str, Any]:
         system = (
             "You command a single ship. Make conservative, doctrine-aligned decisions based only on your local summary "
-            "and the FleetIntent. Never expose or rely on information you do not have. Output exactly one tool call in JSON."
+            "and the FleetIntent. Never expose or rely on information you do not have. Output exactly one tool call in JSON. "
+            "Include a concise 'summary' string field in the same JSON explaining your rationale in 1 short sentence."
         )
         hint = ship_summary.get("_prompt_hint")
         ss = dict(ship_summary)

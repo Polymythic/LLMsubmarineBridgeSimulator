@@ -16,6 +16,9 @@ ENV/
 # Local DB
 sub-bridge.db
 
+# Environment variables (never commit real API keys)
+.env
+
 # Node/build (future frontend)
 node_modules/
 dist/

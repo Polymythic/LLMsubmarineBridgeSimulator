@@ -38,6 +38,10 @@
       <div class="col">
         <div class="pill">Ownship: <span id="own"></span></div>
         <div id="list"></div>
+        <div style="margin-top: 16px;">
+          <div class="pill" style="background: #1A1A2E; border-color: #FF4444;">Torpedo Events</div>
+          <div id="torpedoEvents" style="max-height: 120px; overflow-y: auto; font-size: 12px;"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -70,12 +74,65 @@
     const ownEl = document.getElementById('own');
     const list = document.getElementById('list');
 
+    function addTorpedoEvent(event) {
+      const eventsDiv = document.getElementById('torpedoEvents');
+      if (!eventsDiv) return;
+      
+      const eventDiv = document.createElement('div');
+      eventDiv.style.padding = '4px 8px';
+      eventDiv.style.margin = '2px 0';
+      eventDiv.style.borderRadius = '4px';
+      eventDiv.style.fontSize = '11px';
+      
+      let text = '';
+      let bgColor = '#1A1A2E';
+      
+      switch(event.type) {
+        case 'torpedo.armed':
+          text = `🚀 ${event.name} ARMED`;
+          bgColor = '#FF4444';
+          break;
+        case 'torpedo.detonated':
+          text = `💥 ${event.name} HIT ${event.target} at ${event.range_m.toFixed(0)}m`;
+          bgColor = '#FF0000';
+          break;
+        case 'torpedo.self_destruct':
+          text = `⚠️ ${event.name} SELF-DESTRUCT: ${event.reason}`;
+          bgColor = '#FF8800';
+          break;
+        case 'torpedo.spoofed':
+          text = `🎭 ${event.name} SPOOFED for ${event.seconds}s`;
+          bgColor = '#FFAA00';
+          break;
+        default:
+          text = `❓ ${event.type}`;
+          bgColor = '#666666';
+      }
+      
+      eventDiv.textContent = text;
+      eventDiv.style.backgroundColor = bgColor;
+      eventDiv.style.color = '#FFFFFF';
+      
+      // Add timestamp
+      const time = new Date().toLocaleTimeString();
+      eventDiv.title = `Time: ${time}`;
+      
+      // Add to top of list
+      eventsDiv.insertBefore(eventDiv, eventsDiv.firstChild);
+      
+      // Keep only last 10 events
+      while (eventsDiv.children.length > 10) {
+        eventsDiv.removeChild(eventsDiv.lastChild);
+      }
+    }
+
     function drawShip(x,y,heading,color,label){
       ctx.save();
       ctx.translate(x,y);
       // Canvas default points to +X (east). Our headings are compass (0=N,90=E,180=S,270=W).
       // Map compass to canvas by rotating (90 - heading) degrees.
-      ctx.rotate((90 - heading) * Math.PI/180);
+      // Fix: Use (heading - 90) to get correct orientation
+      ctx.rotate((heading - 90) * Math.PI/180);
       ctx.fillStyle = color;
       ctx.beginPath();
       ctx.moveTo(16,0); ctx.lineTo(-10,6); ctx.lineTo(-10,-6); ctx.closePath();
@@ -108,8 +165,53 @@
       const [ox, oy] = worldToScreen(data.ownship.x, data.ownship.y);
       drawShip(ox, oy, data.ownship.heading, '#6EE7A7', `OWN hdg ${data.ownship.heading.toFixed(0)} spd ${data.ownship.speed.toFixed(1)} dpt ${data.ownship.depth.toFixed(0)}`);
 
-      // Enemies
+      // Clear list before adding new items
       list.innerHTML = '';
+
+      // Draw torpedoes
+      if (data.torpedoes && data.torpedoes.length > 0) {
+        data.torpedoes.forEach(t => {
+          const [tx, ty] = worldToScreen(t.x, t.y);
+          // Draw torpedo as a small red triangle pointing in direction of travel
+          ctx.save();
+          ctx.translate(tx, ty);
+          ctx.rotate((t.heading - 90) * Math.PI/180);
+          ctx.fillStyle = t.armed ? '#FF4444' : '#FF8888'; // Red when armed, lighter when not
+          ctx.beginPath();
+          ctx.moveTo(8, 0); ctx.lineTo(-4, 3); ctx.lineTo(-4, -3); ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+          
+          // Draw tracking line to target if armed and tracking
+          if (t.armed && t.target_id) {
+            const target = data.ships.find(s => s.id === t.target_id);
+            if (target) {
+              const [targetX, targetY] = worldToScreen(target.x, target.y);
+              ctx.strokeStyle = t.armed ? '#FF4444' : '#FF8888';
+              ctx.lineWidth = 2;
+              ctx.setLineDash([5, 5]);
+              ctx.beginPath();
+              ctx.moveTo(tx, ty);
+              ctx.lineTo(targetX, targetY);
+              ctx.stroke();
+              ctx.setLineDash([]);
+              ctx.lineWidth = 1;
+            }
+          }
+          
+          // Add torpedo info to list
+          const li = document.createElement('div');
+          li.className = 'pill';
+          li.style.borderColor = t.armed ? '#FF4444' : '#FF8888';
+          const status = t.armed ? 'ARMED' : 'ENABLING';
+          const target = t.target_id || 'SEARCHING';
+          li.textContent = `TORP ${t.name} ${status} hdg ${t.heading.toFixed(0)} spd ${t.speed.toFixed(1)} target: ${target}`;
+          li.title = `Range: ${((t.x - data.ownship.x)**2 + (t.y - data.ownship.y)**2)**0.5.toFixed(0)}m | Run time: ${t.run_time.toFixed(1)}s`;
+          list.appendChild(li);
+        });
+      }
+
+      // Enemies
       data.ships.forEach(s => {
         const [sx, sy] = worldToScreen(s.x, s.y);
         drawShip(sx, sy, s.heading, '#E87979', `${s.id}`);
@@ -132,7 +234,29 @@
       });
     }
 
-    ws.onmessage = (ev) => { try { const m = JSON.parse(ev.data); if (m.topic === 'telemetry') { ownEl.textContent = `hdg ${m.data.ownship.heading.toFixed(0)} spd ${m.data.ownship.speed.toFixed(1)} dpt ${m.data.ownship.depth.toFixed(0)}`; render(m.data); const maint = (m.data.maintenance && typeof m.data.maintenance.spawnsEnabled === 'boolean') ? m.data.maintenance.spawnsEnabled : true; const maintState = document.getElementById('maintState'); maintState.textContent = maint ? 'ON' : 'OFF'; maintState.style.color = maint ? '#8DEB8D' : '#FF6B6B'; } } catch(e){} };
+    ws.onmessage = (ev) => { 
+      try { 
+        const m = JSON.parse(ev.data); 
+        if (m.topic === 'telemetry') { 
+          ownEl.textContent = `hdg ${m.data.ownship.heading.toFixed(0)} spd ${m.data.ownship.speed.toFixed(1)} dpt ${m.data.ownship.depth.toFixed(0)}`; 
+          render(m.data); 
+          
+          // Handle torpedo events
+          if (m.data.events) {
+            m.data.events.forEach(event => {
+              if (event.type && event.type.startsWith('torpedo.')) {
+                addTorpedoEvent(event);
+              }
+            });
+          }
+          
+          const maint = (m.data.maintenance && typeof m.data.maintenance.spawnsEnabled === 'boolean') ? m.data.maintenance.spawnsEnabled : true; 
+          const maintState = document.getElementById('maintState'); 
+          maintState.textContent = maint ? 'ON' : 'OFF'; 
+          maintState.style.color = maint ? '#8DEB8D' : '#FF6B6B'; 
+        } 
+      } catch(e){} 
+    };
     document.getElementById('restart').onclick = () => {
       const sel = document.getElementById('mission');
       const mission = sel && sel.value ? sel.value : 'patrol';

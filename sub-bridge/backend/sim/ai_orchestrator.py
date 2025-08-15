@@ -161,13 +161,23 @@ class AgentsOrchestrator:
                 for s in world.all_ships() if s.side == "RED"
             ]
             target_wp = mission_brief.get("target_wp") if isinstance(mission_brief.get("target_wp", None), (list, tuple)) else None
+            # Pass-through structured mission supplements when present
             mission = {
                 "objective": mission_brief.get("objective"),
                 "roe": mission_roe,
                 "convoy": convoy,
                 "target_wp": target_wp,
+                "side_objectives": mission_brief.get("side_objectives"),
+                "protected_assets": mission_brief.get("protected_assets"),
+                "emcon": mission_brief.get("emcon"),
+                "formations": mission_brief.get("formations"),
+                "speed_limits": mission_brief.get("speed_limits"),
+                "navigation_constraints": mission_brief.get("navigation_constraints"),
+                "threat_hints": mission_brief.get("threat_hints"),
+                "success_criteria": mission_brief.get("success_criteria"),
                 # Optional prompts for AI engines to use when constructing system messages
                 "ai_fleet_prompt": mission_brief.get("ai_fleet_prompt"),
+                "ai_ship_prompts": mission_brief.get("ai_ship_prompts"),
             }
         else:
             mission = {"roe": {"weapons_free": False}}
@@ -353,8 +363,20 @@ class AgentsOrchestrator:
             summary = self._build_fleet_summary()
             # Capture full API call for debugging
             api_call_debug = {
-                "system_prompt": "You are the Fleet Commander for an enemy flotilla. Plan high-level strategy for all of your ships to achieve mission objectives while minimizing detectability and respecting ROE. You will receive a structured summary of your fleet and an uncertain belief of enemy contacts. Never assume ground-truth positions. Output only a JSON FleetIntent. Include a concise 'summary' string explaining your rationale in 1 short sentence. Do not reveal unknown truths.",
-                "user_prompt": "FLEET_SUMMARY_JSON:\n" + json.dumps(summary, separators=(",", ":")) + "\n\nCONSTRAINTS:\n- Do not reveal or rely on unknown enemy truth.\n- Prefer convoy protection unless ROE authorizes engagement.\n- If escorts are low on ammo, bias toward defensive spacing.\n\nProduce FleetIntent JSON.",
+                "system_prompt": (
+                    "You are the RED Fleet Commander. Plan strategy to achieve mission objectives while minimizing detectability and obeying ROE. "
+                    "You will receive a structured fleet summary and a mission supplement. Never assume ground-truth enemy positions; use only provided beliefs and hints. "
+                    "Coordinate system: X east (m), Y north (m). Output ONLY one JSON object with fields: objectives (per-ship destinations), engagement_rules (weapons_free,min_confidence,hold_fire_in_emcon), emcon (active_ping_allowed,radio_discipline), summary (one sentence), notes (optional). No markdown, no extra prose."
+                ),
+                "user_prompt": (
+                    "FLEET_SUMMARY_JSON:\n" + json.dumps(summary, separators=(",", ":")) +
+                    "\n\nCONSTRAINTS:\n"
+                    "- Include EVERY RED ship id under 'objectives' with a 'destination' [x,y] in meters.\n"
+                    "- If a mission target waypoint is provided, use it unless another destination is clearly safer/better.\n"
+                    "- Respect formations, spacing, speed limits, and navigation constraints (lanes, no-go zones) if provided.\n"
+                    "- Prefer convoy protection unless ROE authorizes engagement.\n"
+                    "- Do not reveal or rely on unknown enemy truth.\n"
+                ),
                 "summary_size": len(str(summary)),
             }
             intent_raw = await asyncio.wait_for(self._fleet_decide(summary), timeout=max(1.0, CONFIG.ai_poll_s))
@@ -518,8 +540,22 @@ class AgentsOrchestrator:
             summary = self._build_ship_summary(ship)
             # Capture full API call for debugging
             api_call_debug = {
-                "system_prompt": "You command a single ship. Make conservative, doctrine-aligned decisions based only on your local summary and the FleetIntent. Prefer following FleetIntent; if you must deviate due to local threats/opportunities, you may, but briefly explain by prefixing the 'summary' with 'deviate:'. Never expose or rely on unknown information. Output exactly one JSON object with keys: 'tool', 'arguments', 'summary'. Do not wrap with markdown or prose. Allowed tools: set_nav(heading: float 0-359.9, speed: float >=0, depth: float >=0); fire_torpedo(tube: int, bearing: float 0-359.9, run_depth: float, enable_range: float); deploy_countermeasure(type: 'noisemaker'|'decoy'). Only use tools supported by your capabilities.",
-                "user_prompt": "SHIP_SUMMARY_JSON:\n" + json.dumps(summary, separators=(",", ":")) + "\n\nRules:\n- Strongly prefer the FleetIntent, but you may deviate if local conditions warrant; note 'deviate:' in summary.\n- Respect EMCON posture.\n- Obey ROE and captain consent requirement.\n- Use only allowed tools and only if supported by your capabilities (e.g., if has_torpedoes=false, never fire_torpedo).\n- Output one JSON with keys {tool, arguments, summary}. No markdown fences, no extra keys.\n",
+                "system_prompt": (
+                    "You command a single RED ship. Make conservative, doctrine-aligned decisions using only your local Ship Summary and the FleetIntent. "
+                    "Prefer following FleetIntent; if you must deviate due to local threats/opportunities, prefix the summary with 'deviate:' and keep it brief. "
+                    "Coordinate system: X east (m), Y north (m). Bearings: 0°=North, 90°=East. Output EXACTLY one JSON object with keys {tool, arguments, summary}. "
+                    "No markdown or extra keys. Allowed tools: set_nav(heading: float 0-359.9, speed: float >=0, depth: float >=0); fire_torpedo(tube: int, bearing: float 0-359.9, run_depth: float, enable_range: float); deploy_countermeasure(type: 'noisemaker'|'decoy'). Only use tools supported by your capabilities."
+                ),
+                "user_prompt": (
+                    "SHIP_SUMMARY_JSON:\n" + json.dumps(summary, separators=(",", ":")) +
+                    "\n\nCONSTRAINTS:\n"
+                    "- Strongly prefer the FleetIntent; if deviating, prefix summary with 'deviate:'.\n"
+                    "- Respect EMCON posture and ROE (if weapons_free=false, do not fire).\n"
+                    "- Only fire_torpedo if has_torpedoes=true AND a tube state is 'DoorsOpen'; set bearing from contacts and choose a realistic enable_range.\n"
+                    "- Use only allowed tools and only if supported by capabilities.\n"
+                    "- If no change is needed, return set_nav holding current values with a brief summary (e.g., 'holding course per FleetIntent').\n"
+                    "- Output ONLY one JSON with keys {tool, arguments, summary}. No markdown, no extra keys.\n"
+                ),
                 "summary_size": len(str(summary)),
             }
             tool = await asyncio.wait_for(self._ship_decide(ship, summary), timeout=max(1.0, CONFIG.ai_poll_s))

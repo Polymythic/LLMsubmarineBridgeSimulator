@@ -3,17 +3,17 @@
 This document defines the Fleet Commander + Ship Commander AI architecture, strict information boundaries, data schemas, scheduling, engines, validation, and example prompts.
 
 ### Overview
-- One global Fleet Commander plans strategy on a slow cadence and publishes a `FleetIntent`.
-- Each hostile ship runs a Ship Commander that makes local decisions via tool calls at a faster cadence.
+- One global enemy (RED) Fleet Commander plans fleet strategy on a slow cadence and publishes a `FleetIntent`.
+- Each enemy (RED) ship runs a Ship Commander that makes local decisions via tool calls at a faster cadence.
 - All AI calls are asynchronous; the 20 Hz authoritative sim loop is never blocked.
 - Strict information boundaries ensure agents only see what they “know” via sensors and comms—never debug truth.
 
 ### Roles and Cadence
-- Fleet Commander
+- RED Fleet Commander
   - Cadence: every 30–60 s (configurable)
-  - Input: own fleet full state, mission/ROE, aggregated enemy belief (never ground truth)
+  - Input: own fleet full state, mission/ROE, aggregated RED belief of BLUE information (never ground truth)
   - Output: `FleetIntent`
-- Ship Commander (per hostile ship)
+- RED Ship Commander (per hostile ship)
   - Cadence: 20 s normal; 10 s alert if detected/threatened
   - Input: local ship summary + relevant slice of `FleetIntent`
   - Output: constrained tool calls: `set_nav`, `fire_torpedo`, `deploy_countermeasure`
@@ -21,9 +21,9 @@ This document defines the Fleet Commander + Ship Commander AI architecture, stri
 ### Strict Information Boundaries
 - Never expose authoritative enemy truth to any AI agent.
 - Fleet Commander receives:
-  - Full state of friendly fleet (ids, classes, kinematics, health, weapons readiness, detectability flags)
+  - Full state of RED fleet (ids, classes, kinematics, health, weapons readiness, detectability flags)
   - Mission/ROE + global context (time/weather)
-  - Aggregated enemy belief: contacts with uncertainty built from sensor reports
+  - Aggregated enemy fleet belief: contacts with uncertainty built from sensor reports
 - Ship Commander receives:
   - Its own kinematics, constraints, health, maintenance aspects impacting availability, weapons readiness
   - Local contacts (bearing-only; noisy), active ping returns, local threat flags (e.g., torpedo inbound)
@@ -31,19 +31,22 @@ This document defines the Fleet Commander + Ship Commander AI architecture, stri
 
 ### Data Schemas
 
-#### FleetIntent (shared strategy)
+### LLM call composition (what each call contains)
+
+All AI calls use the same composition:
+
+1) CORE system prompt (role, objectives, constraints) – fixed in the orchestrator/engines for consistency
+2) Mission supplement – structured mission fields and optional short hints
+3) Current game realities – the sanitized Fleet/Ship summary JSON within information boundaries
+
+This ensures agents always understand their role and output contract, while the mission adds scenario-specific guidance, and summaries add live state.
+
+#### FleetIntent (canonical schema)
 ```json
 {
-  "objectives": ["escort_convoy"],
-  "groups": {
-    "alpha": {
-      "role": "escort",
-      "waypoints": [[1200, -300], [2400, -600]],
-      "formation": "line_abreast",
-      "spacing_m": 800
-    }
+  "objectives": {
+    "<ship_id>": {"destination": [x, y]}
   },
-  "target_priority": ["SSN", "Destroyer", "Convoy"],
   "engagement_rules": {
     "weapons_free": false,
     "min_confidence": 0.6,
@@ -52,9 +55,37 @@ This document defines the Fleet Commander + Ship Commander AI architecture, stri
   "emcon": {
     "active_ping_allowed": false,
     "radio_discipline": "restricted"
-  }
+  },
+  "summary": "One short sentence explaining the plan",
+  "notes": [
+    {"ship_id": "<id>", "text": "<advisory>"}
+  ]
 }
 ```
+
+#### Mission supplement (structured fields)
+
+Missions provide structured, side-specific context that supplements the core prompts for better decisions. Typical fields:
+
+```json
+{
+  "target_wp": [x, y],
+  "side_objectives": {"RED": "escort_convoy_to_wp", "BLUE": "interdict_convoy"},
+  "protected_assets": ["red-01", "red-02"],
+  "emcon": {"RED": {"active_ping_allowed": false, "radio_discipline": "restricted"}},
+  "formations": {"convoy": {"ships": ["red-01","red-02"], "formation": "column", "spacing_m": 300}},
+  "speed_limits": {"convoy": {"min_kn": 4, "max_kn": 8}},
+  "navigation_constraints": {"no_go_zones": [], "transit_lanes": []},
+  "threat_hints": [{"type": "suspected_submarine", "center": [2500, -500], "radius_m": 1500, "confidence": 0.3}],
+  "success_criteria": {"RED": {"reach_wp_within_m": 200, "min_survivors": 2, "timeout_s": 900}},
+  "ai_fleet_prompt": "Concise hint for fleet",
+  "ai_ship_prompts": {"red-01": "Concise hint for ship red-01"}
+}
+```
+
+Notes:
+- The orchestrator passes these fields through in `fleet_summary.mission` and injects optional short hints as `_prompt_hint`.
+- Engines for OpenAI and Ollama use the same strict output contracts and constraints to minimize drift.
 
 #### Fleet Summary (for Fleet Commander)
 ```json
@@ -142,7 +173,7 @@ This document defines the Fleet Commander + Ship Commander AI architecture, stri
 ### Validation and Clamping
 - `set_nav`: clamp heading 0–359.9, speed ≥0 and ≤ ship max, depth ≥0 and ≤ ship max depth.
   - For surface vessels (e.g., Convoy), hull.max_depth is near-surface; depth is clamped accordingly.
-- `fire_torpedo`: tube must be ready; captain consent/ROE must allow; geometry must be plausible (enable range, seeker cone).
+- `fire_torpedo`: a tube must be in `DoorsOpen`; ROE must allow (i.e., `weapons_free=true`); geometry must be plausible (enable range, seeker cone).
 - `deploy_countermeasure`: must be supported; rate-limited by platform.
 - If validation fails, reject and fall back to conservative rule-based behavior; log the decision and reason.
 
@@ -178,7 +209,7 @@ This document defines the Fleet Commander + Ship Commander AI architecture, stri
 
 #### Fleet Commander (system prompt)
 ```
-You are the Fleet Commander for a hostile flotilla. Plan strategy to achieve mission objectives while minimizing detectability and respecting ROE. You will receive a structured summary of your fleet and an uncertain belief of enemy contacts. Never assume ground-truth positions. Output only a JSON FleetIntent. Include a concise 'summary' string.
+You are the RED Fleet Commander. Plan strategy to achieve mission objectives while minimizing detectability and obeying ROE. You will receive a structured fleet summary and a mission supplement. Never assume ground-truth enemy positions; use only provided beliefs and hints. Coordinate system: X east (m), Y north (m). Output ONLY one JSON object with fields: objectives (per-ship destinations), engagement_rules (weapons_free,min_confidence,hold_fire_in_emcon), emcon (active_ping_allowed,radio_discipline), summary (one sentence), notes (optional). No markdown, no extra prose.
 ```
 
 #### Fleet Commander (user message with variables)
@@ -187,16 +218,16 @@ FLEET_SUMMARY_JSON:
 {{fleet_summary_json}}
 
 CONSTRAINTS:
-- Do not reveal or rely on unknown enemy truth.
+- Include EVERY RED ship id under 'objectives' with a 'destination' [x,y] in meters.
+- If a mission target waypoint is provided, use it unless another destination is clearly safer/better.
+- Respect formations, spacing, speed limits, and navigation constraints (lanes, no-go zones) if provided.
 - Prefer convoy protection unless ROE authorizes engagement.
-- If escorts are low on ammo, bias toward defensive spacing.
-
-Produce FleetIntent JSON.
+- Do not reveal or rely on unknown enemy truth.
 ```
 
 #### Ship Commander (system prompt)
 ```
-You command a single ship. Make conservative, doctrine-aligned decisions based only on your local summary and the FleetIntent. Never expose or rely on information you do not have. Output exactly one tool call in JSON. Include a concise 'summary' string.
+You command a single RED ship. Make conservative, doctrine-aligned decisions using only your local Ship Summary and the FleetIntent. Prefer following FleetIntent; if you must deviate, prefix the summary with 'deviate:'. Coordinate system: X east (m), Y north (m). Bearings: 0°=North, 90°=East. Output EXACTLY one JSON object with keys {tool, arguments, summary}. No markdown or extra keys.
 ```
 
 #### Ship Commander (user message with variables)
@@ -204,15 +235,13 @@ You command a single ship. Make conservative, doctrine-aligned decisions based o
 SHIP_SUMMARY_JSON:
 {{ship_summary_json}}
 
-FLEET_INTENT_JSON:
-{{fleet_intent_json}}
-
-Rules:
-- Respect EMCON posture.
-- Obey ROE and captain consent requirement.
-- Use active ping only if allowed and tactically necessary.
-
-Output a single tool call JSON.
+CONSTRAINTS:
+- Strongly prefer the FleetIntent; if deviating, prefix summary with 'deviate:'.
+- Respect EMCON posture and ROE (if weapons_free=false, do not fire).
+- Only fire_torpedo if has_torpedoes=true AND a tube state is 'DoorsOpen'; set bearing from contacts; choose a realistic enable_range.
+- Use only allowed tools and only if supported by capabilities.
+- If no change is needed, return set_nav holding current values with a brief summary (e.g., 'holding course per FleetIntent').
+- Output ONLY one JSON with keys {tool, arguments, summary}. No markdown, no extra keys.
 ```
 
 ### Testing

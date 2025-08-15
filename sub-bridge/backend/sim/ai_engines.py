@@ -138,18 +138,18 @@ class OllamaAgentsEngine(BaseEngine):
 
     async def propose_fleet_intent(self, fleet_summary: Dict[str, Any]) -> Dict[str, Any]:
         system = (
-            "You are the Fleet Commander for a hostile flotilla. Plan strategy to achieve mission objectives "
-            "while minimizing detectability and respecting ROE. You will receive a structured summary of your fleet "
-            "and an uncertain belief of enemy contacts. Never assume ground-truth positions. "
-            "Coordinate system: X increases eastward, Y increases northward (in meters). "
-            "You must output ONLY a valid JSON object with this exact structure:\n"
+            "You are the RED Fleet Commander. Plan strategy to achieve mission objectives while minimizing detectability "
+            "and obeying ROE. You will receive a structured fleet summary and a mission supplement. Never assume ground-truth enemy "
+            "positions; use only provided beliefs and hints. Coordinate system: X increases eastward (m), Y increases northward (m). "
+            "Output ONLY one JSON object with the following fields (no markdown, no prose before/after):\n"
             "{\n"
-            '  "objectives": {"ship_id": {"destination": [x, y]}},\n'
-            '  "engagement_rules": {"weapons_free": false},\n'
-            '  "summary": "Brief explanation of your plan"\n'
+            '  "objectives": {"<ship_id>": {"destination": [x, y]}},\n'
+            '  "engagement_rules": {"weapons_free": false, "min_confidence": 0.6, "hold_fire_in_emcon": true},\n'
+            '  "emcon": {"active_ping_allowed": false, "radio_discipline": "restricted"},\n'
+            '  "summary": "One short sentence explaining the plan",\n'
+            '  "notes": [{"ship_id": "<id>" | null, "text": "<advisory>"}]\n'
             "}\n"
-            "The 'destination' coordinates should be the target waypoint for each ship. "
-            "Do not include any text before or after the JSON. Do not use markdown fences."
+            "Requirements: include EVERY RED ship as a key in 'objectives' with a 'destination' [x,y] in meters."
         )
         hint = fleet_summary.get("_prompt_hint")
         fs = dict(fleet_summary)
@@ -166,11 +166,13 @@ class OllamaAgentsEngine(BaseEngine):
             (f"MISSION_HINT:\n{hint}\n\n" if hint else "") +
             target_context +
             "FLEET_SUMMARY_JSON:\n" + json.dumps(fs, separators=(",", ":")) +
-            "\n\nCONSTRAINTS:\n- Do not reveal or rely on unknown enemy truth.\n- Prefer convoy protection unless ROE authorizes engagement.\n" \
-            "- If escorts are low on ammo, bias toward defensive spacing.\n" \
-            "- Use the mission target coordinates for ship destinations.\n\n"
-            "IMPORTANT: Output ONLY the JSON object. No markdown, no prose, no explanations outside the JSON. "
-            "Use the exact structure shown in the system prompt."
+            "\n\nCONSTRAINTS:\n"
+            "- Include EVERY RED ship id under 'objectives' with a 'destination' [x,y] in meters.\n"
+            "- If a mission target waypoint is provided, use it unless another destination is clearly safer/better.\n"
+            "- Respect formations, spacing, speed limits, and navigation constraints (lanes, no-go zones) if provided.\n"
+            "- Prefer convoy protection unless ROE authorizes engagement.\n"
+            "- Do not reveal or rely on unknown enemy truth.\n\n"
+            "IMPORTANT: Output ONLY the JSON object. No markdown, no prose, no extra keys beyond those listed (notes optional)."
         )
         content = await self._chat(system, user)
         print(f"Ollama Fleet Commander response: {content[:200]}...")  # Debug: show first 200 chars
@@ -184,12 +186,11 @@ class OllamaAgentsEngine(BaseEngine):
 
     async def propose_ship_tool(self, ship: Ship, ship_summary: Dict[str, Any]) -> Dict[str, Any]:
         system = (
-            "You command a single ship. Make conservative, doctrine-aligned decisions based only on your local summary "
-            "and the FleetIntent. Prefer following FleetIntent; if you must deviate due to local threats/opportunities, you may, "
-            "but briefly explain by prefixing the 'summary' with 'deviate:'. Never expose or rely on unknown information. "
-            "Coordinate system: X increases eastward, Y increases northward (in meters). "
-            "Output exactly one JSON object with keys: 'tool', 'arguments', 'summary'. Do not wrap with markdown or prose. "
-            "Allowed tools: set_nav(heading: float 0-359.9, speed: float >=0, depth: float >=0); "
+            "You command a single RED ship. Make conservative, doctrine-aligned decisions using only your local Ship Summary "
+            "and the FleetIntent. Prefer following FleetIntent; if you must deviate due to local threats/opportunities, prefix the summary "
+            "with 'deviate:' and keep it brief. Coordinate system: X east (m), Y north (m). Bearings: 0°=North, 90°=East. "
+            "Output EXACTLY one JSON object with keys {tool, arguments, summary}. No markdown or extra keys. Allowed tools: "
+            "set_nav(heading: float 0-359.9, speed: float =0, depth: float =0); "
             "fire_torpedo(tube: int, bearing: float 0-359.9, run_depth: float, enable_range: float); "
             "deploy_countermeasure(type: 'noisemaker'|'decoy'). Only use tools supported by your capabilities."
         )
@@ -199,11 +200,13 @@ class OllamaAgentsEngine(BaseEngine):
         user = (
             ("PROMPT_HINT:\n" + hint + "\n\n" if hint else "") +
             "SHIP_SUMMARY_JSON:\n" + json.dumps(ss, separators=(",", ":")) +
-            "\n\nRules:\n"
-            "- Strongly prefer the FleetIntent, but you may deviate if local conditions warrant; note 'deviate:' in summary.\n"
-            "- Respect EMCON posture.\n- Obey ROE and captain consent requirement.\n"
-            "- Use only allowed tools and only if supported by your capabilities (e.g., if has_torpedoes=false, never fire_torpedo).\n"
-            "- Output one JSON with keys {tool, arguments, summary}. No markdown fences, no extra keys.\n"
+            "\n\nCONSTRAINTS:\n"
+            "- Strongly prefer the FleetIntent; if deviating, prefix summary with 'deviate:'.\n"
+            "- Respect EMCON posture and ROE (if weapons_free=false, do not fire).\n"
+            "- Only fire_torpedo if has_torpedoes=true AND a tube state is 'DoorsOpen'; set bearing from contacts and choose a realistic enable_range.\n"
+            "- Use only allowed tools and only if supported by capabilities.\n"
+            "- If no change is needed, return set_nav holding current values with a brief summary (e.g., 'holding course per FleetIntent').\n"
+            "- Output ONLY one JSON with keys {tool, arguments, summary}. No markdown, no extra keys.\n"
         )
         content = await self._chat(system, user)
         obj = _extract_json(content)
@@ -232,16 +235,20 @@ class OpenAIAgentsEngine(BaseEngine):
         agent = self.Agent(
             name="FleetCommander",
             instructions=(
-                "You are the Fleet Commander for a hostile flotilla. Plan strategy to achieve mission objectives "
-                "while minimizing detectability and respecting ROE. You will receive a structured summary of your fleet "
-                "and an uncertain belief of enemy contacts. Never assume ground-truth positions. Output only a JSON FleetIntent."
+                "You are the RED Fleet Commander. Plan strategy to achieve mission objectives while minimizing detectability and obeying ROE. "
+                "You will receive a structured fleet summary and a mission supplement. Never assume ground-truth enemy positions; use only provided beliefs and hints. "
+                "Coordinate system: X east (m), Y north (m). Output ONLY one JSON object with fields: objectives (per-ship destinations), engagement_rules (weapons_free,min_confidence,hold_fire_in_emcon), emcon (active_ping_allowed,radio_discipline), summary (one sentence), notes (optional). No markdown, no extra prose."
             ),
             model=self.model,
         )
         prompt = (
             "FLEET_SUMMARY_JSON:\n" + json.dumps(fleet_summary, separators=(",", ":")) +
-            "\n\nCONSTRAINTS:\n- Do not reveal or rely on unknown enemy truth.\n- Prefer convoy protection unless ROE authorizes engagement.\n"
-            "- If escorts are low on ammo, bias toward defensive spacing.\n\nProduce FleetIntent JSON."
+            "\n\nCONSTRAINTS:\n"
+            "- Include EVERY RED ship id under 'objectives' with a 'destination' [x,y] in meters.\n"
+            "- If a mission target waypoint is provided, use it unless another destination is clearly safer/better.\n"
+            "- Respect formations, spacing, speed limits, and navigation constraints (lanes, no-go zones) if provided.\n"
+            "- Prefer convoy protection unless ROE authorizes engagement.\n"
+            "- Do not reveal or rely on unknown enemy truth.\n"
         )
         result = await Runner.run(agent, prompt)  # type: ignore[attr-defined]
         content = str(result.final_output)
@@ -256,14 +263,17 @@ class OpenAIAgentsEngine(BaseEngine):
         agent = self.Agent(
             name=f"ShipCommander-{ship.id}",
             instructions=(
-                "You command a single ship. Make conservative, doctrine-aligned decisions based only on your local summary "
-                "and the FleetIntent. Never expose or rely on information you do not have. Output exactly one tool call in JSON."
+                "You command a single RED ship. Make conservative, doctrine-aligned decisions using only your local Ship Summary and the FleetIntent. "
+                "Prefer following FleetIntent; if deviating, prefix summary with 'deviate:'. Bearings: 0°=North, 90°=East. Output ONLY one JSON object with keys {tool, arguments, summary}. No markdown or extra keys."
             ),
             model=self.model,
         )
         prompt = (
             "SHIP_SUMMARY_JSON:\n" + json.dumps(ship_summary, separators=(",", ":")) +
-            "\n\nRules:\n- Respect EMCON posture.\n- Obey ROE and captain consent requirement.\n- Use active ping only if allowed and tactically necessary.\n\nOutput a single tool call JSON."
+            "\n\nCONSTRAINTS:\n"
+            "- Respect EMCON posture and ROE (if weapons_free=false, do not fire).\n"
+            "- Only fire_torpedo if has_torpedoes=true AND a tube is 'DoorsOpen'; set bearing from contacts; choose realistic enable_range.\n"
+            "- Use only allowed tools supported by capabilities. If no change needed, return set_nav with current values and a brief summary.\n"
         )
         result = await Runner.run(agent, prompt)  # type: ignore[attr-defined]
         content = str(result.final_output)

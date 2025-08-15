@@ -42,6 +42,10 @@
           <div class="pill" style="background: #1A1A2E; border-color: #FF4444;">Torpedo Events</div>
           <div id="torpedoEvents" style="max-height: 120px; overflow-y: auto; font-size: 12px;"></div>
         </div>
+        <div style="margin-top: 16px;">
+          <div class="pill" style="background: #1A1A2E; border-color: #4F46E5;">Contact History</div>
+          <div id="contactHistory" style="max-height: 180px; overflow-y: auto; font-size: 12px;"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -130,8 +134,7 @@
       ctx.save();
       ctx.translate(x,y);
       // Canvas default points to +X (east). Our headings are compass (0=N,90=E,180=S,270=W).
-      // Map compass to canvas by rotating (90 - heading) degrees.
-      // Fix: Use (heading - 90) to get correct orientation
+      // With worldToScreen inverting Y for drawing, keep rotation as (heading - 90)
       ctx.rotate((heading - 90) * Math.PI/180);
       ctx.fillStyle = color;
       ctx.beginPath();
@@ -152,7 +155,8 @@
       const spanY = maxDy * 2 + pad;
       function worldToScreen(wx, wy){
         const sx = (wx - cx) / spanX * (W*0.8) + W/2;
-        const sy = (wy - cy) / spanY * (H*0.8) + H/2;
+        // Invert Y so that positive world Y (north) appears upward on screen
+        const sy = H/2 - (wy - cy) / spanY * (H*0.8);
         return [sx, sy];
       }
       ctx.clearRect(0,0,W,H);
@@ -262,6 +266,30 @@
                 addTorpedoEvent(event);
               }
             });
+          }
+          // Render RED contact history (sensor-only reports used by Fleet Commander)
+          if (Array.isArray(m.data.contactHistory)) {
+            const ch = document.getElementById('contactHistory');
+            if (ch) {
+              const items = m.data.contactHistory.slice(-50).reverse();
+              ch.innerHTML = '';
+              items.forEach(e => {
+                const row = document.createElement('div');
+                row.className = 'pill';
+                // Type-based color cue
+                const t = (e.type || '').toLowerCase();
+                row.style.borderColor = t === 'visual' ? '#8DEB8D' : (t === 'active' ? '#FBBF24' : '#60A5FA');
+                const ts = e.time ? new Date(e.time).toLocaleTimeString() : '';
+                const id = e.id || 'Unknown';
+                const bearing = (typeof e.bearing === 'number') ? `${e.bearing.toFixed(0)}°` : '—';
+                const rng = (typeof e.range_est === 'number') ? `${Math.round(e.range_est)}m` : '—';
+                const conf = (typeof e.confidence === 'number') ? (e.confidence*100).toFixed(0)+'%' : '—';
+                const cls = e.classifiedAs || e.class || 'Unknown';
+                const reporter = e.reportedBy || 'RED';
+                row.textContent = `${ts} [${reporter}] ${t.toUpperCase()} id ${id} brg ${bearing} rng ${rng} conf ${conf} class ${cls}`;
+                ch.appendChild(row);
+              });
+            }
           }
           
           const maint = (m.data.maintenance && typeof m.data.maintenance.spawnsEnabled === 'boolean') ? m.data.maintenance.spawnsEnabled : true; 

@@ -699,6 +699,33 @@ class Simulation:
             self.world.torpedoes.append(torp)
             insert_event(self.engine, self.run_id, "weapons.fire", json.dumps(data))
             return None
+        if topic == "weapons.test_fire":
+            # Test torpedo launch - bypasses all interlocks and tube preparation
+            # Create a torpedo directly without going through tube state machine
+            torp = {
+                "x": own.kin.x,
+                "y": own.kin.y,
+                "depth": own.kin.depth,
+                "heading": float(data.get("bearing", own.kin.heading)) % 360.0,
+                "speed": 45.0,  # Default Mk48 speed
+                "armed": False,
+                "enable_range_m": float(data.get("enable_range", 800.0)),
+                "seeker_range_m": 4000.0,
+                "run_time": 0.0,
+                "max_run_time": 600.0,
+                "target_id": None,
+                "name": "Mk48-TEST",
+                "seeker_cone": 35.0,
+                "side": own.side,
+                "spoofed_timer": 0.0,
+                "run_depth": float(data.get("run_depth", own.kin.depth)),
+                "doctrine": str(data.get("doctrine", "passive_then_active")),
+                "pn_nav_const": 3.0,
+                "los_prev": None,
+            }
+            self.world.torpedoes.append(torp)
+            insert_event(self.engine, self.run_id, "weapons.test_fire", json.dumps(data))
+            return None
         if topic == "engineering.reactor.set":
             mw = max(0.0, min(own.reactor.max_mw, float(data.get("mw", own.reactor.output_mw))))
             own.reactor.output_mw = mw

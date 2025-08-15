@@ -43,6 +43,16 @@
       </select>
     </label>
     <button id="fire" title="Fire the selected tube (interlocks apply)">Fire</button>
+    
+    <div style="margin-top: 20px; padding: 16px; border: 2px solid #FF4444; border-radius: 8px; background: rgba(255, 68, 68, 0.1);">
+      <h4 style="color: #FF4444; margin: 0 0 12px 0;">🧪 TEST MODE - BYPASS ALL INTERLOCKS</h4>
+      <div style="font-size: 12px; color: #FF8888; margin-bottom: 12px;">
+        This button launches a torpedo immediately without any tube preparation, captain consent, or other safety checks.
+        <br>Use only for testing torpedo tracking and damage systems!
+      </div>
+      <button id="testFire" title="Launch test torpedo (bypasses all interlocks)" style="background: #FF4444; color: white; font-weight: bold;">🚀 LAUNCH TEST TORPEDO</button>
+    </div>
+    
     <pre id="telemetry" title="Weapons telemetry and events"></pre>
   </div>
   <script>
@@ -214,6 +224,40 @@
       const enable_range = parseFloat(document.getElementById('enable').value);
       const doctrine = document.getElementById('doctrine').value;
       ws.send(JSON.stringify({topic:'weapons.fire', data:{tube: tube(), bearing, run_depth, enable_range, doctrine}}));
+    };
+
+    // Test torpedo launch - bypasses all interlocks
+    document.getElementById('testFire').onclick = () => {
+      const bearing = parseFloat(document.getElementById('bearing').value);
+      const run_depth = parseFloat(document.getElementById('rdepth').value);
+      const enable_range = parseFloat(document.getElementById('enable').value);
+      const doctrine = document.getElementById('doctrine').value;
+      
+      // Visual feedback
+      const testBtn = document.getElementById('testFire');
+      const originalText = testBtn.textContent;
+      testBtn.textContent = '🚀 LAUNCHING...';
+      testBtn.style.background = '#FF8800';
+      
+      // Send test torpedo command that bypasses all checks
+      ws.send(JSON.stringify({
+        topic: 'weapons.test_fire', 
+        data: {
+          tube: tube(), 
+          bearing, 
+          run_depth, 
+          enable_range, 
+          doctrine
+        }
+      }));
+      
+      console.log('🧪 Test torpedo launched:', {bearing, run_depth, enable_range, doctrine});
+      
+      // Reset button after 1 second
+      setTimeout(() => {
+        testBtn.textContent = originalText;
+        testBtn.style.background = '#FF4444';
+      }, 1000);
     };
 
     

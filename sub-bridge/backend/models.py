@@ -103,6 +103,9 @@ class WeaponsSuite(BaseModel):
     depth_charges_stored: int = 0
     depth_charge_cooldown_s: float = 2.0
     depth_charge_cooldown_timer_s: float = 0.0
+    # AI quick torpedo launch (bypasses tubes for NPCs)
+    torpedo_quick_cooldown_s: float = 5.0
+    torpedo_quick_cooldown_timer_s: float = 0.0
 
 
 class ShipCapabilities(BaseModel):

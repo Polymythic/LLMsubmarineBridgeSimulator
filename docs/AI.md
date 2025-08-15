@@ -157,6 +157,9 @@ Notes:
 ```json
 {"tool":"drop_depth_charges","arguments":{"spread_meters":20,"minDepth":30,"maxDepth":80,"spreadSize":5}}
 ```
+```json
+{"tool":"launch_torpedo_quick","arguments":{"bearing":145,"run_depth":120,"enable_range":1500}}
+```
 
 ### Engine Abstraction
 - Engines: `StubEngine` (deterministic/local), `OllamaEngine` (local HTTP), `OpenAIEngine` (remote HTTP)

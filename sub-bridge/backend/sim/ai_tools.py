@@ -36,6 +36,15 @@ AI_TOOL_SCHEMA = {
             "spreadSize": "int (1..10 number of charges in this drop)",
         },
     },
+    "launch_torpedo_quick": {
+        "description": "AI-only: quickly launch a torpedo without tube prep. 5s cooldown, consumes inventory.",
+        "args": {
+            "bearing": "float (true bearing deg)",
+            "run_depth": "float (m)",
+            "enable_range": "float (m, optional)",
+            "doctrine": "str (optional)"
+        }
+    },
 }
 
 

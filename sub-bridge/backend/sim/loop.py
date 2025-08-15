@@ -13,7 +13,7 @@ from ..storage import init_engine, create_run, insert_snapshot, insert_event
 from .ecs import World
 from .physics import integrate_kinematics
 from .sonar import passive_contacts, ActivePingState, active_ping
-from .weapons import try_load_tube, try_flood_tube, try_set_doors, try_fire, step_torpedo, step_tubes, try_drop_depth_charges, step_depth_charge
+from .weapons import try_load_tube, try_flood_tube, try_set_doors, try_fire, step_torpedo, step_tubes, try_drop_depth_charges, step_depth_charge, try_launch_torpedo_quick
 from .ai_tools import LocalAIStub
 from .ai_orchestrator import AgentsOrchestrator
 from .damage import step_damage, step_engineering
@@ -394,7 +394,7 @@ class Simulation:
                     self._ai_ship_timers[sid] = 0.0
                     async def _ship_job(_sid: str = sid):
                         res = await self._ai_orch.run_ship(_sid)
-                        # Apply first validated tool call (set_nav only for now)
+                        # Apply first validated tool call
                         for tc in res.get("tool_calls_validated", []):
                             tool = tc.get("tool")
                             args = tc.get("arguments", {})
@@ -439,6 +439,23 @@ class Simulation:
                                     for dc in res.get("data", []) or []:
                                         self.world.depth_charges.append(dc)
                                     insert_event(self.engine, self.run_id, "ai.tool.apply", json.dumps({"ship_id": _sid, **tc}))
+                            if tool == "launch_torpedo_quick":
+                                try:
+                                    tgt = self.world.get_ship(_sid)
+                                except Exception:
+                                    break
+                                if not getattr(getattr(tgt, "capabilities", None), "has_torpedoes", False):
+                                    break
+                                bearing = float(args.get("bearing", tgt.kin.heading))
+                                run_depth = float(args.get("run_depth", tgt.kin.depth))
+                                enable_range = float(args.get("enable_range", 800.0)) if args.get("enable_range") is not None else None
+                                doctrine = str(args.get("doctrine", "passive_then_active"))
+                                res = try_launch_torpedo_quick(tgt, bearing, run_depth, enable_range, doctrine)
+                                if res.get("ok"):
+                                    torp = res.get("data")
+                                    if torp:
+                                        self.world.torpedoes.append(torp)
+                                        insert_event(self.engine, self.run_id, "ai.tool.apply", json.dumps({"ship_id": _sid, **tc}))
                             break
                         # Mirror recent runs into sim for Fleet UI
                         self._ai_recent_runs = getattr(self._ai_orch, "_recent_runs", [])

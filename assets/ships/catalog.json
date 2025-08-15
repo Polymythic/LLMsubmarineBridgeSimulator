@@ -20,7 +20,7 @@
     "ship_class": "Destroyer",
     "capabilities": {"can_set_nav": true, "has_active_sonar": true, "has_torpedoes": false, "has_guns": true, "has_depth_charges": true, "countermeasures": []},
     "hull": {"max_depth": 5.0, "max_speed": 32.0, "quiet_speed": 8.0, "turn_rate_max": 5.0},
-    "weapons": {"tube_count": 0, "torpedoes_stored": 0, "tubes": [], "depth_charges_stored": 30},
+    "weapons": {"tube_count": 0, "torpedoes_stored": 10, "tubes": [], "depth_charges_stored": 30},
     "acoustics": {"thermocline_on": false, "source_level_by_speed": {"5": 125.0, "15": 140.0, "25": 150.0}}
   }
 }

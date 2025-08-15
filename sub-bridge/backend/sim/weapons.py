@@ -10,6 +10,9 @@ def step_tubes(ship: Ship, dt: float) -> None:
     # Depth charge cooldown timer
     if getattr(ws, "depth_charge_cooldown_timer_s", 0.0) > 0.0:
         ws.depth_charge_cooldown_timer_s = max(0.0, ws.depth_charge_cooldown_timer_s - dt)
+    # Quick torpedo cooldown timer (AI-only)
+    if getattr(ws, "torpedo_quick_cooldown_timer_s", 0.0) > 0.0:
+        ws.torpedo_quick_cooldown_timer_s = max(0.0, ws.torpedo_quick_cooldown_timer_s - dt)
     for t in ws.tubes:
         if t.timer_s > 0.0:
             t.timer_s = max(0.0, t.timer_s - dt)
@@ -325,3 +328,58 @@ def step_depth_charge(dc: dict, world, dt: float, on_event: Optional[Callable[[s
         dc["exploded"] = True
         if on_event:
             on_event("depth_charge.detonated", {"depth_m": dc["depth"]})
+
+
+# -------------------- Quick Torpedo (AI-only) --------------------
+
+def try_launch_torpedo_quick(
+    ship: Ship,
+    bearing_deg: float,
+    run_depth: float,
+    enable_range_m: Optional[float] = None,
+    doctrine: str = "passive_then_active",
+    on_event: Optional[Callable[[str, dict], None]] = None,
+):
+    """AI-only rapid torpedo launch that bypasses tube preparation.
+
+    Requirements:
+    - torpedoes_stored > 0
+    - torpedo_quick_cooldown_timer_s == 0
+    Effects:
+    - Spawns a torpedo entity and decrements inventory
+    - Starts torpedo_quick_cooldown_timer_s
+    """
+    ws = ship.weapons
+    if getattr(getattr(ship, "capabilities", None), "has_torpedoes", False) is False:
+        return {"ok": False, "error": "No torpedoes capability"}
+    if ws.torpedoes_stored <= 0:
+        return {"ok": False, "error": "No torpedoes remaining"}
+    if getattr(ws, "torpedo_quick_cooldown_timer_s", 0.0) > 0.0:
+        return {"ok": False, "error": "Torpedo system cooling down"}
+    td = TorpedoDef()
+    torp = {
+        "x": ship.kin.x,
+        "y": ship.kin.y,
+        "depth": ship.kin.depth,
+        "heading": bearing_deg % 360.0,
+        "speed": td.speed,
+        "armed": False,
+        "enable_range_m": (enable_range_m if enable_range_m is not None else td.enable_range_m),
+        "seeker_range_m": getattr(td, "seeker_range_m", 4000.0),
+        "run_time": 0.0,
+        "max_run_time": td.max_run_time_s,
+        "target_id": None,
+        "name": td.name,
+        "seeker_cone": td.seeker_cone_deg,
+        "side": ship.side,
+        "spoofed_timer": 0.0,
+        "run_depth": run_depth,
+        "doctrine": doctrine,
+        "pn_nav_const": 3.0,
+        "los_prev": None,
+    }
+    ws.torpedoes_stored -= 1
+    ws.torpedo_quick_cooldown_timer_s = max(0.0, float(getattr(ws, "torpedo_quick_cooldown_s", 5.0)))
+    if on_event:
+        on_event("torpedo.quick_launched", {"bearing": bearing_deg, "run_depth": run_depth})
+    return {"ok": True, "data": torp}

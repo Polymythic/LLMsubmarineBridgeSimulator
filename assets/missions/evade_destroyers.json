@@ -1,11 +1,10 @@
 {
   "id": "evade_destroyers",
   "title": "Evade Destroyers (Training)",
-  "objective": "BLUE submarine must reach the escape waypoint undetected or survive while evading RED destroyers' depth charges.",
+  "objective": "BLUE submarine must reach the escape waypoint undetected or survive while evading RED destroyers' depth charges and torpedoes.",
   "captain_summary": "Three RED destroyers are patrolling the sector. Proceed to the escape waypoint while minimizing detectability. Expect depth-charge attacks if counter-detected.",
   "roe": [
-    "Weapons release authorized for self-defense.",
-    "Minimize active sonar to preserve EMCON."
+    "Weapons release authorized."
   ],
   "target_wp": [4000, -2000],
   "environment": { "timeOfDay": "night", "weather": "calm" },
@@ -35,7 +34,7 @@
       "spawn": { "x": 2200, "y": -300, "depth": 0, "heading": 180, "speed": 10 }
     }
   ],
-  "ai_fleet_prompt": "You command RED destroyers conducting ASW patrol. Your objective is to deny BLUE submarine from reaching waypoint X:4000, Y:-2000. Use passive contacts to localize and, if confidence rises, drop depth charges using small spreads (spread_meters ~ 20, minDepth ~ 30, maxDepth ~ 120, spreadSize <= 5) near likely positions. Avoid reckless overuse; preserve charges.",
+  "ai_fleet_prompt": "You command RED destroyers conducting ASW patrol. Your objective is to deny BLUE submarine from reaching waypoint X:4000, Y:-2000. Use passive contacts to localize and, if confidence rises, drop depth charges using small spreads (spread_meters ~ 20, minDepth ~ 30, maxDepth ~ 120, spreadSize <= 5) near likely positions. Avoid reckless overuse; preserve charges. If torpedo confidence rises, fire a torpedo at the BLUE submarine.",
   "ai_ship_prompts": {
     "red-dd-01": "Patrol your sector. If contact confidence increases, maneuver to probable intercept and drop conservative depth charge spreads.",
     "red-dd-02": "Patrol your sector. Use passive cues to bracket with depth charges at varying depths.",

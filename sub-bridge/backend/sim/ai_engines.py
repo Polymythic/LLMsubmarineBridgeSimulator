@@ -230,6 +230,17 @@ class OpenAIAgentsEngine(BaseEngine):
         self.model = model
 
     async def propose_fleet_intent(self, fleet_summary: Dict[str, Any]) -> Dict[str, Any]:
+        # Optional tracing using OpenAI Agents SDK's trace() if available
+        try:
+            from agents import trace  # type: ignore
+        except Exception:  # fallback no-op
+            class trace:  # type: ignore
+                def __init__(self, *_args, **_kwargs):
+                    pass
+                def __enter__(self):
+                    return self
+                def __exit__(self, *_args):
+                    return False
         from agents import Runner  # type: ignore
 
         agent = self.Agent(
@@ -250,14 +261,26 @@ class OpenAIAgentsEngine(BaseEngine):
             "- Prefer convoy protection unless ROE authorizes engagement.\n"
             "- Do not reveal or rely on unknown enemy truth.\n"
         )
-        result = await Runner.run(agent, prompt)  # type: ignore[attr-defined]
-        content = str(result.final_output)
+        with trace(name="fleet.propose_intent", metadata={"summary_size": len(str(fleet_summary))}):  # type: ignore
+            result = await Runner.run(agent, prompt)  # type: ignore[attr-defined]
+            content = str(result.final_output)
         obj = _extract_json(content)
         if obj is None:
             raise ValueError("Failed to parse FleetIntent JSON from OpenAI Agents output")
         return obj
 
     async def propose_ship_tool(self, ship: Ship, ship_summary: Dict[str, Any]) -> Dict[str, Any]:
+        # Optional tracing using OpenAI Agents SDK's trace() if available
+        try:
+            from agents import trace  # type: ignore
+        except Exception:  # fallback no-op
+            class trace:  # type: ignore
+                def __init__(self, *_args, **_kwargs):
+                    pass
+                def __enter__(self):
+                    return self
+                def __exit__(self, *_args):
+                    return False
         from agents import Runner  # type: ignore
 
         agent = self.Agent(
@@ -275,8 +298,9 @@ class OpenAIAgentsEngine(BaseEngine):
             "- Only fire_torpedo if has_torpedoes=true AND a tube is 'DoorsOpen'; set bearing from contacts; choose realistic enable_range.\n"
             "- Use only allowed tools supported by capabilities. If no change needed, return set_nav with current values and a brief summary.\n"
         )
-        result = await Runner.run(agent, prompt)  # type: ignore[attr-defined]
-        content = str(result.final_output)
+        with trace(name=f"ship.propose_tool.{ship.id}", metadata={"summary_size": len(str(ship_summary))}):  # type: ignore
+            result = await Runner.run(agent, prompt)  # type: ignore[attr-defined]
+            content = str(result.final_output)
         obj = _extract_json(content)
         if obj is None:
             raise ValueError("Failed to parse tool call JSON from OpenAI Agents output")

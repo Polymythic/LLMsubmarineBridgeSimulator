@@ -456,7 +456,7 @@ class AgentsOrchestrator:
                 "system_prompt": (
                     "You are the RED Fleet Commander. Plan strategy to achieve mission objectives while minimizing detectability and obeying ROE. "
                     "You will receive a structured fleet summary and a mission supplement. Never assume ground-truth enemy positions; use only provided beliefs and hints. "
-                    "Coordinate system: X east (m), Y north (m). Output ONLY one JSON object with fields: objectives (per-ship destinations), engagement_rules (weapons_free,min_confidence,hold_fire_in_emcon), emcon (active_ping_allowed,radio_discipline), summary (one verb-first goal, <=12 words), notes (optional). No markdown, no extra prose."
+                    "Coordinate system: X east (m), Y north (m). Output ONLY one JSON object with fields: objectives (per-ship destinations), engagement_rules (weapons_free,min_confidence,hold_fire_in_emcon), emcon (active_ping_allowed,radio_discipline), summary (one verb-first goal, <=12 words), notes (optional). Optional: handoff_to_ship entries [{ship_id, order}] to inject immediate orders. No markdown, no extra prose."
                 ),
                 "user_prompt": (
                     "FLEET_SUMMARY_JSON:\n" + json.dumps(summary, separators=(",", ":")) +
@@ -473,7 +473,24 @@ class AgentsOrchestrator:
             intent_raw = await asyncio.wait_for(self._fleet_decide(summary), timeout=max(1.0, CONFIG.ai_poll_s))
             # Normalize/augment intent to ensure objectives/guidance present
             intent = self._normalize_intent(summary, intent_raw)
-            result["tool_calls"] = [{"tool": "set_fleet_intent", "arguments": intent}]
+            # Start with intent as primary tool call
+            tool_calls = [{"tool": "set_fleet_intent", "arguments": intent}]
+            # Extract optional handoffs from model output if present
+            try:
+                handoffs = []
+                if isinstance(intent_raw, dict):
+                    handoffs = intent_raw.get("handoff_to_ship") or intent_raw.get("handoffs") or []
+                if isinstance(handoffs, dict):
+                    handoffs = [handoffs]
+                if isinstance(handoffs, list):
+                    for h in handoffs:
+                        sid = (h or {}).get("ship_id")
+                        order = (h or {}).get("order")
+                        if sid and isinstance(order, dict):
+                            tool_calls.append({"tool": "handoff_to_ship", "arguments": {"ship_id": sid, "order": order}})
+            except Exception:
+                pass
+            result["tool_calls"] = tool_calls
             # Add concise human summary
             fleet_thought = intent.get("summary") or self._summarize_fleet_intent(intent)
             # Validation/clamping would occur here (placeholder: accept as-is)

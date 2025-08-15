@@ -366,6 +366,42 @@ class Simulation:
                                 setattr(self._ai_orch, "_last_fleet_intent", self._fleet_intent)
                             except Exception:
                                 pass
+                            # Record concise history entry for Fleet Commander context
+                            try:
+                                if not hasattr(self, "_fleet_intent_history"):
+                                    self._fleet_intent_history = []  # type: ignore[attr-defined]
+                                intent = dict(self._fleet_intent or {})
+                                # Compute short hash of intent body
+                                import hashlib as _hashlib, json as _json
+                                ihash = ""
+                                try:
+                                    ihash = _hashlib.sha1(_json.dumps(intent, sort_keys=True).encode()).hexdigest()[:8]
+                                except Exception:
+                                    ihash = ""
+                                # Brief per-ship destinations
+                                obj = intent.get("objectives", {}) or {}
+                                brief = {}
+                                if isinstance(obj, dict):
+                                    for sid, val in obj.items():
+                                        if isinstance(val, dict) and "destination" in val:
+                                            brief[sid] = {"destination": val.get("destination")}
+                                hist_entry = {
+                                    "time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                                    "hash": ihash,
+                                    "summary": intent.get("summary", ""),
+                                    "objectives_brief": brief,
+                                    "engagement_rules": intent.get("engagement_rules", {}),
+                                }
+                                self._fleet_intent_history.append(hist_entry)  # type: ignore[attr-defined]
+                                # Keep last 8
+                                self._fleet_intent_history = self._fleet_intent_history[-8:]  # type: ignore[attr-defined]
+                                # Mirror to orchestrator for Fleet Commander prompt
+                                try:
+                                    setattr(self._ai_orch, "_fleet_intent_history", list(self._fleet_intent_history))
+                                except Exception:
+                                    pass
+                            except Exception:
+                                pass
                     # Mirror recent runs into sim for Fleet UI
                     self._ai_recent_runs = getattr(self._ai_orch, "_recent_runs", [])
                 t = asyncio.create_task(_fleet_job())

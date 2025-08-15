@@ -228,7 +228,7 @@ class AgentsOrchestrator:
         prompt_hint = None
         if isinstance(mission_brief, dict) and mission_brief.get("ai_fleet_prompt"):
             prompt_hint = mission_brief.get("ai_fleet_prompt")
-        # Include last FleetIntent (hash/body/summary) for stateless continuity
+        # Include last FleetIntent (hash/body/summary) and recent history for stateless continuity
         try:
             last_intent = getattr(self, "_last_fleet_intent", {}) or {}
         except Exception:
@@ -259,12 +259,18 @@ class AgentsOrchestrator:
             orders_last_map = getattr(self, "_orders_last_by_ship", {}) or {}
         except Exception:
             orders_last_map = {}
+        # Retrieve recent history (if Simulation mirrored it onto orchestrator)
+        try:
+            history = list(getattr(self, "_fleet_intent_history", []))[-8:]
+        except Exception:
+            history = []
         result = {
             "time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "own_fleet": own_fleet,
             "enemy_belief": enemy_belief,
             "mission": mission,
             "fleet_intent_last": {"hash": intent_hash, "body": last_intent, "summary": last_summary},
+            "fleet_intent_history": history,
             "ship_last_runs": ship_last_runs,
             "orders_last_by_ship": orders_last_map,
         }
@@ -289,6 +295,12 @@ class AgentsOrchestrator:
             fleet_intent = getattr(self, "_last_fleet_intent", {})
         except Exception:
             fleet_intent = {}
+        # Surface current fleet summary line to ship for alignment
+        fleet_summary_line = ""
+        try:
+            fleet_summary_line = str((fleet_intent or {}).get("summary", ""))
+        except Exception:
+            fleet_summary_line = ""
         # Build local passive + visual contacts for this ship against non-friendly ships
         local_contacts: List[Dict[str, Any]] = []
         try:
@@ -396,7 +408,7 @@ class AgentsOrchestrator:
             "contacts": local_contacts,
             "contacts_history": hist,
             "orders_last": orders_last,
-            "fleet_intent": fleet_intent,
+            "fleet_intent": {**fleet_intent, "summary": fleet_summary_line} if isinstance(fleet_intent, dict) else fleet_intent,
             "detected_state": {"alert": alert_flag},
         }
 
@@ -444,7 +456,7 @@ class AgentsOrchestrator:
                 "system_prompt": (
                     "You are the RED Fleet Commander. Plan strategy to achieve mission objectives while minimizing detectability and obeying ROE. "
                     "You will receive a structured fleet summary and a mission supplement. Never assume ground-truth enemy positions; use only provided beliefs and hints. "
-                    "Coordinate system: X east (m), Y north (m). Output ONLY one JSON object with fields: objectives (per-ship destinations), engagement_rules (weapons_free,min_confidence,hold_fire_in_emcon), emcon (active_ping_allowed,radio_discipline), summary (one sentence), notes (optional). No markdown, no extra prose."
+                    "Coordinate system: X east (m), Y north (m). Output ONLY one JSON object with fields: objectives (per-ship destinations), engagement_rules (weapons_free,min_confidence,hold_fire_in_emcon), emcon (active_ping_allowed,radio_discipline), summary (one verb-first goal, <=12 words), notes (optional). No markdown, no extra prose."
                 ),
                 "user_prompt": (
                     "FLEET_SUMMARY_JSON:\n" + json.dumps(summary, separators=(",", ":")) +
@@ -454,6 +466,7 @@ class AgentsOrchestrator:
                     "- Respect formations, spacing, speed limits, and navigation constraints (lanes, no-go zones) if provided.\n"
                     "- Prefer convoy protection unless ROE authorizes engagement.\n"
                     "- Do not reveal or rely on unknown enemy truth.\n"
+                    "- Keep 'summary' as a single verb-first goal line (<=12 words), e.g., 'Race to destination to trap SSN'.\n"
                 ),
                 "summary_size": len(str(summary)),
             }

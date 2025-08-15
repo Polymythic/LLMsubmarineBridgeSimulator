@@ -211,6 +211,20 @@
         });
       }
 
+      // Draw depth charges as open circles at current XY; color by state
+      if (data.depth_charges && data.depth_charges.length > 0) {
+        data.depth_charges.forEach(dc => {
+          const [dx, dy] = worldToScreen(dc.x, dc.y);
+          const exploded = !!dc.exploded;
+          ctx.beginPath();
+          ctx.arc(dx, dy, 6, 0, Math.PI * 2);
+          ctx.strokeStyle = exploded ? '#FF6B6B' : '#6EE7A7';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          ctx.lineWidth = 1;
+        });
+      }
+
       // Enemies
       data.ships.forEach(s => {
         const [sx, sy] = worldToScreen(s.x, s.y);

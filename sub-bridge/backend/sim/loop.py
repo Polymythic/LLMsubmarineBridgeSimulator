@@ -617,6 +617,7 @@ class Simulation:
                 for s in self.world.all_ships() if s.id != own.id
             ],
             "torpedoes": list(self.world.torpedoes),
+            "depth_charges": list(getattr(self.world, "depth_charges", [])),
         }
 
         await BUS.publish("tick:all", {"topic": "telemetry", "data": tel_all})

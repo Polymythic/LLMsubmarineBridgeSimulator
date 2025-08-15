@@ -422,6 +422,24 @@ class Simulation:
                                         }
                                 except Exception:
                                     pass
+                            if tool == "fire_torpedo":
+                                # Map standard fire to quick launch for AI ships
+                                try:
+                                    tgt = self.world.get_ship(_sid)
+                                except Exception:
+                                    break
+                                if not getattr(getattr(tgt, "capabilities", None), "has_torpedoes", False):
+                                    break
+                                bearing = float(args.get("bearing", tgt.kin.heading))
+                                run_depth = float(args.get("run_depth", tgt.kin.depth))
+                                enable_range = float(args.get("enable_range", 800.0)) if args.get("enable_range") is not None else None
+                                doctrine = str(args.get("doctrine", "passive_then_active"))
+                                res = try_launch_torpedo_quick(tgt, bearing, run_depth, enable_range, doctrine)
+                                if res.get("ok"):
+                                    torp = res.get("data")
+                                    if torp:
+                                        self.world.torpedoes.append(torp)
+                                        insert_event(self.engine, self.run_id, "ai.tool.apply", json.dumps({"ship_id": _sid, **tc}))
                             # Other tools (server-applied)
                             if tool == "drop_depth_charges":
                                 try:

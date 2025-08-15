@@ -101,6 +101,10 @@ class AgentsOrchestrator:
             })
         # Aggregated enemy belief: merge passive + visual contacts from RED ships against BLUE ships
         enemy_belief: List[Dict[str, Any]] = []
+        # Rolling contact history for Fleet Commander (sensor reports only; no debug truth)
+        if not hasattr(self, "_fleet_contact_history"):
+            self._fleet_contact_history = []  # type: ignore[attr-defined]
+        history_events: List[Dict[str, Any]] = []
         try:
             merged: Dict[str, Dict[str, Any]] = {}
             blue_ships = [s for s in world.all_ships() if s.side == "BLUE"]
@@ -123,6 +127,18 @@ class AgentsOrchestrator:
                         "detectability": float((getattr(c, "detectability", 0.0) or getattr(c, "strength", 0.0))),
                         "last_seen": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                     }
+                    # Append passive contact event to history (bearing-only; no range position)
+                    history_events.append({
+                        "time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        "reportedBy": red.id,
+                        "reporter_pos": [red.kin.x, red.kin.y],
+                        "type": "passive",
+                        "id": cid,
+                        "bearing": float(getattr(c, "bearing", 0.0)),
+                        "range_est": None,
+                        "confidence": float(getattr(c, "confidence", 0.0)),
+                        "classifiedAs": str(getattr(c, "classifiedAs", "Unknown")),
+                    })
                 # Visual contacts: near-surface targets within ~15 km
                 for blu in blue_ships:
                     try:
@@ -145,11 +161,35 @@ class AgentsOrchestrator:
                                     "detectability": 1.0,
                                     "last_seen": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                                 }
+                                # Append visual contact event with estimated position
+                                heading_rad = math.radians(brg_true)
+                                est_x = red.kin.x + math.sin(heading_rad) * rng
+                                est_y = red.kin.y + math.cos(heading_rad) * rng
+                                history_events.append({
+                                    "time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                                    "reportedBy": red.id,
+                                    "reporter_pos": [red.kin.x, red.kin.y],
+                                    "type": "visual",
+                                    "id": blu.id,
+                                    "bearing": float(brg_true),
+                                    "range_est": float(rng),
+                                    "confidence": 0.85,
+                                    "classifiedAs": str(getattr(blu, "ship_class", "Unknown")),
+                                    "est_pos": [float(est_x), float(est_y)],
+                                })
                     except Exception:
                         continue
             enemy_belief = list(merged.values())
         except Exception:
             enemy_belief = []
+        # Merge and cap history size
+        try:
+            if isinstance(getattr(self, "_fleet_contact_history"), list):
+                self._fleet_contact_history.extend(history_events)  # type: ignore[attr-defined]
+                # Keep last 100 entries
+                self._fleet_contact_history = self._fleet_contact_history[-100:]  # type: ignore[attr-defined]
+        except Exception:
+            pass
         # Mission objective provided by Simulation (if attached by creator)
         mission_brief = getattr(self, "_mission_brief", None)
         if isinstance(mission_brief, dict):
@@ -228,6 +268,11 @@ class AgentsOrchestrator:
             "ship_last_runs": ship_last_runs,
             "orders_last_by_ship": orders_last_map,
         }
+        # Add fleet-level contact history for planning context (sensor-only)
+        try:
+            result["contact_history"] = list(getattr(self, "_fleet_contact_history", []))[-100:]
+        except Exception:
+            pass
         
         # Add prompt hint if available
         if prompt_hint:

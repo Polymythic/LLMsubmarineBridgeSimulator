@@ -591,12 +591,9 @@ class AgentsOrchestrator:
                     if isinstance(d, (list, tuple)) and len(d) == 2:
                         dests.append(f"{sid}→[{float(d[0]):.0f},{float(d[1]):.0f}]")
             notes = "; ".join([n.get("text", "") for n in (intent.get("notes") or []) if isinstance(n, dict)])
-            wf = intent.get("engagement_rules", {}).get("weapons_free")
-            er = "WF" if wf else "HOLD"
             parts = []
             if dests:
                 parts.append("Objectives: " + ", ".join(dests))
-            parts.append(f"ROE:{er}")
             if notes:
                 parts.append(notes)
             return " | ".join(parts)

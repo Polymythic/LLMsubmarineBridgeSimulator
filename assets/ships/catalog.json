@@ -11,7 +11,7 @@
     "name": "Convoy Cargo Vessel",
     "ship_class": "Convoy",
     "capabilities": {"can_set_nav": true, "has_active_sonar": false, "has_torpedoes": false, "has_guns": false, "has_depth_charges": false, "countermeasures": []},
-    "hull": {"max_depth": 5.0, "max_speed": 20.0, "quiet_speed": 5.0, "turn_rate_max": 2.0},
+    "hull": {"max_depth": 0.0, "max_speed": 20.0, "quiet_speed": 5.0, "turn_rate_max": 2.0},
     "weapons": {"tube_count": 0, "torpedoes_stored": 0, "tubes": []},
     "acoustics": {"thermocline_on": false, "source_level_by_speed": {"5": 120.0, "10": 130.0, "15": 140.0}}
   },
@@ -19,7 +19,7 @@
     "name": "Destroyer (ASW)",
     "ship_class": "Destroyer",
     "capabilities": {"can_set_nav": true, "has_active_sonar": true, "has_torpedoes": false, "has_guns": true, "has_depth_charges": true, "countermeasures": []},
-    "hull": {"max_depth": 5.0, "max_speed": 32.0, "quiet_speed": 8.0, "turn_rate_max": 5.0},
+    "hull": {"max_depth": 0.0, "max_speed": 32.0, "quiet_speed": 8.0, "turn_rate_max": 5.0},
     "weapons": {"tube_count": 0, "torpedoes_stored": 10, "tubes": [], "depth_charges_stored": 30},
     "acoustics": {"thermocline_on": false, "source_level_by_speed": {"5": 125.0, "15": 140.0, "25": 150.0}}
   }

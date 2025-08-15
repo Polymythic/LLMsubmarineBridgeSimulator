@@ -193,10 +193,6 @@ class AgentsOrchestrator:
         # Mission objective provided by Simulation (if attached by creator)
         mission_brief = getattr(self, "_mission_brief", None)
         if isinstance(mission_brief, dict):
-            mission_roe = {"weapons_free": any(
-                isinstance(r, str) and ("Weapons release authorized" in r)
-                for r in mission_brief.get("roe", [])
-            )}
             # Include a simple convoy list and an optional target waypoint for training missions
             convoy = [
                 {"id": s.id, "class": getattr(s, "ship_class", None)}
@@ -206,7 +202,6 @@ class AgentsOrchestrator:
             # Pass-through structured mission supplements when present
             mission = {
                 "objective": mission_brief.get("objective"),
-                "roe": mission_roe,
                 "convoy": convoy,
                 "target_wp": target_wp,
                 "side_objectives": mission_brief.get("side_objectives"),
@@ -222,7 +217,7 @@ class AgentsOrchestrator:
                 "ai_ship_prompts": mission_brief.get("ai_ship_prompts"),
             }
         else:
-            mission = {"roe": {"weapons_free": False}}
+            mission = {}
         
         # Add mission prompt as a hint for the AI engine
         prompt_hint = None
@@ -454,9 +449,9 @@ class AgentsOrchestrator:
             # Capture full API call for debugging
             api_call_debug = {
                 "system_prompt": (
-                    "You are the RED Fleet Commander. Plan strategy to achieve mission objectives while minimizing detectability and obeying ROE. "
+                    "You are the RED Fleet Commander. Plan strategy to achieve mission objectives while minimizing detectability. "
                     "You will receive a structured fleet summary and a mission supplement. Never assume ground-truth enemy positions; use only provided beliefs and hints. "
-                    "Coordinate system: X east (m), Y north (m). Output ONLY one JSON object with fields: objectives (per-ship destinations), engagement_rules (weapons_free,min_confidence,hold_fire_in_emcon), emcon (active_ping_allowed,radio_discipline), summary (one verb-first goal, <=12 words), notes (optional). Optional: handoff_to_ship entries [{ship_id, order}] to inject immediate orders. No markdown, no extra prose."
+                    "Coordinate system: X east (m), Y north (m). Output ONLY one JSON object with fields: objectives (per-ship destinations), emcon (active_ping_allowed,radio_discipline), summary (one verb-first goal, <=12 words), notes (optional). Optional: handoff_to_ship entries [{ship_id, order}] to inject immediate orders. No markdown, no extra prose."
                 ),
                 "user_prompt": (
                     "FLEET_SUMMARY_JSON:\n" + json.dumps(summary, separators=(",", ":")) +
@@ -464,7 +459,7 @@ class AgentsOrchestrator:
                     "- Include EVERY RED ship id under 'objectives' with a 'destination' [x,y] in meters.\n"
                     "- If a mission target waypoint is provided, use it unless another destination is clearly safer/better.\n"
                     "- Respect formations, spacing, speed limits, and navigation constraints (lanes, no-go zones) if provided.\n"
-                    "- Prefer convoy protection unless ROE authorizes engagement.\n"
+                    "- Prefer protecting high-value units unless an attack is clearly advantageous.\n"
                     "- Do not reveal or rely on unknown enemy truth.\n"
                     "- Keep 'summary' as a single verb-first goal line (<=12 words), e.g., 'Race to destination to trap SSN'.\n"
                 ),
@@ -565,12 +560,12 @@ class AgentsOrchestrator:
                     if "destination" not in objectives[sid]:
                         objectives[sid]["destination"] = [float(target[0]), float(target[1])]
         # Engagement rules: default from mission ROE
-        er = intent.get("engagement_rules")
-        if not isinstance(er, dict):
-            er = {}
-        if "weapons_free" not in er:
-            er["weapons_free"] = bool((mission.get("roe") or {}).get("weapons_free", False))
-        intent["engagement_rules"] = er
+        # Remove ROE/weapons_free concept; keep any emcon settings if present
+        if "engagement_rules" in intent:
+            try:
+                intent.pop("engagement_rules", None)
+            except Exception:
+                pass
         intent["objectives"] = objectives
         # Optional advisory notes
         notes = intent.get("notes")

@@ -47,10 +47,9 @@ This ensures agents always understand their role and output contract, while the 
   "objectives": {
     "<ship_id>": {"destination": [x, y]}
   },
-  "engagement_rules": {
-    "weapons_free": false,
-    "min_confidence": 0.6,
-    "hold_fire_in_emcon": true
+  "emcon": {
+    "active_ping_allowed": false,
+    "radio_discipline": "restricted"
   },
   "emcon": {
     "active_ping_allowed": false,
@@ -114,7 +113,7 @@ Notes:
       "last_seen": "2025-08-12T14:22:05Z"
     }
   ],
-  "mission": {"roe": {"weapons_free": false}},
+  "mission": {},
   "fleet_intent_last": {"hash": "abc123"}
 }
 ```

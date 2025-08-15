@@ -246,9 +246,9 @@ class OpenAIAgentsEngine(BaseEngine):
         agent = self.Agent(
             name="FleetCommander",
             instructions=(
-                "You are the RED Fleet Commander. Plan strategy to achieve mission objectives while minimizing detectability and obeying ROE. "
+                "You are the RED Fleet Commander. Plan strategy to achieve mission objectives while minimizing detectability. "
                 "You will receive a structured fleet summary and a mission supplement. Never assume ground-truth enemy positions; use only provided beliefs and hints. "
-                "Coordinate system: X east (m), Y north (m). Output ONLY one JSON object with fields: objectives (per-ship destinations), engagement_rules (weapons_free,min_confidence,hold_fire_in_emcon), emcon (active_ping_allowed,radio_discipline), summary (one sentence), notes (optional). No markdown, no extra prose."
+                "Coordinate system: X east (m), Y north (m). Output ONLY one JSON object with fields: objectives (per-ship destinations), emcon (active_ping_allowed,radio_discipline), summary (one sentence), notes (optional). No markdown, no extra prose."
             ),
             model=self.model,
         )
@@ -258,7 +258,7 @@ class OpenAIAgentsEngine(BaseEngine):
             "- Include EVERY RED ship id under 'objectives' with a 'destination' [x,y] in meters.\n"
             "- If a mission target waypoint is provided, use it unless another destination is clearly safer/better.\n"
             "- Respect formations, spacing, speed limits, and navigation constraints (lanes, no-go zones) if provided.\n"
-            "- Prefer convoy protection unless ROE authorizes engagement.\n"
+            "- Prefer protecting high-value units unless an attack is clearly advantageous.\n"
             "- Do not reveal or rely on unknown enemy truth.\n"
         )
         with trace(name="fleet.propose_intent", metadata={"summary_size": len(str(fleet_summary))}):  # type: ignore

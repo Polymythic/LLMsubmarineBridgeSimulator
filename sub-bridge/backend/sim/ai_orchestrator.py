@@ -96,6 +96,8 @@ class AgentsOrchestrator:
                 "weapons": {"tubes_ready": sum(1 for t in ship.weapons.tubes if t.state == "DoorsOpen"), "ammo": {"torpedo": ship.weapons.torpedoes_stored}},
                 "detectability": {"noise": getattr(ship.acoustics, "last_detectability", 0.0)},
                 "sensors": {"passive_ok": getattr(ship.systems, 'sonar_ok', True), "has_active": getattr(getattr(ship, 'capabilities', None), 'has_active_sonar', False)},
+                "capabilities": (getattr(ship, 'capabilities', None).dict() if getattr(ship, 'capabilities', None) else None),
+                "constraints": {"maxSpeed": ship.hull.max_speed, "maxDepth": ship.hull.max_depth, "turnRate": ship.hull.turn_rate_max},
             })
         # Aggregated enemy belief: merge passive + visual contacts from RED ships against BLUE ships
         enemy_belief: List[Dict[str, Any]] = []
@@ -284,11 +286,41 @@ class AgentsOrchestrator:
             local_contacts = list(by_id.values())
         except Exception:
             local_contacts = []
+        # Maintain short contact history per ship for LLM memory (last 6 sightings)
+        try:
+            if not hasattr(self, "_contacts_history_by_ship"):
+                self._contacts_history_by_ship = {}  # type: ignore[attr-defined]
+            hist: List[Dict[str, Any]] = list(getattr(self._contacts_history_by_ship, ship.id, [])) if isinstance(getattr(self, "_contacts_history_by_ship"), dict) else []  # type: ignore[attr-defined]
+            now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            for c in local_contacts:
+                entry = {
+                    "time": now_iso,
+                    "id": c.get("id"),
+                    "bearing": c.get("bearing"),
+                    "range_est": c.get("range_est"),
+                    "class": c.get("class"),
+                    "confidence": c.get("confidence"),
+                }
+                hist.append(entry)
+            # keep last 6
+            hist = hist[-6:]
+            # store back
+            if isinstance(getattr(self, "_contacts_history_by_ship"), dict):
+                self._contacts_history_by_ship[ship.id] = hist  # type: ignore[attr-defined]
+        except Exception:
+            hist = []
         # Fetch last orders applied to this ship for continuity
         try:
             orders_last = (getattr(self, "_orders_last_by_ship", {}) or {}).get(ship.id, {})
         except Exception:
             orders_last = {}
+        # Alert flag surfaced from Simulation (if present) or simple heuristic fallback
+        alert_flag = False
+        try:
+            alert_map = getattr(self, "_ship_alert_map", {}) or {}
+            alert_flag = bool(alert_map.get(ship.id, False))
+        except Exception:
+            alert_flag = False
         return {
             "self": {
                 "id": ship.id,
@@ -317,9 +349,10 @@ class AgentsOrchestrator:
             "sensors": {"passive_ok": getattr(ship.systems, 'sonar_ok', True), "has_active": getattr(getattr(ship, 'capabilities', None), 'has_active_sonar', False)},
             # Local contacts should come from sonar; orchestrator does not have ground-truth enemy positions
             "contacts": local_contacts,
+            "contacts_history": hist,
             "orders_last": orders_last,
             "fleet_intent": fleet_intent,
-            "detected_state": {"alert": False},
+            "detected_state": {"alert": alert_flag},
         }
 
     # ---------- Engines (stub only for now) ----------
@@ -642,8 +675,9 @@ class AgentsOrchestrator:
             dx = float(dest[0]) - sx
             dy = float(dest[1]) - sy
             brg_true = (_math.degrees(_math.atan2(dx, dy)) % 360.0)
-            # Choose modest convoy speed
-            speed = min(ship.hull.max_speed, max(3.0, min(10.0, ship.kin.speed or 5.0)))
+            # Choose speed: raise fallback cap; sprint if alert
+            is_alert = bool(((ship_summary.get("detected_state") or {}).get("alert", False)))
+            speed = ship.hull.max_speed if is_alert else min(ship.hull.max_speed, 18.0)
             # Surface vessels: stay at or near surface
             depth = 0.0
             return {"tool": "set_nav", "arguments": {"heading": brg_true, "speed": speed, "depth": depth}}

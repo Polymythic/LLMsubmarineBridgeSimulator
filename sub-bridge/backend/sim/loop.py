@@ -554,6 +554,22 @@ class Simulation:
         emcon_alert = self._emcon_high_timer >= 10.0
         detectability = noise_budget / 100.0
         contacts = passive_contacts(own, [s for s in self.world.all_ships() if s.id != own.id])
+        # Build simple alert map for RED ships for orchestrator visibility
+        try:
+            if hasattr(self, "_ai_orch") and getattr(self, "_ai_orch", None) is not None:
+                alert_map = {}
+                for ship in self.world.all_ships():
+                    if ship.side != "RED":
+                        continue
+                    dx = ship.kin.x - own.kin.x
+                    dy = ship.kin.y - own.kin.y
+                    dist_m = (dx * dx + dy * dy) ** 0.5
+                    recent_active_ping = self.active_ping_state.timer > 0.0
+                    close_and_noisy = (dist_m <= 7000.0) and (self._emcon_high_timer >= 10.0)
+                    alert_map[ship.id] = bool(recent_active_ping or close_and_noisy)
+                setattr(self._ai_orch, "_ship_alert_map", alert_map)
+        except Exception:
+            pass
 
         base = {
             "ownship": {

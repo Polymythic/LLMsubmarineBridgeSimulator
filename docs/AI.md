@@ -154,6 +154,9 @@ Notes:
 ```json
 {"tool":"deploy_countermeasure","arguments":{"type":"noisemaker"}}
 ```
+```json
+{"tool":"drop_depth_charges","arguments":{"spread_meters":20,"minDepth":30,"maxDepth":80,"spreadSize":5}}
+```
 
 ### Engine Abstraction
 - Engines: `StubEngine` (deterministic/local), `OllamaEngine` (local HTTP), `OpenAIEngine` (remote HTTP)

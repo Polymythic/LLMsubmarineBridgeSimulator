@@ -13,7 +13,7 @@ from ..storage import init_engine, create_run, insert_snapshot, insert_event
 from .ecs import World
 from .physics import integrate_kinematics
 from .sonar import passive_contacts, ActivePingState, active_ping
-from .weapons import try_load_tube, try_flood_tube, try_set_doors, try_fire, step_torpedo, step_tubes
+from .weapons import try_load_tube, try_flood_tube, try_set_doors, try_fire, step_torpedo, step_tubes, try_drop_depth_charges, step_depth_charge
 from .ai_tools import LocalAIStub
 from .ai_orchestrator import AgentsOrchestrator
 from .damage import step_damage, step_engineering
@@ -422,7 +422,23 @@ class Simulation:
                                         }
                                 except Exception:
                                     pass
-                            # Other tools (fire_torpedo, deploy_countermeasure) are ignored for non-ownship for now
+                            # Other tools (server-applied)
+                            if tool == "drop_depth_charges":
+                                try:
+                                    tgt = self.world.get_ship(_sid)
+                                except Exception:
+                                    break
+                                if not getattr(getattr(tgt, "capabilities", None), "has_depth_charges", False):
+                                    break
+                                spread_m = float(args.get("spread_meters", 20.0))
+                                min_d = float(args.get("minDepth", 30.0))
+                                max_d = float(args.get("maxDepth", 50.0))
+                                n = int(args.get("spreadSize", 3))
+                                res = try_drop_depth_charges(tgt, spread_m, min_d, max_d, n)
+                                if res.get("ok"):
+                                    for dc in res.get("data", []) or []:
+                                        self.world.depth_charges.append(dc)
+                                    insert_event(self.engine, self.run_id, "ai.tool.apply", json.dumps({"ship_id": _sid, **tc}))
                             break
                         # Mirror recent runs into sim for Fleet UI
                         self._ai_recent_runs = getattr(self._ai_orch, "_recent_runs", [])
@@ -452,7 +468,9 @@ class Simulation:
             ballast_boost=ballast_boost,
         )
 
-        step_tubes(own, dt)
+        # Step weapon timers/cooldowns (tubes and depth charge cooldowns) for all ships
+        for s in self.world.all_ships():
+            step_tubes(s, dt)
 
         for ship in self.world.all_ships():
             if ship.id == "ownship":
@@ -469,6 +487,15 @@ class Simulation:
                 step_torpedo(t, self.world, dt, on_event=_on_event)
                 if t["run_time"] > t["max_run_time"]:
                     self.world.torpedoes.remove(t)
+
+        # Step depth charges
+        if getattr(self.world, "depth_charges", None):
+            for dc in list(self.world.depth_charges):
+                def _on_dc_event(name: str, payload: dict) -> None:
+                    insert_event(self.engine, self.run_id, name, json.dumps(payload))
+                step_depth_charge(dc, self.world, dt, on_event=_on_dc_event)
+                if dc.get("exploded", False) or dc.get("depth", 0.0) > 1000.0:
+                    self.world.depth_charges.remove(dc)
 
         pump_effect = 2.0 if (self._pump_fwd or self._pump_aft) else 0.0
         step_damage(own, dt, pump_effect=pump_effect)
@@ -726,6 +753,25 @@ class Simulation:
             self.world.torpedoes.append(torp)
             insert_event(self.engine, self.run_id, "weapons.test_fire", json.dumps(data))
             return None
+        if topic == "weapons.depth_charges.drop":
+            # Debug/test: drop a spread of depth charges from a specified ship (e.g., a RED destroyer)
+            ship_id = str(data.get("ship_id", "red-dd-01"))
+            try:
+                tgt = self.world.get_ship(ship_id)
+            except Exception:
+                return "Unknown ship"
+            if not getattr(getattr(tgt, "capabilities", None), "has_depth_charges", False):
+                return "Ship cannot drop depth charges"
+            spread_m = float(data.get("spread_meters", 20.0))
+            min_d = float(data.get("minDepth", 30.0))
+            max_d = float(data.get("maxDepth", 50.0))
+            n = int(data.get("spreadSize", 3))
+            res = try_drop_depth_charges(tgt, spread_m, min_d, max_d, n, on_event=lambda n,p: insert_event(self.engine, self.run_id, n, json.dumps(p)))
+            if not res.get("ok"):
+                return res.get("error", "Drop failed")
+            for dc in res.get("data", []) or []:
+                self.world.depth_charges.append(dc)
+            return None
         if topic == "engineering.reactor.set":
             mw = max(0.0, min(own.reactor.max_mw, float(data.get("mw", own.reactor.output_mw))))
             own.reactor.output_mw = mw
@@ -857,6 +903,19 @@ class Simulation:
                 if not caps or not caps.countermeasures:
                     return "Tool not supported"
                 # Placeholder: accept command without effect yet
+                return None
+            if tool == "drop_depth_charges":
+                if not caps or not getattr(caps, "has_depth_charges", False):
+                    return "Tool not supported"
+                spread_m = float(args.get("spread_meters", 20.0))
+                min_d = float(args.get("minDepth", 30.0))
+                max_d = float(args.get("maxDepth", 50.0))
+                n = int(args.get("spreadSize", 3))
+                res = try_drop_depth_charges(tgt, spread_m, min_d, max_d, n)
+                if not res.get("ok"):
+                    return res.get("error", "Drop failed")
+                for dc in res.get("data", []) or []:
+                    self.world.depth_charges.append(dc)
                 return None
             return "Unknown tool"
         if topic == "debug.maintenance.spawns":

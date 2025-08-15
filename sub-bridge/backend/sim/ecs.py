@@ -7,6 +7,7 @@ class World:
     def __init__(self) -> None:
         self.ships: Dict[str, Ship] = {}
         self.torpedoes: List[dict] = []  # simple dicts for MVP
+        self.depth_charges: List[dict] = []
 
     def add_ship(self, ship: Ship) -> None:
         self.ships[ship.id] = ship

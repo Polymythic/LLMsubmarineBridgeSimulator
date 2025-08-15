@@ -27,6 +27,15 @@ AI_TOOL_SCHEMA = {
             "type": "str (noisemaker|decoy)",
         },
     },
+    "drop_depth_charges": {
+        "description": "Drop a spread of depth charges. Consumes inventory and enforces cooldown.",
+        "args": {
+            "spread_meters": "float (radius around ship position; e.g., 20)",
+            "minDepth": "float (min detonation depth; >=15m)",
+            "maxDepth": "float (max detonation depth)",
+            "spreadSize": "int (1..10 number of charges in this drop)",
+        },
+    },
 }
 
 

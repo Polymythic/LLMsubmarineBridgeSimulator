@@ -1,0 +1,49 @@
+{
+  "id": "evade_destroyers",
+  "title": "Evade Destroyers (Training)",
+  "objective": "BLUE submarine must reach the escape waypoint undetected or survive while evading RED destroyers' depth charges.",
+  "captain_summary": "Three RED destroyers are patrolling the sector. Proceed to the escape waypoint while minimizing detectability. Expect depth-charge attacks if counter-detected.",
+  "roe": [
+    "Weapons release authorized for self-defense.",
+    "Minimize active sonar to preserve EMCON."
+  ],
+  "target_wp": [4000, -2000],
+  "environment": { "timeOfDay": "night", "weather": "calm" },
+  "ships": [
+    {
+      "id": "ownship",
+      "side": "BLUE",
+      "class": "SSN",
+      "spawn": { "x": 0, "y": 0, "depth": 120, "heading": 90, "speed": 8 }
+    },
+    {
+      "id": "red-dd-01",
+      "side": "RED",
+      "class": "Destroyer",
+      "spawn": { "x": 1500, "y": 1000, "depth": 0, "heading": 210, "speed": 10 }
+    },
+    {
+      "id": "red-dd-02",
+      "side": "RED",
+      "class": "Destroyer",
+      "spawn": { "x": -500, "y": 1800, "depth": 0, "heading": 240, "speed": 10 }
+    },
+    {
+      "id": "red-dd-03",
+      "side": "RED",
+      "class": "Destroyer",
+      "spawn": { "x": 2200, "y": -300, "depth": 0, "heading": 180, "speed": 10 }
+    }
+  ],
+  "ai_fleet_prompt": "You command RED destroyers conducting ASW patrol. Your objective is to deny BLUE submarine from reaching waypoint X:4000, Y:-2000. Use passive contacts to localize and, if confidence rises, drop depth charges using small spreads (spread_meters ~ 20, minDepth ~ 30, maxDepth ~ 120, spreadSize <= 5) near likely positions. Avoid reckless overuse; preserve charges.",
+  "ai_ship_prompts": {
+    "red-dd-01": "Patrol your sector. If contact confidence increases, maneuver to probable intercept and drop conservative depth charge spreads.",
+    "red-dd-02": "Patrol your sector. Use passive cues to bracket with depth charges at varying depths.",
+    "red-dd-03": "Patrol your sector. Conserve charges; prefer small spreads with depth variation."
+  },
+  "triggers": [
+    { "at_s": 60.0, "comms": "INFO: RED destroyers increasing speed; possible search pattern shift." }
+  ]
+}
+
+

@@ -99,6 +99,10 @@ class WeaponsSuite(BaseModel):
     tubes: List[Tube] = Field(default_factory=lambda: [Tube(idx=i) for i in range(1, 7)])
     # Multiplier > 1.0 slows weapon timers (degradation effects)
     time_penalty_multiplier: float = 1.0
+    # Depth charges (for surface combatants like Destroyers)
+    depth_charges_stored: int = 0
+    depth_charge_cooldown_s: float = 2.0
+    depth_charge_cooldown_timer_s: float = 0.0
 
 
 class ShipCapabilities(BaseModel):
@@ -170,7 +174,7 @@ SHIP_CATALOG: Dict[str, ShipDef] = {
             countermeasures=[],
         ),
         default_hull=Hull(max_depth=50.0, max_speed=32.0, quiet_speed=8.0),
-        default_weapons=WeaponsSuite(tube_count=0, torpedoes_stored=0, tubes=[]),
+        default_weapons=WeaponsSuite(tube_count=0, torpedoes_stored=0, tubes=[], depth_charges_stored=30),
         default_acoustics=Acoustics(
             thermocline_on=False,
             source_level_by_speed={5: 125.0, 15: 140.0, 25: 150.0},

@@ -7,6 +7,9 @@ from ..models import Ship, Tube, TorpedoDef
 
 def step_tubes(ship: Ship, dt: float) -> None:
     ws = ship.weapons
+    # Depth charge cooldown timer
+    if getattr(ws, "depth_charge_cooldown_timer_s", 0.0) > 0.0:
+        ws.depth_charge_cooldown_timer_s = max(0.0, ws.depth_charge_cooldown_timer_s - dt)
     for t in ws.tubes:
         if t.timer_s > 0.0:
             t.timer_s = max(0.0, t.timer_s - dt)
@@ -230,3 +233,95 @@ def _get_tube(ship: Ship, idx: int) -> Optional[Tube]:
         if t.idx == idx:
             return t
     return None
+
+
+# -------------------- Depth Charges --------------------
+
+def try_drop_depth_charges(
+    ship: Ship,
+    spread_meters: float,
+    min_depth: float,
+    max_depth: float,
+    spread_size: int,
+    on_event: Optional[Callable[[str, dict], None]] = None,
+):
+    """Initiate a drop of multiple depth charges.
+
+    - Consumes inventory from ship.weapons.depth_charges_stored up to spread_size
+    - Enforces cooldown ship.weapons.depth_charge_cooldown_s
+    - Each charge gets a random XY offset within spread_meters and a target depth uniformly in [min_depth, max_depth]
+    - Detonation occurs exactly at target depth (±1 m), with sink rate 5 m/s, min detonation depth 15 m
+    """
+    ws = ship.weapons
+    if not getattr(getattr(ship, "capabilities", None), "has_depth_charges", False):
+        return {"ok": False, "error": "No depth charges capability"}
+    if ws.depth_charges_stored <= 0:
+        return {"ok": False, "error": "No depth charges remaining"}
+    if getattr(ws, "depth_charge_cooldown_timer_s", 0.0) > 0.0:
+        return {"ok": False, "error": "Depth charge system cooling down"}
+    count = max(1, min(int(spread_size), 10, ws.depth_charges_stored))
+    # Parameters
+    sink_rate_mps = 5.0
+    min_detonation_depth = 15.0
+    # Create charges
+    spawned = []
+    for _ in range(count):
+        # Random offset within circle radius spread_meters
+        r = random.uniform(0.0, max(0.0, float(spread_meters)))
+        theta = random.uniform(0.0, 2.0 * math.pi)
+        ox = math.cos(theta) * r
+        oy = math.sin(theta) * r
+        target_depth = max(min_detonation_depth, float(min_depth) + random.random() * max(0.0, float(max_depth) - float(min_depth)))
+        dc = {
+            "x": ship.kin.x + ox,
+            "y": ship.kin.y + oy,
+            "depth": max(0.0, ship.kin.depth),
+            "target_depth": target_depth,
+            "sink_rate_mps": sink_rate_mps,
+            "side": ship.side,
+            "name": "DepthCharge",
+            "armed": True,
+            "exploded": False,
+            "detonated_at": None,
+            "spawn_time": 0.0,
+        }
+        spawned.append(dc)
+    # Consume inventory and set cooldown
+    ws.depth_charges_stored -= count
+    ws.depth_charge_cooldown_timer_s = max(0.0, float(getattr(ws, "depth_charge_cooldown_s", 2.0)))
+    if on_event:
+        on_event("depth_charges.dropped", {"count": count, "spread_m": spread_meters, "minDepth": min_depth, "maxDepth": max_depth})
+    return {"ok": True, "data": spawned}
+
+
+def step_depth_charge(dc: dict, world, dt: float, on_event: Optional[Callable[[str, dict], None]] = None) -> None:
+    """Advance a single depth charge; detonate at target depth and apply damage."""
+    if dc.get("exploded"):
+        return
+    # Sink vertically
+    dc["depth"] = dc.get("depth", 0.0) + float(dc.get("sink_rate_mps", 5.0)) * dt
+    # Detonate when reaching target depth within ±1 m
+    tdepth = float(dc.get("target_depth", 30.0))
+    if abs(dc["depth"] - tdepth) <= 1.0:
+        # Apply spherical damage model
+        for ship in world.all_ships():
+            if ship.side == dc.get("side"):
+                continue
+            # 3D distance
+            dx = ship.kin.x - float(dc["x"])
+            dy = ship.kin.y - float(dc["y"])
+            dz = ship.kin.depth - float(dc["depth"])
+            dist = (dx * dx + dy * dy + dz * dz) ** 0.5
+            if dist <= 60.0:
+                ship.damage.hull = min(1.0, ship.damage.hull + 0.40)
+                ship.damage.flooding_rate = min(10.0, ship.damage.flooding_rate + 2.0)
+                if on_event:
+                    on_event("depth_charge.hit", {"target": ship.id, "range_m": dist})
+            elif dist <= 120.0:
+                ship.damage.hull = min(1.0, ship.damage.hull + 0.15)
+                ship.damage.flooding_rate = min(10.0, ship.damage.flooding_rate + 0.5)
+                if on_event:
+                    on_event("depth_charge.near", {"target": ship.id, "range_m": dist})
+        dc["exploded"] = True
+        if on_event:
+            on_event("depth_charge.detonated", {"depth_m": dc["depth"]})

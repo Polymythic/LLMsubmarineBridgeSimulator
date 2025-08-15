@@ -518,6 +518,12 @@ class AgentsOrchestrator:
             if name == "deploy_countermeasure":
                 t = str(args.get("type", ""))
                 return f"{ship_id}: deploy {t}"
+            if name == "drop_depth_charges":
+                n = int(args.get("spreadSize", 0))
+                mn = float(args.get("minDepth", 0.0))
+                mx = float(args.get("maxDepth", 0.0))
+                r = float(args.get("spread_meters", 0.0))
+                return f"{ship_id}: drop {n} DCs r {r:.0f}m depth {mn:.0f}-{mx:.0f}"
             return ""
         except Exception:
             return ""
@@ -544,7 +550,7 @@ class AgentsOrchestrator:
                     "You command a single RED ship. Make conservative, doctrine-aligned decisions using only your local Ship Summary and the FleetIntent. "
                     "Prefer following FleetIntent; if you must deviate due to local threats/opportunities, prefix the summary with 'deviate:' and keep it brief. "
                     "Coordinate system: X east (m), Y north (m). Bearings: 0°=North, 90°=East. Output EXACTLY one JSON object with keys {tool, arguments, summary}. "
-                    "No markdown or extra keys. Allowed tools: set_nav(heading: float 0-359.9, speed: float >=0, depth: float >=0); fire_torpedo(tube: int, bearing: float 0-359.9, run_depth: float, enable_range: float); deploy_countermeasure(type: 'noisemaker'|'decoy'). Only use tools supported by your capabilities."
+                    "No markdown or extra keys. Allowed tools: set_nav(heading: float 0-359.9, speed: float >=0, depth: float >=0); fire_torpedo(tube: int, bearing: float 0-359.9, run_depth: float, enable_range: float); deploy_countermeasure(type: 'noisemaker'|'decoy'); drop_depth_charges(spread_meters: float, minDepth: float, maxDepth: float, spreadSize: int 1..10). Only use tools supported by your capabilities."
                 ),
                 "user_prompt": (
                     "SHIP_SUMMARY_JSON:\n" + json.dumps(summary, separators=(",", ":")) +
@@ -562,7 +568,7 @@ class AgentsOrchestrator:
             result["tool_calls"] = [tool]
             # Validate tool; fallback to intent-driven set_nav if invalid
             tool_name = (tool or {}).get("tool") if isinstance(tool, dict) else None
-            if tool_name not in ("set_nav", "fire_torpedo", "deploy_countermeasure"):
+            if tool_name not in ("set_nav", "fire_torpedo", "deploy_countermeasure", "drop_depth_charges"):
                 # Try to derive navigation from FleetIntent destination
                 nav = self._nav_from_intent(ship, summary)
                 if nav is None:

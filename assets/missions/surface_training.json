@@ -7,40 +7,40 @@
     "Weapons release authorized for training shot.",
     "Minimize active sonar to preserve EMCON."
   ],
-  "target_wp": [100.0, 100.0],
+  "target_wp": [5000, 0],
   "environment": { "timeOfDay": "dawn", "weather": "calm" },
   "ships": [
     {
       "id": "ownship",
       "side": "BLUE",
       "class": "SSN",
-      "spawn": { "x": 0, "y": 0, "depth": 100, "heading": 270, "speed": 8 }
+      "spawn": { "x": 0, "y": 0, "depth": 100, "heading": 90, "speed": 8 }
     },
     {
       "id": "red-01",
       "side": "RED",
       "class": "Convoy",
-      "spawn": { "x": 6000, "y": 0, "depth": 3, "heading": 90, "speed": 5 }
+      "spawn": { "x": 3000, "y": 0, "depth": 3, "heading": 90, "speed": 5 }
     },
     {
       "id": "red-02",
       "side": "RED",
       "class": "Convoy",
-      "spawn": { "x":5800, "y": 10, "depth": 3, "heading": 90, "speed": 5 }
+      "spawn": { "x":2800, "y": 10, "depth": 3, "heading": 90, "speed": 5 }
     },
     {
       "id": "red-03",
       "side": "RED",
       "class": "Convoy",
-      "spawn": { "x":5600, "y": 20, "depth": 3, "heading": 90, "speed": 5 }
+      "spawn": { "x":3200, "y": 20, "depth": 3, "heading": 90, "speed": 5 }
     }
 
   ],
-  "ai_fleet_prompt": "You are a fleet commander. In this mission you command a convoy of surface vessels red-01, red-02, and red-03. Your mission is to get them safely to grid 100,100. There is a rumor of an enemy submarine operating in the area. Issue prudent, doctrine-aligned guidance.",
+  "ai_fleet_prompt": "You are a fleet commander controlling a convoy of surface vessels (red-01, red-02, red-03). Your mission is to escort the convoy safely to the target waypoint at coordinates X:5000, Y:0. The coordinate system uses meters where X increases eastward and Y increases northward. Your ships are currently positioned around X:3000, Y:0-20 and need to travel approximately 2000 meters east to reach the destination. There is a rumor of an enemy submarine operating in the area. Issue prudent, doctrine-aligned guidance to get your convoy to the target waypoint while maintaining formation and avoiding threats.",
   "ai_ship_prompts": {
-    "red-01": "You are red-01, a surface supply vessel with no weapons. You receive orders from the Fleet Commander. Execute guidance while maintaining prudent seamanship and avoiding threats.",
-    "red-02": "You are red-02, a surface supply vessel with no weapons. You receive orders from the Fleet Commander. Execute guidance while maintaining prudent seamanship and avoiding threats.",
-    "red-03": "You are red-03, a surface supply vessel with no weapons. You receive orders from the Fleet Commander. Execute guidance while maintaining prudent seamanship and avoiding threats."
+    "red-01": "You are red-01, a surface supply vessel with no weapons. You receive orders from the Fleet Commander. Execute guidance while maintaining prudent seamanship and avoiding threats. Your mission is to reach the target waypoint at coordinates X:5000, Y:0.",
+    "red-02": "You are red-02, a surface supply vessel with no weapons. You receive orders from the Fleet Commander. Execute guidance while maintaining prudent seamanship and avoiding threats. Your mission is to reach the target waypoint at coordinates X:5000, Y:0.",
+    "red-03": "You are red-03, a surface supply vessel with no weapons. You receive orders from the Fleet Commander. Execute guidance while maintaining prudent seamanship and avoiding threats. Your mission is to reach the target waypoint at coordinates X:5000, Y:0."
 
   },
   "triggers": [

@@ -141,22 +141,34 @@ class OllamaAgentsEngine(BaseEngine):
             "You are the Fleet Commander for a hostile flotilla. Plan strategy to achieve mission objectives "
             "while minimizing detectability and respecting ROE. You will receive a structured summary of your fleet "
             "and an uncertain belief of enemy contacts. Never assume ground-truth positions. "
+            "Coordinate system: X increases eastward, Y increases northward (in meters). "
             "You must output ONLY a valid JSON object with this exact structure:\n"
             "{\n"
             '  "objectives": {"ship_id": {"destination": [x, y]}},\n'
             '  "engagement_rules": {"weapons_free": false},\n'
             '  "summary": "Brief explanation of your plan"\n'
             "}\n"
+            "The 'destination' coordinates should be the target waypoint for each ship. "
             "Do not include any text before or after the JSON. Do not use markdown fences."
         )
         hint = fleet_summary.get("_prompt_hint")
         fs = dict(fleet_summary)
         fs.pop("_prompt_hint", None)
+        
+        # Extract mission target waypoint for context
+        mission = fs.get("mission", {})
+        target_wp = mission.get("target_wp")
+        target_context = ""
+        if target_wp and isinstance(target_wp, (list, tuple)) and len(target_wp) == 2:
+            target_context = f"\nMISSION TARGET: Your ships should navigate to coordinates X:{target_wp[0]}, Y:{target_wp[1]}.\n"
+        
         user = (
             (f"MISSION_HINT:\n{hint}\n\n" if hint else "") +
+            target_context +
             "FLEET_SUMMARY_JSON:\n" + json.dumps(fs, separators=(",", ":")) +
             "\n\nCONSTRAINTS:\n- Do not reveal or rely on unknown enemy truth.\n- Prefer convoy protection unless ROE authorizes engagement.\n" \
-            "- If escorts are low on ammo, bias toward defensive spacing.\n\n"
+            "- If escorts are low on ammo, bias toward defensive spacing.\n" \
+            "- Use the mission target coordinates for ship destinations.\n\n"
             "IMPORTANT: Output ONLY the JSON object. No markdown, no prose, no explanations outside the JSON. "
             "Use the exact structure shown in the system prompt."
         )
@@ -175,6 +187,7 @@ class OllamaAgentsEngine(BaseEngine):
             "You command a single ship. Make conservative, doctrine-aligned decisions based only on your local summary "
             "and the FleetIntent. Prefer following FleetIntent; if you must deviate due to local threats/opportunities, you may, "
             "but briefly explain by prefixing the 'summary' with 'deviate:'. Never expose or rely on unknown information. "
+            "Coordinate system: X increases eastward, Y increases northward (in meters). "
             "Output exactly one JSON object with keys: 'tool', 'arguments', 'summary'. Do not wrap with markdown or prose. "
             "Allowed tools: set_nav(heading: float 0-359.9, speed: float >=0, depth: float >=0); "
             "fire_torpedo(tube: int, bearing: float 0-359.9, run_depth: float, enable_range: float); "

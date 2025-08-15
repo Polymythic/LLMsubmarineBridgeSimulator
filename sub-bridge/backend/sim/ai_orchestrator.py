@@ -171,6 +171,11 @@ class AgentsOrchestrator:
             }
         else:
             mission = {"roe": {"weapons_free": False}}
+        
+        # Add mission prompt as a hint for the AI engine
+        prompt_hint = None
+        if isinstance(mission_brief, dict) and mission_brief.get("ai_fleet_prompt"):
+            prompt_hint = mission_brief.get("ai_fleet_prompt")
         # Include last FleetIntent (hash/body/summary) for stateless continuity
         try:
             last_intent = getattr(self, "_last_fleet_intent", {}) or {}
@@ -202,7 +207,7 @@ class AgentsOrchestrator:
             orders_last_map = getattr(self, "_orders_last_by_ship", {}) or {}
         except Exception:
             orders_last_map = {}
-        return {
+        result = {
             "time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "own_fleet": own_fleet,
             "enemy_belief": enemy_belief,
@@ -211,6 +216,12 @@ class AgentsOrchestrator:
             "ship_last_runs": ship_last_runs,
             "orders_last_by_ship": orders_last_map,
         }
+        
+        # Add prompt hint if available
+        if prompt_hint:
+            result["_prompt_hint"] = prompt_hint
+            
+        return result
 
     def _build_ship_summary(self, ship: Ship) -> Dict[str, Any]:
         # Provide a narrow slice of fleet intent if available, e.g., guidance for this ship
@@ -342,7 +353,7 @@ class AgentsOrchestrator:
             summary = self._build_fleet_summary()
             # Capture full API call for debugging
             api_call_debug = {
-                "system_prompt": "You are the Fleet Commander for a hostile flotilla. Plan strategy to achieve mission objectives while minimizing detectability and respecting ROE. You will receive a structured summary of your fleet and an uncertain belief of enemy contacts. Never assume ground-truth positions. Output only a JSON FleetIntent. Include a concise 'summary' string explaining your rationale in 1 short sentence. Do not reveal unknown truths.",
+                "system_prompt": "You are the Fleet Commander for an enemy flotilla. Plan high-level strategy for all of your ships to achieve mission objectives while minimizing detectability and respecting ROE. You will receive a structured summary of your fleet and an uncertain belief of enemy contacts. Never assume ground-truth positions. Output only a JSON FleetIntent. Include a concise 'summary' string explaining your rationale in 1 short sentence. Do not reveal unknown truths.",
                 "user_prompt": "FLEET_SUMMARY_JSON:\n" + json.dumps(summary, separators=(",", ":")) + "\n\nCONSTRAINTS:\n- Do not reveal or rely on unknown enemy truth.\n- Prefer convoy protection unless ROE authorizes engagement.\n- If escorts are low on ammo, bias toward defensive spacing.\n\nProduce FleetIntent JSON.",
                 "summary_size": len(str(summary)),
             }
@@ -393,15 +404,36 @@ class AgentsOrchestrator:
         # Ensure dict objectives keyed by ship id
         if not isinstance(objectives, dict):
             objectives = {}
-        # If empty, derive from mission target_wp for each RED ship
+        # If empty or missing destinations, derive from mission target_wp for each RED ship
         mission = fleet_summary.get("mission", {}) or {}
         target = mission.get("target_wp")
-        if target and isinstance(target, (list, tuple)) and len(target) == 2 and not objectives:
-            for s in (fleet_summary.get("own_fleet", []) or []):
-                sid = s.get("id")
-                if not sid:
-                    continue
-                objectives[sid] = {"destination": [float(target[0]), float(target[1])]}
+        if target and isinstance(target, (list, tuple)) and len(target) == 2:
+            # Check if objectives are missing or incomplete
+            needs_defaults = not objectives
+            if objectives:
+                # Check if any ships are missing destination objectives
+                for s in (fleet_summary.get("own_fleet", []) or []):
+                    sid = s.get("id")
+                    if sid and sid not in objectives:
+                        needs_defaults = True
+                        break
+                    elif sid and sid in objectives:
+                        ship_obj = objectives[sid]
+                        if not isinstance(ship_obj, dict) or "destination" not in ship_obj:
+                            needs_defaults = True
+                            break
+            
+            if needs_defaults:
+                for s in (fleet_summary.get("own_fleet", []) or []):
+                    sid = s.get("id")
+                    if not sid:
+                        continue
+                    if sid not in objectives:
+                        objectives[sid] = {}
+                    if not isinstance(objectives[sid], dict):
+                        objectives[sid] = {}
+                    if "destination" not in objectives[sid]:
+                        objectives[sid]["destination"] = [float(target[0]), float(target[1])]
         # Engagement rules: default from mission ROE
         er = intent.get("engagement_rules")
         if not isinstance(er, dict):

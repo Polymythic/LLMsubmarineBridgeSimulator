@@ -48,36 +48,29 @@ A cooperative, local-multiplayer submarine bridge simulator. Five players occupy
 ## Debug and Missions
 - Debug view provides a live truth map of entities.
 - Restart Mission button resets world state.
-- Mission selector with built-in Patrol and asset-driven missions. Asset missions live under `assets/missions/*.json` and include captain summary, ROE, target waypoints, and optional AI prompt hints.
+- Mission selector with built-in Patrol and asset-driven missions. Asset missions live under `assets/missions/*.json` and include captain summary, ROE, target waypoints, and structured mission supplements. Prompts are mission-agnostic; missions provide data, not instructions.
 - Debug helpers:
   - Mission dropdown fetches available missions from `/api/missions`; select and “Restart Mission” to apply changes in `.env` (via `MISSION_ID`).
   - Surface Training mission spawns a single convoy-like surface ship at ~6 km with a target waypoint for the Fleet Commander.
 
 ## AI Tooling
+- Two-tier AI (Fleet Commander + Ship Commanders):
+  - Fleet (slower cadence, stronger model) produces `FleetIntent` with per-ship objectives and optional `speed_kn` and `goal` text, plus an overall one-line `summary` and optional `notes`.
+  - Ships (faster cadence, smaller models) issue constrained tool calls: `set_nav`, `fire_torpedo`, `deploy_countermeasure`. They generally follow `FleetIntent` but may deviate, marking summaries with `deviate:`.
 - Each `Ship` now carries `ship_class` (e.g., `SSN`, `Convoy`, `Destroyer`) and `capabilities` (navigation, sensors, weapons, countermeasures).
 - A debug `ai.tool` command applies minimal tool calls for LLM control:
   - `set_nav`: `{"ship_id":"red-01","tool":"set_nav","arguments":{"heading":120,"speed":6,"depth":0}}`
-  - `fire_torpedo` and `deploy_countermeasure`: placeholders gated by capabilities.
 
 ### Two-Tier AI Control (Fleet Commander + Ship Commanders)
-- **Design**: One global Fleet Commander plans strategy; each hostile ship has its own Ship Commander that executes local orders via tool calls.
-- **Cadence** (configurable in `.env`):
-  - Fleet Commander: `AI_FLEET_CADENCE_S` (default 45 s)
-  - Ship Commander: `AI_SHIP_CADENCE_S` (default 20 s), `AI_SHIP_ALERT_CADENCE_S` (default 10 s)
-- **Strict Information Boundaries** (never leak hidden truth about the player sub):
-  - Fleet Commander sees: full state of its own fleet; mission/ROE; global game context that would be known (e.g., time/weather). It does not see the authoritative truth of enemy positions—only the aggregated enemy belief (contacts/classifications with uncertainty) derived from sensors and shared reports.
-  - Ship Commander sees: its own kinematics/health/weapons readiness, its local contacts (bearing-only, noisy), last orders, and the published `FleetIntent`. It never sees the debug truth map or hidden enemy data.
-- **Outputs**:
-  - Fleet Commander writes a shared `FleetIntent` (objectives, waypoints/formations, target priorities, engagement and EMCON posture).
-  - Ship Commanders issue constrained tool calls: `set_nav`, `fire_torpedo`, `deploy_countermeasure`. Server validates/clamps to platform limits and ROE before applying.
-- Fleet/Ship runs include a concise human-readable `summary` of rationale. If a model omits it, the server auto-generates one.
-- Intent normalization: if an asset mission defines `target_wp` and no objectives are returned, objectives per ship are derived automatically. Advisory notes (e.g., "possible enemy submarine") may be added from mission hints.
-- **Engines**: Pluggable AI engines (stub, local `ollama`, remote OpenAI). Calls run asynchronously so the 20 Hz loop remains authoritative and jitter-free.
-- **Debug/Control**: Debug panel can enable/disable fleet and per-ship AI, choose engine/model, and view last decisions. Information shown in debug never expands what the AI actually receives.
-  - `/fleet` shows current FleetIntent, recent runs, engines/models, and a live call log with summaries.
+- Design: One global Fleet Commander plans strategy; each hostile ship executes local orders via tool calls.
+- Cadence (configurable in `.env`):
+  - Fleet Commander: ~20–30 s
+  - Ship Commander: 5–15 s (shorter when alert)
+- Information boundaries: Fleet sees only mission supplement + enemy belief (no truth); Ships see only local state and FleetIntent subset.
+- Engines: Pluggable AI engines (stub, local `ollama`, remote OpenAI). Calls are async so the 20 Hz loop remains authoritative.
+- Debug/Control: `/fleet` shows engines/models, `FleetIntent`, and recent runs.
 
 See also: `docs/AI.md` for detailed schemas, prompts, scheduling, and agent-based handoff/tracing.
-
 
 ## Requirements
 - Python 3.11+
@@ -102,7 +95,7 @@ Open:
 - http://localhost:8000/sonar
 - http://localhost:8000/weapons
 - http://localhost:8000/engineering
- - http://localhost:8000/fleet
+- http://localhost:8000/fleet
 
 LAN access: http://192.168.1.100:8000/ (adjust to your host IP)
 
@@ -112,13 +105,10 @@ LAN access: http://192.168.1.100:8000/ (adjust to your host IP)
   - `USE_AI_ORCHESTRATOR` to enable Fleet/Ship agents orchestration.
   - `AI_FLEET_ENGINE` / `AI_SHIP_ENGINE` = `stub` | `ollama` | `openai` with corresponding `*_MODEL`.
   - `OPENAI_API_KEY` (only in your local `.env`) if using OpenAI; `OLLAMA_HOST` for local LLMs.
-  - Legacy path: `USE_ENEMY_AI` for simple periodic stub behavior.
   - Agent cadences: `AI_FLEET_CADENCE_S`, `AI_SHIP_CADENCE_S`, `AI_SHIP_ALERT_CADENCE_S`.
   - Missions: `MISSION_ID` selects `assets/missions/<id>.json`.
 
 ### Fleet AI UI and health checks
-- Open `/fleet` to view:
-  - Current FleetIntent (if any), recent agent runs/tool calls, engine/model banner, and a live call log.
-  - A health-check is issued via `GET /api/ai/health` shortly after page load to verify engine connectivity.
+- Open `/fleet` to view current FleetIntent, recent runs, engines/models, and a live call log.
+- A health-check is issued via `GET /api/ai/health` shortly after page load to verify engine connectivity.
 - Press “Restart Mission” in `/debug` after changing `.env`. The server reloads `.env` and re-initializes the orchestrator without full server restart.
-- Default Debug mission selection is set to “Surface Vessel (Training)” for quick testing.

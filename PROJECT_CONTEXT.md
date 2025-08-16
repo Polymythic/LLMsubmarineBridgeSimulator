@@ -66,20 +66,19 @@
   - `set_nav(heading: 0–359.9, speed: knots ≥0, depth: m ≥0)`
   - `fire_torpedo(tube: int, bearing: 0–359.9, run_depth: m)`
   - `deploy_countermeasure(type: "noisemaker"|"decoy")`
-- Server validates and clamps results to Hull/Weapons limits, ROE, and EMCON posture, then enqueues for the next tick.
- - For surface vessels, depth is clamped to hull.max_depth (e.g., Convoy ships at surface).
+- Server validates and clamps results to Hull/Weapons limits, EMCON posture, then enqueues for the next tick.
+  - For surface vessels, depth is clamped to hull.max_depth (near-surface).
 
 ### Two-Tier Enemy AI: Fleet Commander + Ship Commanders
 
 #### Roles and Cadence
-- **Fleet Commander** (global): plans fleet-level objectives and formations on a slow cadence (config: `AI_FLEET_CADENCE_S`, default 45 s). Writes a shared `FleetIntent` into sim state.
-- **Ship Commanders** (per hostile ship): execute local actions via tool calls on a normal cadence (`AI_SHIP_CADENCE_S`, default 20 s) or an alert cadence (`AI_SHIP_ALERT_CADENCE_S`, default 10 s) if detected/threatened.
+- **Fleet Commander** (global): plans fleet-level objectives and formations on a slow cadence (20–30 s). Writes a shared `FleetIntent` into sim state.
+- **Ship Commanders** (per hostile ship): execute local actions via tool calls on a faster cadence (5–15 s, shorter when alert).
 
 #### Strict Information Boundaries
 - No AI agent may access hidden truth about the player submarine or any entity beyond what sensors and communications would provide.
 - Fleet Commander receives:
-  - Full state of friendly fleet (types, kinematics, health, weapons readiness, detectability flags).
-  - Mission/ROE and global context (time/weather) as appropriate.
+  - Full state of friendly fleet; mission supplement (structured only) and global context as appropriate.
   - Aggregated enemy belief: contacts/classifications with uncertainty derived from sensor reports; never ground-truth positions.
 - Ship Commander receives:
   - Its own kinematics, constraints, health, weapons readiness, maintenance state relevant to availability.
@@ -87,9 +86,13 @@
   - Last applied orders and the current `FleetIntent` subset relevant to its group/role.
 
 #### FleetIntent (shared strategy scaffold)
-- Example fields: `objectives`, `waypoints`/formations per group, `target_priority`, `engagement_rules` (weapons_free, min_confidence), `emcon` posture (active ping allowed, radio discipline), and optional convoy lanes/patrol boxes.
-- Ships are expected to bias decisions toward achieving `FleetIntent` while respecting local constraints and sensor reality.
- - Intent normalization: if missions provide a `target_wp` and objectives are missing, default per-ship `destination` objectives are derived. Advisory `notes` may be added from mission hints (e.g., suspected submarine).
+- Fields:
+  - `objectives`: per-ship `{ destination: [x,y], speed_kn?: number, goal?: string }`
+  - `emcon`: `{ active_ping_allowed: boolean, radio_discipline: string }` (optional)
+  - `summary`: one short sentence plan
+  - `notes`: optional advisory list
+- Ships bias decisions toward achieving `FleetIntent` while respecting local constraints and sensor reality. They may deviate, marking summaries with `deviate:`.
+- Intent normalization: if missions provide a `target_wp` and objectives are missing, default per-ship `destination` is derived.
 
 #### Engine Abstraction and Safety
 - Pluggable engine per agent: stub, local LLM (Ollama), remote LLM (OpenAI). Configurable via `config.py` and Debug UI.

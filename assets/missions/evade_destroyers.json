@@ -34,11 +34,11 @@
       "spawn": { "x": 2200, "y": -300, "depth": 0, "heading": 180, "speed": 10 }
     }
   ],
-  "ai_fleet_prompt": "You command RED destroyers conducting ASW patrol. Your objective is to deny BLUE submarine from reaching waypoint X:4000, Y:-2000. Use passive contacts to localize and, if confidence rises, drop depth charges using small spreads (spread_meters ~ 20, minDepth ~ 30, maxDepth ~ 120, spreadSize <= 5) near likely positions. Avoid reckless overuse; preserve charges. If torpedo confidence rises, fire a torpedo at the BLUE submarine.",
+  "ai_fleet_prompt": "Aggressive directive: Hunt down and kill the BLUE submarine in your sector before it reaches waypoint X:4000, Y:-2000. Direct destroyers to approach by stealth initially; once contact quality/confidence is promising, go hard-charging to close and decisively prosecute with depth charges and torpedoes. Prioritize rapid localization and decisive engagement over conservative patrol.",
   "ai_ship_prompts": {
-    "red-dd-01": "Patrol your sector. If contact confidence increases, maneuver to probable intercept and drop conservative depth charge spreads.",
-    "red-dd-02": "Patrol your sector. Use passive cues to bracket with depth charges at varying depths.",
-    "red-dd-03": "Patrol your sector. Conserve charges; prefer small spreads with depth variation."
+    "red-dd-01": "Lead destroyer. Close quietly (8–12 kn) on the highest-confidence bearings. If confidence >= 0.5, sprint to intercept (20+ kn) and drop depth charge spreads (spread_meters 20–40, minDepth 30–80, maxDepth 120–200, spreadSize 4–6), then re-attack from a new axis. Fire a torpedo if bearing and enable_range are favorable.",
+    "red-dd-02": "Flanker. Bracket from an opposite bearing; alternate passive search with sprint-and-drift. When confidence rises, charge and prosecute with depth charges; avoid duplicating red-dd-01’s run-in.",
+    "red-dd-03": "Cutter. Sweep across the probable track to cut off escape. If the contact is promising, sprint aggressively to interdict and employ torpedo or depth charges as geometry allows. Conserve only minimal ammo for follow-up."
   },
   "triggers": [
     { "at_s": 60.0, "comms": "INFO: RED destroyers increasing speed; possible search pattern shift." }

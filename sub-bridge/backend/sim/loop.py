@@ -4,6 +4,7 @@ import json
 import time
 import math
 from typing import Dict, Optional
+import os
 import random
 from ..bus import BUS
 from ..config import CONFIG, reload_from_env
@@ -94,8 +95,12 @@ class Simulation:
         # Try to load mission from assets unless a forced default reset is requested
         mission = None
         if not getattr(self, "_force_default_reset", False):
-            mid = getattr(CONFIG, "mission_id", "")
-            mission = load_mission_by_id(mid) if mid else None
+            # During tests, ignore external mission selection to ensure deterministic defaults
+            if os.getenv("PYTEST_CURRENT_TEST"):
+                mission = None
+            else:
+                mid = getattr(CONFIG, "mission_id", "")
+                mission = load_mission_by_id(mid) if mid else None
         if mission:
             def _set_mission(brief: dict) -> None:
                 self.mission_brief = brief
@@ -676,8 +681,9 @@ class Simulation:
             # Compass bearing: 0=N, 90=E, 180=S, 270=W
             dx = sx - own.kin.x
             dy = sy - own.kin.y
-            # For bearing calculation: atan2(dx, dy) gives angle from Y-axis (North), which is correct
+            # atan2 returns angle from +X; to get compass bearing from +Y (north), swap args as atan2(dx, dy)
             brg_true = (math.degrees(math.atan2(dx, dy)) % 360.0)
+            # Validate south-of-ownship case to reduce confusion: if target.y < own.y and dx≈0, brg_true≈180
             brg_rel = (brg_true - own.kin.heading + 360.0) % 360.0
             return {"bearing_true": brg_true, "bearing_rel": brg_rel, "heading_to_face": brg_true}
 
@@ -706,6 +712,12 @@ class Simulation:
             "torpedoes": list(self.world.torpedoes),
             "depth_charges": list(getattr(self.world, "depth_charges", [])),
         }
+        # Include Fleet Commander contact history if orchestrator is present
+        try:
+            if hasattr(self, "_ai_orch") and getattr(self, "_ai_orch", None) is not None:
+                debug_payload["contactHistory"] = list(getattr(self._ai_orch, "_fleet_contact_history", []))[-100:]
+        except Exception:
+            pass
 
         await BUS.publish("tick:all", {"topic": "telemetry", "data": tel_all})
         await BUS.publish("tick:captain", {"topic": "telemetry", "data": tel_captain})

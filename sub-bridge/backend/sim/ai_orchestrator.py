@@ -449,19 +449,19 @@ class AgentsOrchestrator:
             # Capture full API call for debugging
             api_call_debug = {
                 "system_prompt": (
-                    "You are the RED Fleet Commander. Plan strategy to achieve mission objectives while minimizing detectability. "
+                    "You are the RED Fleet Commander. You will plan cunning fleet strategy to achieve mission objectives through issuing FleetIntents to your ships."
                     "You will receive a structured fleet summary and a mission supplement. Never assume ground-truth enemy positions; use only provided beliefs and hints. "
-                    "Coordinate system: X east (m), Y north (m). Output ONLY one JSON object with fields: objectives (per-ship destinations), emcon (active_ping_allowed,radio_discipline), summary (one verb-first goal, <=12 words), notes (optional). Optional: handoff_to_ship entries [{ship_id, order}] to inject immediate orders. No markdown, no extra prose."
+                    "Coordinate system: X east (m), Y north (m). Output ONLY one JSON object with fields: objectives (per-ship destinations, speed, and ship goal), emcon (active_ping_allowed,radio_discipline), summary (one verb-first goal, <=12 words), Optional: handoff_to_ship entries [{ship_id, order}] to inject immediate orders. No markdown, no extra prose."
                 ),
                 "user_prompt": (
                     "FLEET_SUMMARY_JSON:\n" + json.dumps(summary, separators=(",", ":")) +
                     "\n\nCONSTRAINTS:\n"
-                    "- Include EVERY RED ship id under 'objectives' with a 'destination' [x,y] in meters.\n"
+                    "- Include EVERY RED ship id under 'objectives' with a 'destination' [x,y] in meters, and a 'speed' in knots, and a one sentence summary of the its goal.\n"
                     "- If a mission target waypoint is provided, use it unless another destination is clearly safer/better.\n"
                     "- Respect formations, spacing, speed limits, and navigation constraints (lanes, no-go zones) if provided.\n"
                     "- Prefer protecting high-value units unless an attack is clearly advantageous.\n"
                     "- Do not reveal or rely on unknown enemy truth.\n"
-                    "- Keep 'summary' as a single verb-first goal line (<=12 words), e.g., 'Race to destination to trap SSN'.\n"
+                    "- Generate a 'summary' as a single verb-first goal line (<=12 words), e.g., 'Race to destination to trap SSN'.\n"
                 ),
                 "summary_size": len(str(summary)),
             }
@@ -652,7 +652,7 @@ class AgentsOrchestrator:
             api_call_debug = {
                 "system_prompt": (
                     "You command a single RED ship. Make conservative, doctrine-aligned decisions using only your local Ship Summary and the FleetIntent. "
-                    "Prefer following FleetIntent; if you must deviate due to local threats/opportunities, prefix the summary with 'deviate:' and keep it brief. "
+                    "Prefer following the FleetIntent; if you must deviate due to local threats/opportunities, prefix the summary with 'deviate:' and keep it brief. "
                     "Coordinate system: X east (m), Y north (m). Bearings: 0°=North, 90°=East. Output EXACTLY one JSON object with keys {tool, arguments, summary}. "
                     "No markdown or extra keys. Allowed tools: set_nav(heading: float 0-359.9, speed: float >=0, depth: float >=0); fire_torpedo(tube: int, bearing: float 0-359.9, run_depth: float, enable_range: float); deploy_countermeasure(type: 'noisemaker'|'decoy'); drop_depth_charges(spread_meters: float, minDepth: float, maxDepth: float, spreadSize: int 1..10); launch_torpedo_quick(bearing: float, run_depth: float, enable_range?: float). Only use tools supported by your capabilities."
                 ),

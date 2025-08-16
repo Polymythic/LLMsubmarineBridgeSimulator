@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Literal, Optional, TypedDict
 import httpx
 
 from ..config import CONFIG
+from openai import AsyncOpenAI
 import json
 from .ai_engines import BaseEngine, StubEngine, OllamaAgentsEngine, OpenAIAgentsEngine
 from ..models import Ship
@@ -475,7 +476,7 @@ class AgentsOrchestrator:
                 "system_prompt": api_call_debug["system_prompt"],
                 "user_prompt": api_call_debug["user_prompt"],
             }
-            intent_raw = await asyncio.wait_for(self._fleet_decide(summary_for_engine), timeout=max(1.0, CONFIG.ai_poll_s))
+            intent_raw = await asyncio.wait_for(self._fleet_decide(summary_for_engine), timeout=max(1.0, getattr(CONFIG, "ai_http_timeout_s", 15.0)))
             # Normalize/augment intent to ensure objectives/guidance present
             intent = self._normalize_intent(summary, intent_raw)
             # Start with intent as primary tool call
@@ -489,6 +490,13 @@ class AgentsOrchestrator:
             api_call_debug["model_response"] = str(intent_raw)
             api_call_debug["model"] = self._fleet_model
             api_call_debug["duration_ms"] = int((time.perf_counter() - started) * 1000)
+            # Include provider call metadata if available
+            try:
+                engine_meta = getattr(self._fleet_engine, "_last_call_meta", None)
+                if engine_meta:
+                    api_call_debug["provider_meta"] = engine_meta
+            except Exception:
+                pass
             # Emit trace event with full debug info
             insert_event(self._storage_engine, self._run_id, "ai.run.fleet", json.dumps(api_call_debug))
             # Record recent run for Fleet UI
@@ -511,6 +519,10 @@ class AgentsOrchestrator:
                     "agent": "fleet",
                     "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                     "error": result["error"],
+                    "api_call_debug": {
+                        "model": self._fleet_model,
+                        "provider_meta": getattr(self._fleet_engine, "_last_call_meta", None),
+                    },
                 })
             except Exception:
                 pass
@@ -621,7 +633,7 @@ class AgentsOrchestrator:
             notes = []
         if not notes:
             try:
-                notes = [{"ship_id": None, "text": "Auto: adhere EMCON and maintain formation; speeds may be adjusted tactically by ships."}]
+                notes = [{"ship_id": None, "text": "Adhere EMCON and maintain formation; speeds may be adjusted tactically by ships."}]
             except Exception:
                 notes = []
         intent["notes"] = notes
@@ -723,18 +735,19 @@ class AgentsOrchestrator:
                 "system_prompt": api_call_debug["system_prompt"],
                 "user_prompt": api_call_debug["user_prompt"],
             }
-            tool = await asyncio.wait_for(self._ship_decide(ship, summary_for_engine), timeout=max(1.0, CONFIG.ai_poll_s))
+            tool = await asyncio.wait_for(self._ship_decide(ship, summary_for_engine), timeout=max(1.0, getattr(CONFIG, "ai_http_timeout_s", 15.0)))
             result["tool_calls"] = [tool]
-            # Validate tool; fallback to intent-driven set_nav if invalid
+            # Validate tool; avoid stub fallback on failures
             tool_name = (tool or {}).get("tool") if isinstance(tool, dict) else None
             if tool_name not in ("set_nav", "fire_torpedo", "deploy_countermeasure"):
-                # Try to derive navigation from FleetIntent destination
+                # Prefer to not apply any action if output invalid; as a safe alternative, derive navigation from FleetIntent if available
                 nav = self._nav_from_intent(ship, summary)
-                if nav is None:
-                    nav = self._stub.propose_orders(ship)
-                result["tool_calls_validated"] = [nav]
-                # Mark error message to surface in UI trace
-                result["error"] = "Unknown tool returned by engine; applied intent-driven set_nav"
+                if nav is not None:
+                    result["tool_calls_validated"] = [nav]
+                    result["error"] = "Unknown tool; applied intent-derived navigation"
+                else:
+                    result["tool_calls_validated"] = []
+                    result["error"] = "Unknown tool returned by engine; no action applied"
             else:
                 result["tool_calls_validated"] = [tool]
             # Add concise human summary of the decision
@@ -747,6 +760,13 @@ class AgentsOrchestrator:
             api_call_debug["model_response"] = str(tool)
             api_call_debug["model"] = self._ship_model
             api_call_debug["duration_ms"] = int((time.perf_counter() - started) * 1000)
+            # Include provider call metadata if available
+            try:
+                engine_meta = getattr(self._ship_engine, "_last_call_meta", None)
+                if engine_meta:
+                    api_call_debug["provider_meta"] = engine_meta
+            except Exception:
+                pass
             insert_event(self._storage_engine, self._run_id, "ai.run.ship", json.dumps({
                 "ship_id": ship_id,
                 "summary_size": len(str(summary)),
@@ -774,6 +794,10 @@ class AgentsOrchestrator:
                     "ship_id": ship_id,
                     "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                     "error": result["error"],
+                    "api_call_debug": {
+                        "model": self._ship_model,
+                        "provider_meta": getattr(self._ship_engine, "_last_call_meta", None),
+                    },
                 })
             except Exception:
                 pass
@@ -826,8 +850,16 @@ class AgentsOrchestrator:
             except Exception as e:
                 result["fleet"] = {"ok": False, "detail": str(e)}
         elif self._fleet_engine_kind == "openai":
-            ok = bool(CONFIG.openai_api_key)
-            result["fleet"] = {"ok": ok, "detail": ("missing OPENAI_API_KEY" if not ok else "")}
+            try:
+                if not CONFIG.openai_api_key:
+                    raise ValueError("missing OPENAI_API_KEY")
+                client = AsyncOpenAI(api_key=CONFIG.openai_api_key, base_url=CONFIG.openai_base_url)
+                # Quick metadata call to verify connectivity
+                models = await client.models.list()
+                ok = len(getattr(models, "data", []) or []) >= 0
+                result["fleet"] = {"ok": bool(ok), "detail": "connected"}
+            except Exception as e:
+                result["fleet"] = {"ok": False, "detail": str(e)}
         else:
             result["fleet"] = {"ok": True, "detail": "stub"}
         # Ship engine
@@ -840,8 +872,15 @@ class AgentsOrchestrator:
             except Exception as e:
                 result["ship"] = {"ok": False, "detail": str(e)}
         elif self._ship_engine_kind == "openai":
-            ok = bool(CONFIG.openai_api_key)
-            result["ship"] = {"ok": ok, "detail": ("missing OPENAI_API_KEY" if not ok else "")}
+            try:
+                if not CONFIG.openai_api_key:
+                    raise ValueError("missing OPENAI_API_KEY")
+                client = AsyncOpenAI(api_key=CONFIG.openai_api_key, base_url=CONFIG.openai_base_url)
+                models = await client.models.list()
+                ok = len(getattr(models, "data", []) or []) >= 0
+                result["ship"] = {"ok": bool(ok), "detail": "connected"}
+            except Exception as e:
+                result["ship"] = {"ok": False, "detail": str(e)}
         else:
             result["ship"] = {"ok": True, "detail": "stub"}
         return result

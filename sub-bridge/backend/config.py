@@ -52,6 +52,8 @@ class Config:
     ollama_host: str = os.getenv("OLLAMA_HOST", "http://localhost:11434")
     openai_api_key: Optional[str] = os.getenv("OPENAI_API_KEY")
     openai_base_url: str = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    # AI HTTP timeout (seconds) for LLM calls
+    ai_http_timeout_s: float = _get_env_float("AI_HTTP_TIMEOUT_S", 15.0)
     # Maintenance/task tuning
     first_task_delay_s: float = _get_env_float("FIRST_TASK_DELAY_S", 30.0)
     maint_spawn_scale: float = _get_env_float("MAINT_SPAWN_SCALE", 1.0)

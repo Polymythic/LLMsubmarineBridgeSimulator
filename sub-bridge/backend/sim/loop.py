@@ -358,6 +358,12 @@ class Simulation:
             # Schedule fleet run
             if self._ai_fleet_timer >= fleet_cadence:
                 self._ai_fleet_timer = 0.0
+                # Mirror current mission brief to orchestrator before the run
+                try:
+                    if hasattr(self, "_ai_orch") and getattr(self, "_ai_orch", None) is not None:
+                        setattr(self._ai_orch, "_mission_brief", self.mission_brief)
+                except Exception:
+                    pass
                 async def _fleet_job():
                     res = await self._ai_orch.run_fleet()
                     # Persist tool calls for trace

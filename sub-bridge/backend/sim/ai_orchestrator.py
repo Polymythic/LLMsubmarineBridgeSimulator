@@ -199,9 +199,13 @@ class AgentsOrchestrator:
                 for s in world.all_ships() if s.side == "RED"
             ]
             target_wp = mission_brief.get("target_wp") if isinstance(mission_brief.get("target_wp", None), (list, tuple)) else None
-            # Pass-through structured mission supplements when present
+            # Pass-through structured mission supplements when present (exclude any free-text AI prompts)
             mission = {
                 "objective": mission_brief.get("objective"),
+                # Prefer explicit side summary for Fleet Commander
+                "mission_summary": mission_brief.get("red_mission_summary") or mission_brief.get("mission_summary"),
+                "red_mission_summary": mission_brief.get("red_mission_summary"),
+                "blue_mission_summary": mission_brief.get("blue_mission_summary"),
                 "convoy": convoy,
                 "target_wp": target_wp,
                 "side_objectives": mission_brief.get("side_objectives"),
@@ -212,17 +216,9 @@ class AgentsOrchestrator:
                 "navigation_constraints": mission_brief.get("navigation_constraints"),
                 "threat_hints": mission_brief.get("threat_hints"),
                 "success_criteria": mission_brief.get("success_criteria"),
-                # Optional prompts for AI engines to use when constructing system messages
-                "ai_fleet_prompt": mission_brief.get("ai_fleet_prompt"),
-                "ai_ship_prompts": mission_brief.get("ai_ship_prompts"),
             }
         else:
             mission = {}
-        
-        # Add mission prompt as a hint for the AI engine
-        prompt_hint = None
-        if isinstance(mission_brief, dict) and mission_brief.get("ai_fleet_prompt"):
-            prompt_hint = mission_brief.get("ai_fleet_prompt")
         # Include last FleetIntent (hash/body/summary) and recent history for stateless continuity
         try:
             last_intent = getattr(self, "_last_fleet_intent", {}) or {}
@@ -274,11 +270,6 @@ class AgentsOrchestrator:
             result["contact_history"] = list(getattr(self, "_fleet_contact_history", []))[-100:]
         except Exception:
             pass
-        
-        # Add prompt hint if available
-        if prompt_hint:
-            result["_prompt_hint"] = prompt_hint
-            
         return result
 
     def _build_ship_summary(self, ship: Ship) -> Dict[str, Any]:
@@ -407,29 +398,14 @@ class AgentsOrchestrator:
             "detected_state": {"alert": alert_flag},
         }
 
-    # ---------- Engines (stub only for now) ----------
+    # ---------- Engines ----------
     async def _fleet_decide(self, fleet_summary: Dict[str, Any]) -> Dict[str, Any]:
-        # Allow engines to incorporate a mission-specific prompt if present
-        prompt_hint = None
-        try:
-            prompt_hint = (fleet_summary.get("mission", {}) or {}).get("ai_fleet_prompt")
-        except Exception:
-            prompt_hint = None
-        return await self._fleet_engine.propose_fleet_intent(fleet_summary if prompt_hint is None else {**fleet_summary, "_prompt_hint": prompt_hint})
+        # Pass summary as-is; engines are mission-agnostic and receive mission data only
+        return await self._fleet_engine.propose_fleet_intent(fleet_summary)
 
     async def _ship_decide(self, ship: Ship, ship_summary: Dict[str, Any]) -> Dict[str, Any]:
-        # If mission provided a per-ship prompt, include it as a hint
-        hint = None
-        try:
-            mission_brief = getattr(self, "_mission_brief", {}) or {}
-            ai_prompts = mission_brief.get("ai_ship_prompts", {}) or {}
-            hint = ai_prompts.get(ship.id)
-        except Exception:
-            hint = None
-        enriched = dict(ship_summary)
-        if hint:
-            enriched["_prompt_hint"] = hint
-        return await self._ship_engine.propose_ship_tool(ship, enriched)
+        # Pass summary as-is; engines are mission-agnostic
+        return await self._ship_engine.propose_ship_tool(ship, ship_summary)
 
     # ---------- Public runs ----------
     async def run_fleet(self, parent_run_id: Optional[str] = None) -> RunResult:
@@ -446,22 +422,20 @@ class AgentsOrchestrator:
         }
         try:
             summary = self._build_fleet_summary()
-            # Capture full API call for debugging
+            # Capture full API call for debugging (mission-agnostic prompts)
             api_call_debug = {
                 "system_prompt": (
-                    "You are the RED Fleet Commander. You will plan cunning fleet strategy to achieve mission objectives through issuing FleetIntents to your ships."
-                    "You will receive a structured fleet summary and a mission supplement. Never assume ground-truth enemy positions; use only provided beliefs and hints. "
-                    "Coordinate system: X east (m), Y north (m). Output ONLY one JSON object with fields: objectives (per-ship destinations, speed, and ship goal), emcon (active_ping_allowed,radio_discipline), summary (one verb-first goal, <=12 words), Optional: handoff_to_ship entries [{ship_id, order}] to inject immediate orders. No markdown, no extra prose."
+                    "You are the RED Fleet Commander. Define mid-level FleetIntent that encodes strategy and objectives; do not micromanage tactics. "
+                    "Use only the provided summaries; never assume ground-truth enemy positions. Coordinates: X east (m), Y north (m). "
+                    "Output ONLY one JSON object with fields: objectives (per-ship destination [x,y], optional speed_kn, goal), emcon (optional), summary, notes (optional)."
                 ),
                 "user_prompt": (
-                    "FLEET_SUMMARY_JSON:\n" + json.dumps(summary, separators=(",", ":")) +
-                    "\n\nCONSTRAINTS:\n"
-                    "- Include EVERY RED ship id under 'objectives' with a 'destination' [x,y] in meters, and a 'speed' in knots, and a one sentence summary of the its goal.\n"
-                    "- If a mission target waypoint is provided, use it unless another destination is clearly safer/better.\n"
-                    "- Respect formations, spacing, speed limits, and navigation constraints (lanes, no-go zones) if provided.\n"
-                    "- Prefer protecting high-value units unless an attack is clearly advantageous.\n"
-                    "- Do not reveal or rely on unknown enemy truth.\n"
-                    "- Generate a 'summary' as a single verb-first goal line (<=12 words), e.g., 'Race to destination to trap SSN'.\n"
+                    "FLEET_SUMMARY_JSON:\n" + json.dumps(summary, separators=(',', ':')) +
+                    "\n\nFORMAT REQUIREMENTS:\n"
+                    "- Include EVERY RED ship id under 'objectives' with a 'destination' [x,y] in meters.\n"
+                    "- 'speed_kn' and 'goal' are optional per ship.\n"
+                    "- Output ONLY the JSON object with allowed keys shown above. No extra prose.\n"
+                    "- Do not infer unknown enemy truth beyond the provided beliefs.\n"
                 ),
                 "summary_size": len(str(summary)),
             }
@@ -470,21 +444,6 @@ class AgentsOrchestrator:
             intent = self._normalize_intent(summary, intent_raw)
             # Start with intent as primary tool call
             tool_calls = [{"tool": "set_fleet_intent", "arguments": intent}]
-            # Extract optional handoffs from model output if present
-            try:
-                handoffs = []
-                if isinstance(intent_raw, dict):
-                    handoffs = intent_raw.get("handoff_to_ship") or intent_raw.get("handoffs") or []
-                if isinstance(handoffs, dict):
-                    handoffs = [handoffs]
-                if isinstance(handoffs, list):
-                    for h in handoffs:
-                        sid = (h or {}).get("ship_id")
-                        order = (h or {}).get("order")
-                        if sid and isinstance(order, dict):
-                            tool_calls.append({"tool": "handoff_to_ship", "arguments": {"ship_id": sid, "order": order}})
-            except Exception:
-                pass
             result["tool_calls"] = tool_calls
             # Add concise human summary
             fleet_thought = intent.get("summary") or self._summarize_fleet_intent(intent)
@@ -547,7 +506,6 @@ class AgentsOrchestrator:
                         if not isinstance(ship_obj, dict) or "destination" not in ship_obj:
                             needs_defaults = True
                             break
-            
             if needs_defaults:
                 for s in (fleet_summary.get("own_fleet", []) or []):
                     sid = s.get("id")
@@ -559,26 +517,17 @@ class AgentsOrchestrator:
                         objectives[sid] = {}
                     if "destination" not in objectives[sid]:
                         objectives[sid]["destination"] = [float(target[0]), float(target[1])]
-        # Engagement rules: default from mission ROE
-        # Remove ROE/weapons_free concept; keep any emcon settings if present
+        # Remove legacy engagement_rules if present
         if "engagement_rules" in intent:
             try:
                 intent.pop("engagement_rules", None)
             except Exception:
                 pass
         intent["objectives"] = objectives
-        # Optional advisory notes
+        # Normalize notes list
         notes = intent.get("notes")
         if not isinstance(notes, list):
             notes = []
-        hint = mission.get("ai_fleet_prompt")
-        if hint and all("sub" not in (n.get("text","")) for n in notes if isinstance(n, dict)):
-            if "sub" in str(hint).lower():
-                # Add a simple advisory applicable to all
-                for s in (fleet_summary.get("own_fleet", []) or []):
-                    sid = s.get("id")
-                    if sid:
-                        notes.append({"ship_id": sid, "text": "Warning: possible enemy submarine in area."})
         intent["notes"] = notes
         return intent
 
@@ -618,16 +567,6 @@ class AgentsOrchestrator:
             if name == "deploy_countermeasure":
                 t = str(args.get("type", ""))
                 return f"{ship_id}: deploy {t}"
-            if name == "drop_depth_charges":
-                n = int(args.get("spreadSize", 0))
-                mn = float(args.get("minDepth", 0.0))
-                mx = float(args.get("maxDepth", 0.0))
-                r = float(args.get("spread_meters", 0.0))
-                return f"{ship_id}: drop {n} DCs r {r:.0f}m depth {mn:.0f}-{mx:.0f}"
-            if name == "launch_torpedo_quick":
-                b = float(args.get("bearing", 0.0))
-                rd = float(args.get("run_depth", 0.0))
-                return f"{ship_id}: quick torpedo brg {b:.0f} dpt {rd:.0f}"
             return ""
         except Exception:
             return ""
@@ -648,24 +587,19 @@ class AgentsOrchestrator:
             world = self._world_getter()
             ship = world.get_ship(ship_id)
             summary = self._build_ship_summary(ship)
-            # Capture full API call for debugging
+            # Capture full API call for debugging (mission-agnostic prompts)
             api_call_debug = {
                 "system_prompt": (
-                    "You command a single RED ship. Make conservative, doctrine-aligned decisions using only your local Ship Summary and the FleetIntent. "
-                    "Prefer following the FleetIntent; if you must deviate due to local threats/opportunities, prefix the summary with 'deviate:' and keep it brief. "
-                    "Coordinate system: X east (m), Y north (m). Bearings: 0°=North, 90°=East. Output EXACTLY one JSON object with keys {tool, arguments, summary}. "
-                    "No markdown or extra keys. Allowed tools: set_nav(heading: float 0-359.9, speed: float >=0, depth: float >=0); fire_torpedo(tube: int, bearing: float 0-359.9, run_depth: float, enable_range: float); deploy_countermeasure(type: 'noisemaker'|'decoy'); drop_depth_charges(spread_meters: float, minDepth: float, maxDepth: float, spreadSize: int 1..10); launch_torpedo_quick(bearing: float, run_depth: float, enable_range?: float). Only use tools supported by your capabilities."
+                    "You command a single RED ship. Make tactical decisions using only your Ship Summary and the FleetIntent. "
+                    "Prefer following the FleetIntent; if deviating, prefix the summary with 'deviate:'. "
+                    "Coordinates: X east (m), Y north (m). Bearings: 0°=North, 90°=East. Output EXACTLY one JSON object with keys {tool, arguments, summary}. "
+                    "No markdown or extra keys. Allowed tools: set_nav(heading, speed, depth); fire_torpedo(tube, bearing, run_depth, enable_range); deploy_countermeasure(type)."
                 ),
                 "user_prompt": (
-                    "SHIP_SUMMARY_JSON:\n" + json.dumps(summary, separators=(",", ":")) +
-                    "\n\nCONSTRAINTS:\n"
-                    "- Strongly prefer the FleetIntent; if deviating, prefix summary with 'deviate:'.\n"
-                    "- Respect EMCON posture and ROE (if weapons_free=false, do not fire).\n"
-                    "- Prefer launch_torpedo_quick when has_torpedoes=true (no tube prep). Use fire_torpedo only if tubes exist and a tube is 'DoorsOpen'. Set bearing from contacts and choose a realistic enable_range.\n"
-                    "- Use drop_depth_charges only if has_depth_charges=true; choose reasonable spread parameters.\n"
-                    "- Use only allowed tools and only if supported by capabilities.\n"
-                    "- If no change is needed, return set_nav holding current values with a brief summary (e.g., 'holding course per FleetIntent').\n"
-                    "- Output ONLY one JSON with keys {tool, arguments, summary}. No markdown, no extra keys.\n"
+                    "SHIP_SUMMARY_JSON:\n" + json.dumps(summary, separators=(',', ':')) +
+                    "\n\nFORMAT & BEHAVIOR:\n"
+                    "- Prefer the FleetIntent; if deviating, prefix summary with 'deviate:'.\n"
+                    "- Use only allowed tools and choose plausible parameters. If no change needed, return set_nav with current values and a brief summary.\n"
                 ),
                 "summary_size": len(str(summary)),
             }
@@ -673,7 +607,7 @@ class AgentsOrchestrator:
             result["tool_calls"] = [tool]
             # Validate tool; fallback to intent-driven set_nav if invalid
             tool_name = (tool or {}).get("tool") if isinstance(tool, dict) else None
-            if tool_name not in ("set_nav", "fire_torpedo", "deploy_countermeasure", "drop_depth_charges", "launch_torpedo_quick"):
+            if tool_name not in ("set_nav", "fire_torpedo", "deploy_countermeasure"):
                 # Try to derive navigation from FleetIntent destination
                 nav = self._nav_from_intent(ship, summary)
                 if nav is None:
@@ -743,9 +677,16 @@ class AgentsOrchestrator:
             dx = float(dest[0]) - sx
             dy = float(dest[1]) - sy
             brg_true = (_math.degrees(_math.atan2(dx, dy)) % 360.0)
-            # Choose speed: raise fallback cap; sprint if alert
-            is_alert = bool(((ship_summary.get("detected_state") or {}).get("alert", False)))
-            speed = ship.hull.max_speed if is_alert else min(ship.hull.max_speed, 18.0)
+            # Choose speed: prefer fleet 'speed_kn' if provided, otherwise sensible default; clamp to platform
+            speed_kn = None
+            try:
+                speed_kn = float(obj.get("speed_kn")) if obj.get("speed_kn") is not None else None
+            except Exception:
+                speed_kn = None
+            if speed_kn is None:
+                is_alert = bool(((ship_summary.get("detected_state") or {}).get("alert", False)))
+                speed_kn = ship.hull.max_speed if is_alert else min(ship.hull.max_speed, 18.0)
+            speed = max(0.0, min(float(speed_kn), float(ship.hull.max_speed)))
             # Surface vessels: stay at or near surface
             depth = 0.0
             return {"tool": "set_nav", "arguments": {"heading": brg_true, "speed": speed, "depth": depth}}

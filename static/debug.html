@@ -48,6 +48,10 @@
         </div>
       </div>
     </div>
+    <div style="margin-top: 16px;">
+      <div class="pill" style="background: #1A1A2E; border-color: #60A5FA;">Ships (Truth JSON)</div>
+      <pre id="shipsJson" style="background:#0E1326; border:1px solid #1B2440; padding:8px; border-radius:6px; color:#BBD1FF; overflow:auto; max-height: 240px; white-space: pre-wrap; word-break: break-word;">[]</pre>
+    </div>
   </div>
   <script>
     const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/debug');
@@ -258,6 +262,11 @@
         if (m.topic === 'telemetry') { 
           ownEl.textContent = `hdg ${m.data.ownship.heading.toFixed(0)} spd ${m.data.ownship.speed.toFixed(1)} dpt ${m.data.ownship.depth.toFixed(0)}`; 
           render(m.data); 
+          // Update truth JSON of ships
+          try {
+            const box = document.getElementById('shipsJson');
+            if (box) { box.textContent = JSON.stringify(m.data.ships || [], null, 2); }
+          } catch {}
           
           // Handle torpedo events
           if (m.data.events) {

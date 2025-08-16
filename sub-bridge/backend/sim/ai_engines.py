@@ -137,33 +137,40 @@ class OllamaAgentsEngine(BaseEngine):
             return content
 
     async def propose_fleet_intent(self, fleet_summary: Dict[str, Any]) -> Dict[str, Any]:
-        system = (
-            "You are the RED Fleet Commander. Define mid-level FleetIntent that encodes strategy and objectives; do not micromanage tactics. "
-            "Use only the provided summaries; never assume ground-truth enemy positions. "
-            "Coordinates: X east (m), Y north (m). Output ONLY one JSON object (no markdown):\n"
-            "{\n"
-            '  "objectives": {"<ship_id>": {"destination": [x, y], "speed_kn": 12, "goal": "one sentence"}},\n'
-            '  "emcon": {"active_ping_allowed": false, "radio_discipline": "restricted"},\n'
-            '  "summary": "One short sentence describing the fleet plan",\n'
-            '  "notes": [{"ship_id": "<id>" | null, "text": "<advisory>"}]\n'
-            "}"
-        )
-        fs = dict(fleet_summary)
-        fs.pop("_prompt_hint", None)
-        # Ensure mission_summary is included if present
-        mission = fs.get("mission") or {}
-        if mission and mission.get("mission_summary") is None and fs.get("objective"):
-            mission["mission_summary"] = fs.get("objective")
-            fs["mission"] = mission
-        user = (
-            "FLEET_SUMMARY_JSON:\n" + json.dumps(fs, separators=(",", ":")) +
-            "\n\nFORMAT REQUIREMENTS:\n"
-            "- Include EVERY RED ship id under 'objectives' with a 'destination' [x,y] in meters.\n"
-            "- 'speed_kn' and 'goal' are optional per ship.\n"
-            "- Output ONLY the JSON object with allowed keys shown above. No extra prose.\n"
-            "- Do not infer unknown enemy truth beyond the provided beliefs."
-        )
-        content = await self._chat(system, user)
+        # Honor explicit prompt hint if provided by orchestrator for exact reproducibility
+        hint = fleet_summary.get("_prompt_hint") if isinstance(fleet_summary, dict) else None
+        if isinstance(hint, dict) and hint.get("system_prompt") and hint.get("user_prompt"):
+            system = str(hint.get("system_prompt"))
+            user = str(hint.get("user_prompt"))
+            content = await self._chat(system, user)
+        else:
+            system = (
+                "You are the RED Fleet Commander. Define mid-level FleetIntent that encodes strategy and objectives; do not micromanage tactics. "
+                "Use only the provided summaries; never assume ground-truth enemy positions. "
+                "Coordinates: X east (m), Y north (m). Output ONLY one JSON object (no markdown):\n"
+                "{\n"
+                '  "objectives": {"<ship_id>": {"destination": [x, y], "speed_kn": 12, "goal": "one sentence"}},\n'
+                '  "emcon": {"active_ping_allowed": false, "radio_discipline": "restricted"},\n'
+                '  "summary": "One short sentence describing the fleet plan",\n'
+                '  "notes": [{"ship_id": "<id>" | null, "text": "<advisory>"}]\n'
+                "}"
+            )
+            fs = dict(fleet_summary)
+            fs.pop("_prompt_hint", None)
+            # Ensure mission_summary is included if present
+            mission = fs.get("mission") or {}
+            if mission and mission.get("mission_summary") is None and fs.get("objective"):
+                mission["mission_summary"] = fs.get("objective")
+                fs["mission"] = mission
+            user = (
+                "FLEET_SUMMARY_JSON:\n" + json.dumps(fs, separators=(",", ":")) +
+                "\n\nFORMAT REQUIREMENTS:\n"
+                "- Include EVERY RED ship id under 'objectives' with a 'destination' [x,y] in meters.\n"
+                "- 'speed_kn' and 'goal' are optional per ship.\n"
+                "- Output ONLY the JSON object with allowed keys shown above. No extra prose.\n"
+                "- Do not infer unknown enemy truth beyond the provided beliefs."
+            )
+            content = await self._chat(system, user)
         print(f"Ollama Fleet Commander response: {content[:200]}...")  # Debug: show first 200 chars
         obj = _extract_json(content)
         if obj is None:
@@ -174,26 +181,33 @@ class OllamaAgentsEngine(BaseEngine):
         return obj
 
     async def propose_ship_tool(self, ship: Ship, ship_summary: Dict[str, Any]) -> Dict[str, Any]:
-        system = (
-            "You command a single RED ship. Make tactical decisions using only your Ship Summary and the FleetIntent. "
-            "Follow FleetIntent when possible; if immediate safety or opportunity requires otherwise, prefix the summary with 'deviate:'. "
-            "Coordinates: X east (m), Y north (m). Bearings: 0°=North, 90°=East. "
-            "Output EXACTLY one JSON object with keys {tool, arguments, summary}. No markdown or extra keys. Allowed tools: "
-            "set_nav(heading: float 0-359.9, speed: float >=0, depth: float >=0); "
-            "fire_torpedo(tube: int, bearing: float 0-359.9, run_depth: float, enable_range: float); "
-            "deploy_countermeasure(type: 'noisemaker'|'decoy'). Use only tools supported by your capabilities."
-        )
-        ss = dict(ship_summary)
-        ss.pop("_prompt_hint", None)
-        user = (
-            "SHIP_SUMMARY_JSON:\n" + json.dumps(ss, separators=(",", ":")) +
-            "\n\nFORMAT & BEHAVIOR:\n"
-            "- Prefer the FleetIntent; if deviating, prefix summary with 'deviate:'.\n"
-            "- Use only allowed tools supported by capabilities. Choose plausible parameters (e.g., bearings from contacts).\n"
-            "- If no change is needed, return set_nav holding current values with a brief summary.\n"
-            "- Output ONLY one JSON with keys {tool, arguments, summary}."
-        )
-        content = await self._chat(system, user)
+        # Honor explicit prompt hint if provided by orchestrator for exact reproducibility
+        hint = ship_summary.get("_prompt_hint") if isinstance(ship_summary, dict) else None
+        if isinstance(hint, dict) and hint.get("system_prompt") and hint.get("user_prompt"):
+            system = str(hint.get("system_prompt"))
+            user = str(hint.get("user_prompt"))
+            content = await self._chat(system, user)
+        else:
+            system = (
+                "You command a single RED ship. Make tactical decisions using only your Ship Summary and the FleetIntent. "
+                "Follow FleetIntent when possible; if immediate safety or opportunity requires otherwise, prefix the summary with 'deviate:'. "
+                "Coordinates: X east (m), Y north (m). Bearings: 0°=North, 90°=East. "
+                "Output EXACTLY one JSON object with keys {tool, arguments, summary}. No markdown or extra keys. Allowed tools: "
+                "set_nav(heading: float 0-359.9, speed: float >=0, depth: float >=0); "
+                "fire_torpedo(tube: int, bearing: float 0-359.9, run_depth: float, enable_range: float); "
+                "deploy_countermeasure(type: 'noisemaker'|'decoy'). Use only tools supported by your capabilities."
+            )
+            ss = dict(ship_summary)
+            ss.pop("_prompt_hint", None)
+            user = (
+                "SHIP_SUMMARY_JSON:\n" + json.dumps(ss, separators=(",", ":")) +
+                "\n\nFORMAT & BEHAVIOR:\n"
+                "- Prefer the FleetIntent; if deviating, prefix summary with 'deviate:'.\n"
+                "- Use only allowed tools supported by capabilities. Choose plausible parameters (e.g., bearings from contacts).\n"
+                "- If no change is needed, return set_nav holding current values with a brief summary.\n"
+                "- Output ONLY one JSON with keys {tool, arguments, summary}."
+            )
+            content = await self._chat(system, user)
         obj = _extract_json(content)
         if obj is None:
             # Fallback handled by orchestrator validation; return an impossible tool to trigger fallback
@@ -215,6 +229,27 @@ class OpenAIAgentsEngine(BaseEngine):
         self.model = model
 
     async def propose_fleet_intent(self, fleet_summary: Dict[str, Any]) -> Dict[str, Any]:
+        # Honor explicit prompt hint if provided by orchestrator for exact reproducibility
+        hint = fleet_summary.get("_prompt_hint") if isinstance(fleet_summary, dict) else None
+        if isinstance(hint, dict) and hint.get("system_prompt") and hint.get("user_prompt"):
+            system_prompt = str(hint.get("system_prompt"))
+            user_prompt = str(hint.get("user_prompt"))
+            content = user_prompt  # default fallback
+            # Optional tracing using OpenAI Agents SDK's trace() if available
+            try:
+                from agents import trace  # type: ignore
+                from agents import Runner  # type: ignore
+                agent = self.Agent(name="FleetCommander", instructions=system_prompt, model=self.model)
+                with trace(name="fleet.propose_intent", metadata={"summary_size": len(user_prompt)}):  # type: ignore
+                    result = await Runner.run(agent, user_prompt)  # type: ignore[attr-defined]
+                    content = str(result.final_output)
+            except Exception:
+                # As a last resort, try to parse the provided user prompt directly (should still be JSON per our hints)
+                content = user_prompt
+            obj = _extract_json(content)
+            if obj is None:
+                raise ValueError("Failed to parse FleetIntent JSON from OpenAI Agents output")
+            return obj
         # Optional tracing using OpenAI Agents SDK's trace() if available
         try:
             from agents import trace  # type: ignore
@@ -257,6 +292,25 @@ class OpenAIAgentsEngine(BaseEngine):
         return obj
 
     async def propose_ship_tool(self, ship: Ship, ship_summary: Dict[str, Any]) -> Dict[str, Any]:
+        # Honor explicit prompt hint if provided by orchestrator for exact reproducibility
+        hint = ship_summary.get("_prompt_hint") if isinstance(ship_summary, dict) else None
+        if isinstance(hint, dict) and hint.get("system_prompt") and hint.get("user_prompt"):
+            system_prompt = str(hint.get("system_prompt"))
+            user_prompt = str(hint.get("user_prompt"))
+            content = user_prompt
+            try:
+                from agents import trace  # type: ignore
+                from agents import Runner  # type: ignore
+                agent = self.Agent(name=f"ShipCommander-{ship.id}", instructions=system_prompt, model=self.model)
+                with trace(name=f"ship.propose_tool.{ship.id}", metadata={"summary_size": len(user_prompt)}):  # type: ignore
+                    result = await Runner.run(agent, user_prompt)  # type: ignore[attr-defined]
+                    content = str(result.final_output)
+            except Exception:
+                content = user_prompt
+            obj = _extract_json(content)
+            if obj is None:
+                raise ValueError("Failed to parse tool call JSON from OpenAI Agents output")
+            return obj
         # Optional tracing using OpenAI Agents SDK's trace() if available
         try:
             from agents import trace  # type: ignore

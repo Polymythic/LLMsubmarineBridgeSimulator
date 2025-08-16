@@ -425,21 +425,57 @@ class AgentsOrchestrator:
             # Capture full API call for debugging (mission-agnostic prompts)
             api_call_debug = {
                 "system_prompt": (
-                    "You are the RED Fleet Commander. Define mid-level FleetIntent that encodes strategy and objectives; do not micromanage tactics. "
-                    "Use only the provided summaries; never assume ground-truth enemy positions. Coordinates: X east (m), Y north (m). "
-                    "Output ONLY one JSON object with fields: objectives (per-ship destination [x,y], optional speed_kn, goal), emcon (optional), summary, notes (optional)."
+                    "You are the RED Fleet Commander. You will produce a FleetIntent JSON that matches the schema provided in the user message. "
+                    "Follow that schema exactly. Use only the provided data. Output only JSON, no prose or markdown. Do not add fields."
                 ),
                 "user_prompt": (
-                    "FLEET_SUMMARY_JSON:\n" + json.dumps(summary, separators=(',', ':')) +
-                    "\n\nFORMAT REQUIREMENTS:\n"
+                    "SCHEMA (JSON Schema):\n"
+                    "{"
+                    "\"type\":\"object\",\n"
+                    "\"required\":[\"objectives\",\"summary\"],\n"
+                    "\"properties\":{\n"
+                    "  \"objectives\":{\"type\":\"object\",\"additionalProperties\":{\n"
+                    "    \"type\":\"object\",\n"
+                    "    \"required\":[\"destination\",\"goal\"],\n"
+                    "    \"properties\":{\n"
+                    "      \"destination\":{\"type\":\"array\",\"items\":{\"type\":\"number\"},\"minItems\":2,\"maxItems\":2},\n"
+                    "      \"speed_kn\":{\"type\":\"number\"},\n"
+                    "      \"goal\":{\"type\":\"string\"}\n"
+                    "    },\n"
+                    "    \"additionalProperties\":false\n"
+                    "  }},\n"
+                    "  \"emcon\":{\"type\":\"object\",\"properties\":{\n"
+                    "    \"active_ping_allowed\":{\"type\":\"boolean\"},\n"
+                    "    \"radio_discipline\":{\"type\":\"string\"}\n"
+                    "  },\"additionalProperties\":false},\n"
+                    "  \"summary\":{\"type\":\"string\"},\n"
+                    "  \"notes\":{\"type\":\"array\",\"items\":{\n"
+                    "    \"type\":\"object\",\n"
+                    "    \"properties\":{\"ship_id\":{\"type\":[\"string\",\"null\"]},\"text\":{\"type\":\"string\"}},\n"
+                    "    \"required\":[\"text\"],\"additionalProperties\":false\n"
+                    "  }}\n"
+                    "},\n"
+                    "\"additionalProperties\":false\n"
+                    "}\n\n"
+                    "DATA (use only this):\n"
+                    "FLEET_SUMMARY_JSON:\n" + json.dumps(summary, separators=(',', ':')) + "\n\n"
+                    "CONSTRAINTS:\n"
                     "- Include EVERY RED ship id under 'objectives' with a 'destination' [x,y] in meters.\n"
-                    "- 'speed_kn' and 'goal' are optional per ship.\n"
-                    "- Output ONLY the JSON object with allowed keys shown above. No extra prose.\n"
+                    "- Each ship MUST include a one-sentence 'goal'.\n"
+                    "- Include 'speed_kn' only if you have a clear recommended speed; otherwise omit it.\n"
+                    "- Include 'notes' if there is advisory context worth surfacing.\n"
                     "- Do not infer unknown enemy truth beyond the provided beliefs.\n"
+                    "- Output ONLY the JSON object conforming to the schema.\n"
                 ),
                 "summary_size": len(str(summary)),
             }
-            intent_raw = await asyncio.wait_for(self._fleet_decide(summary), timeout=max(1.0, CONFIG.ai_poll_s))
+            # Ensure engines receive EXACTLY these prompts by passing a prompt hint
+            summary_for_engine = dict(summary)
+            summary_for_engine["_prompt_hint"] = {
+                "system_prompt": api_call_debug["system_prompt"],
+                "user_prompt": api_call_debug["user_prompt"],
+            }
+            intent_raw = await asyncio.wait_for(self._fleet_decide(summary_for_engine), timeout=max(1.0, CONFIG.ai_poll_s))
             # Normalize/augment intent to ensure objectives/guidance present
             intent = self._normalize_intent(summary, intent_raw)
             # Start with intent as primary tool call
@@ -491,6 +527,7 @@ class AgentsOrchestrator:
         # If empty or missing destinations, derive from mission target_wp for each RED ship
         mission = fleet_summary.get("mission", {}) or {}
         target = mission.get("target_wp")
+        speed_limits = mission.get("speed_limits") or {}
         if target and isinstance(target, (list, tuple)) and len(target) == 2:
             # Check if objectives are missing or incomplete
             needs_defaults = not objectives
@@ -517,6 +554,45 @@ class AgentsOrchestrator:
                         objectives[sid] = {}
                     if "destination" not in objectives[sid]:
                         objectives[sid]["destination"] = [float(target[0]), float(target[1])]
+        # Enforce richer per-ship fields: speed_kn and goal
+        try:
+            for s in (fleet_summary.get("own_fleet", []) or []):
+                sid = s.get("id")
+                if not sid:
+                    continue
+                if sid not in objectives or not isinstance(objectives[sid], dict):
+                    objectives[sid] = {}
+                ship_obj = objectives[sid]
+                # speed default: mission speed_limits (if applicable) else conservative fraction of max speed
+                spd = ship_obj.get("speed_kn")
+                if spd is None:
+                    # Try mission speed limits by group if present; fall back to 0.6 * maxSpeed
+                    max_speed = float(((s.get("constraints") or {}).get("maxSpeed") or 18.0))
+                    # If mission defines convoy/group limits, prefer max of that window
+                    # Here we use any available limit that looks applicable; otherwise default
+                    convoy_limits = None
+                    try:
+                        # naive pick: first numeric max_kn in speed_limits
+                        for _k, v in (speed_limits or {}).items():
+                            if isinstance(v, dict) and isinstance(v.get("max_kn"), (int, float)):
+                                convoy_limits = v
+                                break
+                    except Exception:
+                        convoy_limits = None
+                    if convoy_limits and isinstance(convoy_limits.get("max_kn"), (int, float)):
+                        spd = float(convoy_limits.get("max_kn"))
+                    else:
+                        spd = max(4.0, min(max_speed, 0.6 * max_speed))
+                    ship_obj["speed_kn"] = float(spd)
+                # goal default: concise one-liner
+                if not isinstance(ship_obj.get("goal"), str) or not ship_obj.get("goal").strip():
+                    dest = ship_obj.get("destination")
+                    if isinstance(dest, (list, tuple)) and len(dest) == 2:
+                        ship_obj["goal"] = f"Proceed to [{float(dest[0]):.0f},{float(dest[1]):.0f}] at {float(ship_obj.get('speed_kn', 0.0)):.0f} kn"
+                    else:
+                        ship_obj["goal"] = f"Hold current course and speed"
+        except Exception:
+            pass
         # Remove legacy engagement_rules if present
         if "engagement_rules" in intent:
             try:
@@ -524,11 +600,34 @@ class AgentsOrchestrator:
             except Exception:
                 pass
         intent["objectives"] = objectives
-        # Normalize notes list
+        # Normalize EMCON
+        emcon = intent.get("emcon")
+        if not isinstance(emcon, dict):
+            emcon = {}
+        if "active_ping_allowed" not in emcon:
+            try:
+                emcon["active_ping_allowed"] = bool((((mission.get("emcon") or {}).get("RED") or {}).get("active_ping_allowed", False)))
+            except Exception:
+                emcon["active_ping_allowed"] = False
+        if "radio_discipline" not in emcon:
+            try:
+                emcon["radio_discipline"] = str((((mission.get("emcon") or {}).get("RED") or {}).get("radio_discipline", "restricted")))
+            except Exception:
+                emcon["radio_discipline"] = "restricted"
+        intent["emcon"] = emcon
+        # Normalize notes list (ensure present; add a default advisory if empty)
         notes = intent.get("notes")
         if not isinstance(notes, list):
             notes = []
+        if not notes:
+            try:
+                notes = [{"ship_id": None, "text": "Auto: adhere EMCON and maintain formation; speeds may be adjusted tactically by ships."}]
+            except Exception:
+                notes = []
         intent["notes"] = notes
+        # Ensure top-level summary exists
+        if not isinstance(intent.get("summary"), str) or not intent.get("summary"):
+            intent["summary"] = self._summarize_fleet_intent(intent)
         return intent
 
     def _summarize_fleet_intent(self, intent: Dict[str, Any]) -> str:
@@ -538,7 +637,11 @@ class AgentsOrchestrator:
                 if isinstance(obj, dict) and "destination" in obj:
                     d = obj["destination"]
                     if isinstance(d, (list, tuple)) and len(d) == 2:
-                        dests.append(f"{sid}→[{float(d[0]):.0f},{float(d[1]):.0f}]")
+                        spd = obj.get("speed_kn")
+                        if isinstance(spd, (int, float)):
+                            dests.append(f"{sid}→[{float(d[0]):.0f},{float(d[1]):.0f}]@{float(spd):.0f}kn")
+                        else:
+                            dests.append(f"{sid}→[{float(d[0]):.0f},{float(d[1]):.0f}]")
             notes = "; ".join([n.get("text", "") for n in (intent.get("notes") or []) if isinstance(n, dict)])
             parts = []
             if dests:
@@ -590,20 +693,37 @@ class AgentsOrchestrator:
             # Capture full API call for debugging (mission-agnostic prompts)
             api_call_debug = {
                 "system_prompt": (
-                    "You command a single RED ship. Make tactical decisions using only your Ship Summary and the FleetIntent. "
-                    "Prefer following the FleetIntent; if deviating, prefix the summary with 'deviate:'. "
-                    "Coordinates: X east (m), Y north (m). Bearings: 0°=North, 90°=East. Output EXACTLY one JSON object with keys {tool, arguments, summary}. "
-                    "No markdown or extra keys. Allowed tools: set_nav(heading, speed, depth); fire_torpedo(tube, bearing, run_depth, enable_range); deploy_countermeasure(type)."
+                    "You command a single RED ship. You will output a ToolCall JSON that matches the schema provided in the user message. "
+                    "Follow that schema exactly. Use only the provided data. Output only JSON, no prose or markdown. Do not add fields."
                 ),
                 "user_prompt": (
-                    "SHIP_SUMMARY_JSON:\n" + json.dumps(summary, separators=(',', ':')) +
-                    "\n\nFORMAT & BEHAVIOR:\n"
+                    "SCHEMA (JSON Schema):\n"
+                    "{"
+                    "\"type\":\"object\",\n"
+                    "\"required\":[\"tool\",\"arguments\",\"summary\"],\n"
+                    "\"properties\":{\n"
+                    "  \"tool\":{\"type\":\"string\",\"enum\":[\"set_nav\",\"fire_torpedo\",\"deploy_countermeasure\"]},\n"
+                    "  \"arguments\":{\"type\":\"object\",\"additionalProperties\":true},\n"
+                    "  \"summary\":{\"type\":\"string\"}\n"
+                    "},\n"
+                    "\"additionalProperties\":false\n"
+                    "}\n\n"
+                    "DATA (use only this):\n"
+                    "SHIP_SUMMARY_JSON:\n" + json.dumps(summary, separators=(',', ':')) + "\n\n"
+                    "BEHAVIOR:\n"
                     "- Prefer the FleetIntent; if deviating, prefix summary with 'deviate:'.\n"
-                    "- Use only allowed tools and choose plausible parameters. If no change needed, return set_nav with current values and a brief summary.\n"
+                    "- Use only tools supported by capabilities.\n"
+                    "- If no change is needed, return set_nav holding current values with a brief summary.\n"
                 ),
                 "summary_size": len(str(summary)),
             }
-            tool = await asyncio.wait_for(self._ship_decide(ship, summary), timeout=max(1.0, CONFIG.ai_poll_s))
+            # Ensure engines receive EXACTLY these prompts by passing a prompt hint
+            summary_for_engine = dict(summary)
+            summary_for_engine["_prompt_hint"] = {
+                "system_prompt": api_call_debug["system_prompt"],
+                "user_prompt": api_call_debug["user_prompt"],
+            }
+            tool = await asyncio.wait_for(self._ship_decide(ship, summary_for_engine), timeout=max(1.0, CONFIG.ai_poll_s))
             result["tool_calls"] = [tool]
             # Validate tool; fallback to intent-driven set_nav if invalid
             tool_name = (tool or {}).get("tool") if isinstance(tool, dict) else None

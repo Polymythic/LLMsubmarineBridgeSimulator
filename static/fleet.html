@@ -9,8 +9,8 @@
     h1 { font-family: ui-monospace, Menlo, monospace; }
     .grid { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
     .card { background:#11172B; border:1px solid #1B2440; padding:12px; border-radius:8px; }
-    pre { background:#0E1326; border:1px solid #1B2440; padding:8px; border-radius:6px; color:#BBD1FF; overflow:auto; max-height: 40vh; }
-    #log { max-height: 180px; overflow-y: auto; white-space: pre-wrap; }
+    pre { background:#0E1326; border:1px solid #1B2440; padding:8px; border-radius:6px; color:#BBD1FF; overflow:auto; max-height: 60vh; white-space: pre-wrap; word-break: break-word; }
+    #log { max-height: 60vh; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
     .row { display:flex; gap:12px; align-items:center; }
     .pill { padding:2px 8px; border-radius:999px; background:#1B2440; color:#C8D5FF; font-size:12px; }
 
@@ -36,12 +36,22 @@
           if(msg.topic !== 'telemetry') return;
           const d = msg.data || {};
           const intent = d.fleetIntent || {};
-          const runs = d.aiRuns || [];
           document.getElementById('intent').textContent = JSON.stringify(intent, null, 2);
-          document.getElementById('runs').textContent = JSON.stringify(runs.slice(-20), null, 2);
           // Show concise summaries inline in log for quick human read
-          const ships = d.ships || [];
-          document.getElementById('ships').textContent = JSON.stringify(ships, null, 2);
+          const runs = d.aiRuns || [];
+          // API call history with api_call_debug (latest 20)
+          try {
+            const hist = runs.slice(-20).map(r => ({
+              agent: r.agent,
+              at: r.at,
+              ship_id: r.ship_id,
+              tool_calls: r.tool_calls,
+              summary: r.summary,
+              api_call_debug: r.api_call_debug
+            }));
+            const apiEl = document.getElementById('apiHistory');
+            if (apiEl) apiEl.textContent = JSON.stringify(hist, null, 2);
+          } catch {}
           const engines = d.engines || {};
           const fleet = engines.fleet || {}; const ship = engines.ship || {};
           const banner = `Fleet: ${fleet.engine||'stub'} (${fleet.model||'stub'}) | Ship: ${ship.engine||'stub'} (${ship.model||'stub'})`;
@@ -75,10 +85,6 @@
       try{
         const r = await fetch(`/api/ai/health`);
         const d = await r.json();
-        const runsEl = document.getElementById('runs');
-        const cur = (()=>{ try { return JSON.parse(runsEl.textContent||'[]'); } catch { return []; } })();
-        cur.push({agent:"system", at:new Date().toISOString(), tool_calls:[{tool:"health_check", arguments:d}]});
-        runsEl.textContent = JSON.stringify(cur.slice(-20), null, 2);
         appendLog(`${new Date().toISOString()} - system - health_check fleet=${d.fleet && d.fleet.ok ? 'ok':'fail'} ship=${d.ship && d.ship.ok ? 'ok':'fail'}`);
       } catch {}
     }
@@ -93,19 +99,16 @@
       <pre id="intent">{}</pre>
     </div>
     <div class="card">
-      <strong>Recent AI Runs (last 20)</strong>
-      <pre id="runs">[]</pre>
+      <strong>AI Call Log</strong>
+      <pre id="log"></pre>
     </div>
   </div>
-  <div class="card" style="margin-top:12px;">
-    <strong>Ships (Truth for UI only)</strong>
-    <pre id="ships">[]</pre>
-  </div>
-  <div class="card" style="margin-top:12px;">
-    <strong>AI Call Log</strong>
-    <pre id="log"></pre>
+  <div class="card" style="margin-top:12px; grid-column: 1 / -1;">
+    <strong>API Call History (latest 20)</strong>
+    <pre id="apiHistory">[]</pre>
   </div>
 </body>
 </html>
+
 
 

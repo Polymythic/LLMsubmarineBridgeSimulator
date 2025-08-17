@@ -452,8 +452,44 @@ class AgentsOrchestrator:
             # Capture full API call for debugging (mission-agnostic prompts)
             api_call_debug = {
                 "system_prompt": (
-                    "You are the RED Fleet Commander. You will produce a FleetIntent JSON that matches the schema provided in the user message. "
-                    "Follow that schema exactly. Use only the provided data. Output only JSON, no prose or markdown. Do not add fields."
+                    "You are the RED Fleet Commander in a naval wargame.\n"
+                    "Your role is to produce a `FleetIntent` JSON that strictly follows the provided schema.\n"
+                    "Do not output anything except valid JSON conforming to schema.\n"
+                    "You control all RED ships: destroyers, escorts, supply ships, and submarines.\n"
+                    "You must translate high-level mission objectives into concrete ship tasks, formations, and tactical guidance.\n\n"
+                    "### Duties\n"
+                    "1. **Formation & Strategy (Summary field)**\n"
+                    "   - Always describe the fleet-wide strategy in tactical terms, not just the mission restated.\n"
+                    "   - Organize ships into task groups (e.g., Convoy A, Convoy B, Sub screen) and describe their roles.\n"
+                    "   - Explicitly list key ship positions or offsets (e.g., “dd-01 escorts supply-01 1 km ahead”).\n"
+                    "   - Capture EMCON posture and baseline speeds.\n"
+                    "   - Repeat strategy across turns unless you are adapting — do not thrash.\n\n"
+                    "2. **Ship Objectives**\n"
+                    "   - Every RED ship must appear under `objectives`.\n"
+                    "   - Include `destination` [x,y] and a one-sentence `goal`.\n"
+                    "   - Add `speed_kn` only if a clear recommendation exists.\n\n"
+                    "3. **EMCON**\n"
+                    "   - Always set `active_ping_allowed` and `radio_discipline`.\n"
+                    "   - If conditions for escalation exist (e.g., when to allow active sonar), place them in `notes`.\n\n"
+                    "4. **Contact Picture**\n"
+                    "   - If bearings or detections exist, perform a rough TDC-like analysis.\n"
+                    "   - Fuse multiple bearings into an approximate location, course, and speed of the suspected contact.\n"
+                    "   - Include this as a note, e.g., “Bearings converge: possible sub at [x,y], heading ~200, ~12 knots.”\n\n"
+                    "5. **Notes**\n"
+                    "   - Use `notes` to give conditional rules, task-group coordination, or advisories.\n"
+                    "   - Link escorts to their convoys, give subs patrol doctrine, or note engagement rules.\n"
+                    "   - Keep concise and actionable.\n\n"
+                    "6. **Constraints**\n"
+                    "   - Do not invent enemy truth beyond provided beliefs.\n"
+                    "   - Do not omit RED ships.\n"
+                    "   - Do not output extra fields outside the schema.\n\n"
+                    "### Schema (reminder)\n"
+                    "{\n"
+                    " \"objectives\": { ship_id: { \"destination\": [x,y], \"goal\": \"string\", \"speed_kn\": optional number }},\n"
+                    " \"emcon\": { \"active_ping_allowed\": bool, \"radio_discipline\": \"string\" },\n"
+                    " \"summary\": \"string\",\n"
+                    " \"notes\": [ { \"ship_id\": optional, \"text\": \"string\" } ]\n"
+                    "}\n"
                 ),
                 "user_prompt": (
                     "SCHEMA (JSON Schema):\n"
@@ -763,7 +799,7 @@ class AgentsOrchestrator:
             # Capture full API call for debugging (mission-agnostic prompts)
             api_call_debug = {
                 "system_prompt": (
-                    "You command a single RED ship. You will output a ToolCall JSON that matches the schema provided in the user message. "
+                    "You command a single RED ship as its captain. You will output a ToolCall JSON that matches the schema provided in the user message. "
                     "Follow that schema exactly. Use only the provided data. Output only JSON, no prose or markdown. Do not add fields."
                 ),
                 "user_prompt": (
@@ -780,11 +816,11 @@ class AgentsOrchestrator:
                     "}\n\n"
                     "DATA (use only this):\n"
                     "SHIP_SUMMARY_JSON:\n" + json.dumps(summary, separators=(',', ':')) + "\n\n"
-                    "BEHAVIOR:\n"
-                    "- Prefer the FleetIntent; if deviating, prefix summary with 'deviate:'.\n"
-                    "- Use only tools supported by capabilities.\n"
-                    "- If no change is needed, return set_nav holding current values with a brief summary.\n"
-                    "- The 'summary' MUST be one short, human-readable sentence explaining intent and rationale (e.g., 'Heading to 3000,2000 to investigate passive sonar contact').\n"
+                    "BEHAVIOR:\n- As a RED ship captain, use the FleetIntent's objectives as a guide, but prioritize the needs of your own ship.\n" 
+                    " - Make decisions that align with the FleetIntent while considering factors such as speed, resources, and potential risks.\n"
+                    " - Use only tools supported by capabilities.\n"
+                    " - If no change is needed, return set_nav holding current values with a brief summary.\n"
+                    " - The 'summary' MUST be two short, human-readable sentences explaining intent and reasoning for your orders. \n"
                 ),
                 "summary_size": len(str(summary)),
             }

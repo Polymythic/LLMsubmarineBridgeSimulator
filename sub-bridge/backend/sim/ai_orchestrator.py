@@ -523,12 +523,14 @@ class AgentsOrchestrator:
                     "DATA (use only this):\n"
                     "FLEET_SUMMARY_JSON:\n" + json.dumps(summary, separators=(',', ':')) + "\n\n"
                     "CONSTRAINTS:\n"
-                    "- Include EVERY RED ship id under 'objectives' with a 'destination' [x,y] in meters.\n"
+                    "- Include EVERY RED ship id under 'objectives'.\n"
                     "- Each ship MUST include a one-sentence 'goal'.\n"
-                    "- Include 'speed_kn' only if you have a clear recommended speed; otherwise omit it.\n"
-                    "- Include 'notes' if there is advisory context worth surfacing.\n"
-                    "- Do not infer unknown enemy truth beyond the provided beliefs.\n"
-                    "- Output ONLY the JSON object conforming to the schema.\n"
+                    "- Include 'speed_kn' only if clearly recommended.\n"
+                    "- If bearings exist, attempt to produce a fused contact estimate (location, course, speed).\n"
+                    "- Encode strategy in the 'summary' so that strategy is persistent across turns.\n"
+                    "- Use 'notes' for conditional rules, escort logic, patrol instructions, and advisories.\n"
+                    "- Do not infer unknown enemy truth beyond provided beliefs.\n"
+                    "- Output ONLY the JSON object conforming to the schema\n"
                 ),
                 "summary_size": len(str(summary)),
             }

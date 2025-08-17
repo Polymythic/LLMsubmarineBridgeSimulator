@@ -128,6 +128,7 @@
 ### Sonar Model (Lightweight)
 - Passive: bearing-only; bearing noise ~ N(0, σ) with σ higher at quiet; contact confidence rises as SNR accumulates; baffles wedge behind ownship.
 - Active: ping event returns noisy range+bearing; triggers counter-detected events by enemies.
+ - Projectiles: torpedoes and depth charges are rendered as passive contacts; depth charge detonations are highlighted on the waterfall.
 
 ### Weapons Model
 - Tubes: 6; states and timing → reload 45 s; flood 8 s; doors 3 s.
@@ -155,6 +156,7 @@
     "ownship":{"heading":266.2,"orderedHeading":270,"speed":11.2,"depth":98,"cavitation":false},
     "contacts":[{"id":"C1","bearing":143,"strength":0.62,"classifiedAs":"SSN?","confidence":0.41}],
     "events":[],
+    "noise": {"helm_dB": 62.4, "sonar_dB": 59.8, "weapons_dB": 64.3, "engineering_dB": 72.1, "total_dB": 78.2},
     "pingResponses":[{"id":"red-01","bearing":145.2,"range_est":3200.0,"strength":0.42,"at":"2025-08-12T14:22:05Z"}],
     "lastPingAt":"2025-08-12T14:22:05Z"
   }

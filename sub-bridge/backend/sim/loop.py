@@ -13,11 +13,12 @@ from ..assets import load_ship_catalog, load_mission_by_id, apply_mission_to_wor
 from ..storage import init_engine, create_run, insert_snapshot, insert_event
 from .ecs import World
 from .physics import integrate_kinematics
-from .sonar import passive_contacts, ActivePingState, active_ping
+from .sonar import passive_contacts, ActivePingState, active_ping, passive_projectiles
 from .weapons import try_load_tube, try_flood_tube, try_set_doors, try_fire, step_torpedo, step_tubes, try_drop_depth_charges, step_depth_charge, try_launch_torpedo_quick
 from .ai_tools import LocalAIStub
 from .ai_orchestrator import AgentsOrchestrator
 from .damage import step_damage, step_engineering
+from .noise import NoiseEngine
 
 
 class Simulation:
@@ -49,6 +50,8 @@ class Simulation:
         # Station task state
         self._active_tasks: Dict[str, list[MaintenanceTask]] = {s: [] for s in ["helm", "sonar", "weapons", "engineering"]}
         self._task_spawn_timers: Dict[str, float] = {s: CONFIG.first_task_delay_s for s in ["helm", "sonar", "weapons", "engineering"]}
+        # Noise aggregation engine
+        self._noise = NoiseEngine()
         # Mission briefing and ROE (only set defaults if not set by mission assets)
         if not hasattr(self, "mission_brief"):
             self.mission_brief = {
@@ -587,6 +590,9 @@ class Simulation:
             dt,
             ballast_boost=ballast_boost,
         )
+        # Cavitation impulse (helm)
+        if cav:
+            self._noise.add_impulse("helm", 82.0, 0.5)
 
         # Step weapon timers/cooldowns (tubes and depth charge cooldowns) for all ships
         for s in self.world.all_ships():
@@ -613,6 +619,17 @@ class Simulation:
             for dc in list(self.world.depth_charges):
                 def _on_dc_event(name: str, payload: dict) -> None:
                     insert_event(self.engine, self.run_id, name, json.dumps(payload))
+                    if name == "depth_charge.detonated":
+                        try:
+                            tx = float(payload.get("x", 0.0)); ty = float(payload.get("y", 0.0))
+                            dx = tx - own.kin.x; dy = ty - own.kin.y
+                            brg_true = (math.degrees(math.atan2(dx, dy)) % 360.0)
+                            if not hasattr(self, "_sonar_explosions"):
+                                self._sonar_explosions = []
+                            self._sonar_explosions.append({"bearing": float(brg_true), "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
+                            self._sonar_explosions = self._sonar_explosions[-12:]
+                        except Exception:
+                            pass
                 step_depth_charge(dc, self.world, dt, on_event=_on_dc_event)
                 if dc.get("exploded", False) or dc.get("depth", 0.0) > 1000.0:
                     self.world.depth_charges.remove(dc)
@@ -656,6 +673,9 @@ class Simulation:
         except Exception:
             pass
 
+        # Compute per-station noise dB for UI
+        noise_levels = self._noise.tick(own, self.world, dt, self)
+
         base = {
             "ownship": {
                 "x": own.kin.x,
@@ -670,6 +690,13 @@ class Simulation:
             },
             "acoustics": {"noiseBudget": noise_budget, "detectability": detectability, "emconRisk": ("high" if noise_budget >= 75 else "med" if noise_budget >= 40 else "low"), "emconAlert": emcon_alert},
             "events": list(self._transient_events),
+            "noise": {
+                "helm_dB": noise_levels.get("helm", 0.0),
+                "sonar_dB": noise_levels.get("sonar", 0.0),
+                "weapons_dB": noise_levels.get("weapons", 0.0),
+                "engineering_dB": noise_levels.get("engineering", 0.0),
+                "total_dB": noise_levels.get("total", 0.0),
+            },
         }
 
         # Broadcast class/capabilities in the general telemetry for downstream consumers/AI
@@ -719,7 +746,12 @@ class Simulation:
         # For now, only generate on demand when 'sonar.ping' happens; UI will render as DEMON dots
         if not hasattr(self, "_last_ping_responses"):
             self._last_ping_responses = []
-        tel_sonar = {**base, "contacts": [c.dict() for c in contacts], "pingCooldown": max(0.0, self.active_ping_state.timer), "pingResponses": list(self._last_ping_responses), "lastPingAt": getattr(self, "_last_ping_at", None), "tasks": [t.__dict__ for t in self._active_tasks['sonar']]}
+        # Include passive projectiles (torpedoes and depth charges) in sonar contacts
+        proj_contacts = passive_projectiles(own, self.world.torpedoes, getattr(self.world, "depth_charges", []))
+        # Initialize explosion overlays list if absent
+        if not hasattr(self, "_sonar_explosions"):
+            self._sonar_explosions = []
+        tel_sonar = {**base, "contacts": [c.dict() for c in (contacts + proj_contacts)], "pingCooldown": max(0.0, self.active_ping_state.timer), "pingResponses": list(self._last_ping_responses), "lastPingAt": getattr(self, "_last_ping_at", None), "explosions": list(self._sonar_explosions), "tasks": [t.__dict__ for t in self._active_tasks['sonar']]}
         tel_weapons = {**base, "tubes": [t.dict() for t in own.weapons.tubes], "consentRequired": CONFIG.require_captain_consent, "captainConsent": self._captain_consent, "tasks": [t.__dict__ for t in self._active_tasks['weapons']]}
         tel_engineering = {**base, "reactor": own.reactor.dict(), "pumps": {"fwd": self._pump_fwd, "aft": self._pump_aft}, "damage": own.damage.dict(), "power": own.power.dict(), "systems": own.systems.dict(), "maintenance": own.maintenance.levels, "tasks": [t.__dict__ for t in self._active_tasks['engineering']]}
 

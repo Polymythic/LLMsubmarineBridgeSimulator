@@ -11,6 +11,9 @@
     button { margin-top:12px; padding:8px 12px; background:#26406E; border:none; color:#D7E3FF; border-radius:6px; }
     .row { display:flex; gap:12px; flex-wrap:wrap; }
     .pill { padding:4px 8px; border-radius:12px; background:#0F162A; border:1px solid #1B2440; }
+    #dbWrap { width: 30px; height: 160px; border:1px solid #1B2440; background:#0B1020; position: relative; border-radius:4px; }
+    #dbFill { position:absolute; bottom:0; left:0; right:0; background: linear-gradient(180deg, #8DEB8D 0%, #FACC15 60%, #EF4444 100%); }
+    #dbPeak { position:absolute; left:0; right:0; height:3px; background:#FF6B6B; box-shadow:0 0 6px rgba(255,107,107,0.8); }
   </style>
 </head>
 <body>
@@ -65,6 +68,11 @@
       <div class="pill">Radio: <span id="radioOk">OK</span></div>
       <div class="pill">Periscope: <span id="periscopeOk">OK</span></div>
       <div class="pill">Tubes: <span id="tubesOk">OK</span></div>
+      <div class="pill">Eng Noise: <span id="engNoise">0</span> dB</div>
+      <div id="dbWrap" title="Engineering noise">
+        <div id="dbFill" style="height:0px;"></div>
+        <div id="dbPeak" style="bottom:0px;"></div>
+      </div>
     </div>
     <div class="row">
       <div class="pill" title="Battery state of charge">Battery: <span id="bat">100</span>%</div>
@@ -130,6 +138,19 @@
     const radioOk = document.getElementById('radioOk');
     const periscopeOk = document.getElementById('periscopeOk');
     const tubesOk = document.getElementById('tubesOk');
+    const engNoise = document.getElementById('engNoise');
+    const dbWrap = document.getElementById('dbWrap');
+    const dbFill = document.getElementById('dbFill');
+    const dbPeak = document.getElementById('dbPeak');
+    let peakHold = 0;
+    function setDbMeter(db){
+      const h = dbWrap.clientHeight || 160;
+      const clamped = Math.max(0, Math.min(100, db));
+      const px = Math.floor((clamped/100)*h);
+      dbFill.style.height = px + 'px';
+      peakHold = Math.max(peakHold - 1, px);
+      dbPeak.style.bottom = (peakHold-2) + 'px';
+    }
     mw.oninput = () => mwv.textContent = mw.value;
     function showToast(msg){ const t=document.getElementById('toast'); t.textContent = msg; t.style.display='block'; setTimeout(()=>t.style.display='none', 2500); }
     
@@ -162,6 +183,7 @@
         if (!pEng.dataset.userSet) pEng.value = (p.engineering ?? 0.25).toFixed(2);
         updateAllocLabels();
         // Systems
+        const nz = (m.data.noise && m.data.noise.engineering_dB) || 0; engNoise.textContent = nz.toFixed(0); setDbMeter(nz);
         const sys = m.data.systems || {};
         const setOk = (el, ok) => { el.textContent = ok ? 'OK' : 'FAIL'; el.style.color = ok ? '#8DEB8D' : '#FF6B6B'; };
         setOk(rudderOk, !!sys.rudder_ok); setOk(ballastOk, !!sys.ballast_ok); setOk(sonarOk, !!sys.sonar_ok);

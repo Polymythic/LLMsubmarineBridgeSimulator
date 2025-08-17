@@ -41,6 +41,8 @@ A cooperative, local-multiplayer submarine bridge simulator. Five players occupy
 - Shared power budget forces tradeoffs across propulsion, sensors, weapons, and maintenance.
 - Maintenance/failure model: low maintenance degrades or disables systems; recovery requires sustained Engineering allocation.
 - Active sonar pings: cooldown-limited, with responses rendered and listed; trigger counter-detection events.
+- Station noise meters: each station UI shows a station-only dB meter with peak-hold; Captain sees only an aggregate ship dB meter (forces comms/coordination). Sources include reactor MW, pumps, tube operations (load/flood/doors), cavitation, maintenance tasks, masts raised, and weapon events.
+- Passive sonar now includes torpedoes and depth charges; depth charge detonations appear as bold orange bearings on the waterfall.
 
 ### Bearings
 - The sim uses compass bearings: 0°=North, 90°=East, 180°=South, 270°=West. If ownship is at (0,0) heading 000 and another ship is at (x>0, y=0), its true bearing is ~090.
@@ -73,6 +75,7 @@ A cooperative, local-multiplayer submarine bridge simulator. Five players occupy
 - Information boundaries: Fleet sees only mission supplement + enemy belief (no truth); Ships see only local state and FleetIntent subset.
 - Engines: Pluggable AI engines (stub, local `ollama`, remote OpenAI). Calls are async so the 20 Hz loop remains authoritative.
 - Debug/Control: `/fleet` shows engines/models, `FleetIntent`, and recent runs.
+- Fleet Commander cadence triggers: runs infrequently by default, but will run immediately and switch to alert cadence if a RED ship first achieves a high-confidence contact (thresholds configurable in `.env`).
 
 See also: `docs/AI.md` for detailed schemas, prompts, scheduling, and agent-based handoff/tracing.
 

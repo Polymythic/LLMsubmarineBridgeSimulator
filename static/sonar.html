@@ -34,6 +34,13 @@
         <div class="label" title="Bearing axis centered at 0°; time flows downward">Passive Waterfall</div>
         <canvas id="legend" width="720" height="24" title="Bearing ticks (270 | 0 | 90)"></canvas>
         <canvas id="waterfall" width="720" height="220" title="Bearing-time-intensity display (0° centered)"></canvas>
+        <div style="display:flex; align-items:flex-end; gap:8px; margin-top:8px;">
+          <div class="label">Sonar Noise: <span id="sonarNoise">0</span> dB</div>
+          <div id="dbWrap" style="width:30px;height:120px;border:1px solid #1B2440;background:#0B1020;position:relative;border-radius:4px;">
+            <div id="dbFill" style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(180deg,#8DEB8D 0%, #FACC15 60%, #EF4444 100%);height:0px;"></div>
+            <div id="dbPeak" style="position:absolute;left:0;right:0;height:3px;background:#FF6B6B;box-shadow:0 0 6px rgba(255,107,107,0.8);bottom:0px;"></div>
+          </div>
+        </div>
       </div>
     </div>
     <div class="panel" style="width:100%;">
@@ -77,6 +84,19 @@
     const list = document.getElementById('contacts');
     const prList = document.getElementById('pingResponses');
     const emcon = document.getElementById('emcon');
+    const sonarNoise = document.getElementById('sonarNoise');
+    const dbWrap = document.getElementById('dbWrap');
+    const dbFill = document.getElementById('dbFill');
+    const dbPeak = document.getElementById('dbPeak');
+    let peakHold = 0;
+    function setDbMeter(db){
+      const h = dbWrap.clientHeight || 120;
+      const clamped = Math.max(0, Math.min(100, db));
+      const px = Math.floor((clamped/100)*h);
+      dbFill.style.height = px + 'px';
+      peakHold = Math.max(peakHold - 1, px);
+      dbPeak.style.bottom = (peakHold-2) + 'px';
+    }
 
     const legend = document.getElementById('legend');
     const lctx = legend.getContext('2d');
@@ -108,13 +128,17 @@
       minors.forEach(b => { const x = xForBearing(b, lW); lctx.beginPath(); lctx.moveTo(x+0.5, lH-10); lctx.lineTo(x+0.5, lH-2); lctx.stroke(); });
       lctx.strokeStyle = '#4C5E9A';
       majors.forEach(b => { const x = xForBearing(b, lW); lctx.beginPath(); lctx.moveTo(x+0.5, lH-16); lctx.lineTo(x+0.5, lH-2); lctx.stroke(); lctx.textAlign='center'; lctx.fillText(String(b), x, 12); });
+      // Legend keys
+      lctx.fillStyle = '#00E5FF'; lctx.fillRect(6, 6, 18, 3); lctx.fillStyle = '#D7E3FF'; lctx.fillText('Own Ping', 28, 12);
+      lctx.strokeStyle = '#FF4DFF'; lctx.setLineDash([4,3]); lctx.beginPath(); lctx.moveTo(110, 7.5); lctx.lineTo(128, 7.5); lctx.stroke(); lctx.setLineDash([]); lctx.fillStyle = '#D7E3FF'; lctx.fillText('Enemy Ping', 134, 12);
+      lctx.fillStyle = '#FF7A00'; lctx.fillRect(240, 6, 18, 5); lctx.fillStyle = '#D7E3FF'; lctx.fillText('Explosion', 264, 12);
     }
 
     drawLegend();
 
     let row = 0;
 
-    function drawWaterfall(contacts, pingResponses){
+    function drawWaterfall(contacts, pingResponses, explosions){
       const imageData = ctx.createImageData(W, 1);
       const data = imageData.data;
       for (let x = 0; x < W; x++){
@@ -144,6 +168,19 @@
         data[base+3] = 255;
       });
       ctx.putImageData(imageData, 0, row);
+      // Overlays: explosions (thick orange), own ping (thin cyan), enemy ping (thin magenta dashed) can be future
+      (explosions || []).forEach(e => {
+        const bearing = ((e.bearing % 360) + 360) % 360;
+        const x = xForBearing(bearing, W);
+        ctx.save();
+        ctx.strokeStyle = '#FF7A00';
+        ctx.lineWidth = 3.5;
+        ctx.beginPath();
+        ctx.moveTo(x + 0.5, row - 6);
+        ctx.lineTo(x + 0.5, row + 6);
+        ctx.stroke();
+        ctx.restore();
+      });
       row = (row + 1) % H;
     }
 
@@ -157,6 +194,7 @@
           tel.textContent = JSON.stringify(m.data, null, 2);
           cd.textContent = (m.data.pingCooldown || 0).toFixed(1);
           if (m.data.acoustics) { emcon.textContent = (m.data.acoustics.emconRisk || 'low'); }
+          const nz = (m.data.noise && m.data.noise.sonar_dB) || 0; sonarNoise.textContent = nz.toFixed(0); setDbMeter(nz);
           
           const tasks = m.data.tasks || [];
           console.log('🔧 Processing tasks:', tasks);
@@ -292,7 +330,7 @@
           });
           prList.innerHTML = '';
           (m.data.pingResponses || []).forEach(p => { const li = document.createElement('li'); li.title = 'Active ping response'; const km = (p.range_est/1000).toFixed(1); li.textContent = `ID ${p.id} brg ${p.bearing.toFixed(0)}° range ~${km} km str ${(+p.strength).toFixed(2)} at ${p.at}`; prList.appendChild(li); });
-          drawWaterfall(m.data.contacts || [], m.data.pingResponses || []);
+          drawWaterfall(m.data.contacts || [], m.data.pingResponses || [], m.data.explosions || []);
         }
       } catch(e){}
     };

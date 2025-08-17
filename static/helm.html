@@ -14,6 +14,9 @@
     .col { flex:1; min-width:260px; }
     .pill { padding:4px 8px; border-radius:12px; background:#0F162A; border:1px solid #1B2440; }
     svg { width:100%; height:220px; }
+    #dbWrap { width: 30px; height: 160px; border:1px solid #1B2440; background:#0B1020; position: relative; border-radius:4px; }
+    #dbFill { position:absolute; bottom:0; left:0; right:0; background: linear-gradient(180deg, #8DEB8D 0%, #FACC15 60%, #EF4444 100%); }
+    #dbPeak { position:absolute; left:0; right:0; height:3px; background:#FF6B6B; box-shadow:0 0 6px rgba(255,107,107,0.8); }
   </style>
 </head>
 <body>
@@ -32,6 +35,13 @@
       </div>
       <div class="col">
         <svg id="speedTele" viewBox="0 0 120 300" title="Speed telegraph"></svg>
+      </div>
+      <div class="col">
+        <div class="pill">Helm Noise: <span id="helmNoise">0</span> dB</div>
+        <div id="dbWrap" title="Helm noise">
+          <div id="dbFill" style="height:0px;"></div>
+          <div id="dbPeak" style="bottom:0px;"></div>
+        </div>
       </div>
     </div>
     <div class="row">
@@ -80,6 +90,19 @@
     const hdgDial = document.getElementById('hdgDial');
     const depthLadder = document.getElementById('depthLadder');
     const speedTele = document.getElementById('speedTele');
+    const helmNoise = document.getElementById('helmNoise');
+    const dbWrap = document.getElementById('dbWrap');
+    const dbFill = document.getElementById('dbFill');
+    const dbPeak = document.getElementById('dbPeak');
+    let peakHold = 0;
+    function setDbMeter(db){
+      const h = dbWrap.clientHeight || 160;
+      const clamped = Math.max(0, Math.min(100, db));
+      const px = Math.floor((clamped/100)*h);
+      dbFill.style.height = px + 'px';
+      peakHold = Math.max(peakHold - 1, px);
+      dbPeak.style.bottom = (peakHold-2) + 'px';
+    }
 
     function drawDial(svg, hdg, ordered){
       svg.innerHTML = '';
@@ -147,6 +170,7 @@
                 drawDial(hdgDial, d.ownship.heading, d.ownship.orderedHeading); 
                 drawLadder(depthLadder, d.ownship.depth, d.ownship.orderedDepth); 
                 drawTele(speedTele, d.ownship.speed, d.ownship.orderedSpeed); 
+                const nz = (d.noise && d.noise.helm_dB) || 0; helmNoise.textContent = nz.toFixed(0); setDbMeter(nz);
                 
                                                 const tasks = d.tasks || []; 
                 console.log('🔧 Processing tasks:', tasks);

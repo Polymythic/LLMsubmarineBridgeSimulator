@@ -12,6 +12,9 @@
     .pip { width:10px; height:10px; border-radius:50%; display:inline-block; margin-left:6px; }
     .on { background:#8BE28B; box-shadow:0 0 8px rgba(139,226,139,0.6); }
     .off { background:#E26969; box-shadow:0 0 8px rgba(226,105,105,0.6); }
+    #dbWrap { width: 30px; height: 160px; border:1px solid #1B2440; background:#0B1020; position: relative; border-radius:4px; }
+    #dbFill { position:absolute; bottom:0; left:0; right:0; background: linear-gradient(180deg, #8DEB8D 0%, #FACC15 60%, #EF4444 100%); }
+    #dbPeak { position:absolute; left:0; right:0; height:3px; background:#FF6B6B; box-shadow:0 0 6px rgba(255,107,107,0.8); }
   </style>
 </head>
 <body>
@@ -26,7 +29,11 @@
     </div>
     <div class="row">
       <div class="pill">EMCON: <span id="emcon">low</span></div>
-      <div class="pill">Noise: <span id="noise">0</span></div>
+      <div class="pill">Noise: <span id="noise">0</span> dB</div>
+      <div id="dbWrap" title="Aggregate ship noise">
+        <div id="dbFill" style="height:0px;"></div>
+        <div id="dbPeak" style="bottom:0px;"></div>
+      </div>
     </div>
     <div class="panel">
       <h3>Mission Brief</h3>
@@ -83,6 +90,10 @@
     const rad = document.getElementById('radio');
     const emcon = document.getElementById('emcon');
     const noise = document.getElementById('noise');
+    const dbWrap = document.getElementById('dbWrap');
+    const dbFill = document.getElementById('dbFill');
+    const dbPeak = document.getElementById('dbPeak');
+    let peakHold = 0;
     function setPip(el, val){ el.className = 'pip ' + (val ? 'on' : 'off'); }
     function setStatus(el, label){
       el.textContent = label;
@@ -90,7 +101,16 @@
       else if (label.includes('Degraded')){ el.style.color = '#F59E0B'; el.style.borderColor = '#F59E0B'; el.style.backgroundColor = 'rgba(245,158,11,0.1)'; }
       else { el.style.color = '#8DEB8D'; el.style.borderColor = '#1B2440'; el.style.backgroundColor = '#0F162A'; }
     }
-    ws.onmessage = (ev) => { try { const m = JSON.parse(ev.data); if (m.topic === 'telemetry') { tel.textContent = JSON.stringify(m.data, null, 2); setPip(per, !!m.data.periscopeRaised); setPip(rad, !!m.data.radioRaised); if (m.data.acoustics){ emcon.textContent = m.data.acoustics.emconRisk || 'low'; noise.textContent = (m.data.acoustics.noiseBudget || 0).toFixed(0);} const mission = m.data.mission || {}; document.getElementById('briefTitle').textContent = mission.title || ''; document.getElementById('briefObj').textContent = mission.objective || ''; const roe = mission.roe || []; const ul = document.getElementById('roe'); ul.innerHTML = ''; roe.forEach(r => { const li=document.createElement('li'); li.textContent = r; ul.appendChild(li); }); const comms = m.data.comms || []; const cu = document.getElementById('comms'); const seen = new Set(Array.from(cu.querySelectorAll('li')).map(li=>li.dataset.key)); comms.forEach(c => { const key = (c.at + c.text); if (!seen.has(key)) { const li=document.createElement('li'); li.dataset.key = key; li.textContent = `${c.at} - ${c.text}`; cu.appendChild(li);} }); const ss = m.data.stationStatus || {}; setStatus(document.getElementById('stHelm'), `Helm: ${ss.helm || 'OK'}`); setStatus(document.getElementById('stSonar'), `Sonar: ${ss.sonar || 'OK'}`); setStatus(document.getElementById('stWeapons'), `Weapons: ${ss.weapons || 'OK'}`); setStatus(document.getElementById('stEng'), `Engineering: ${ss.engineering || 'OK'}`); const scope = document.getElementById('scope'); scope.innerHTML = ''; (m.data.periscopeContacts||[]).forEach(c => { const li=document.createElement('li'); const km=(c.range_m/1000).toFixed(2); li.textContent = `${c.id} ${c.type} brg ${c.bearing.toFixed(0)}° range ${km} km speed ${(+c.speed_kn).toFixed(1)} kn`; scope.appendChild(li); }); } } catch(e){} };
+    function setDbMeter(db){
+      const h = dbWrap.clientHeight || 160;
+      const clamped = Math.max(0, Math.min(100, db));
+      const px = Math.floor((clamped/100)*h);
+      dbFill.style.height = px + 'px';
+      // peak hold falls slowly
+      peakHold = Math.max(peakHold - 1, px);
+      dbPeak.style.bottom = (peakHold-2) + 'px';
+    }
+    ws.onmessage = (ev) => { try { const m = JSON.parse(ev.data); if (m.topic === 'telemetry') { tel.textContent = JSON.stringify(m.data, null, 2); setPip(per, !!m.data.periscopeRaised); setPip(rad, !!m.data.radioRaised); if (m.data.acoustics){ emcon.textContent = m.data.acoustics.emconRisk || 'low'; } const nz = (m.data.noise && m.data.noise.total_dB) || 0; noise.textContent = nz.toFixed(0); setDbMeter(nz); const mission = m.data.mission || {}; document.getElementById('briefTitle').textContent = mission.title || ''; document.getElementById('briefObj').textContent = mission.objective || ''; const roe = mission.roe || []; const ul = document.getElementById('roe'); ul.innerHTML = ''; roe.forEach(r => { const li=document.createElement('li'); li.textContent = r; ul.appendChild(li); }); const comms = m.data.comms || []; const cu = document.getElementById('comms'); const seen = new Set(Array.from(cu.querySelectorAll('li')).map(li=>li.dataset.key)); comms.forEach(c => { const key = (c.at + c.text); if (!seen.has(key)) { const li=document.createElement('li'); li.dataset.key = key; li.textContent = `${c.at} - ${c.text}`; cu.appendChild(li);} }); const ss = m.data.stationStatus || {}; setStatus(document.getElementById('stHelm'), `Helm: ${ss.helm || 'OK'}`); setStatus(document.getElementById('stSonar'), `Sonar: ${ss.sonar || 'OK'}`); setStatus(document.getElementById('stWeapons'), `Weapons: ${ss.weapons || 'OK'}`); setStatus(document.getElementById('stEng'), `Engineering: ${ss.engineering || 'OK'}`); const scope = document.getElementById('scope'); scope.innerHTML = ''; (m.data.periscopeContacts||[]).forEach(c => { const li=document.createElement('li'); const km=(c.range_m/1000).toFixed(2); li.textContent = `${c.id} ${c.type} brg ${c.bearing.toFixed(0)}° range ${km} km speed ${(+c.speed_kn).toFixed(1)} kn`; scope.appendChild(li); }); } } catch(e){} };
     document.getElementById('consent').onclick = () => { ws.send(JSON.stringify({topic:'captain.consent', data:{consent:true}})); setTimeout(()=>ws.send(JSON.stringify({topic:'captain.consent', data:{consent:false}})), 3000); };
     document.getElementById('periscopeBtn').onclick = () => { const next = per.classList.contains('off'); ws.send(JSON.stringify({topic:'captain.periscope.raise', data:{raised: next}})); };
     document.getElementById('radioBtn').onclick = () => { const next = rad.classList.contains('off'); ws.send(JSON.stringify({topic:'captain.radio.raise', data:{raised: next}})); };

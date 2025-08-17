@@ -234,6 +234,7 @@ class OllamaAgentsEngine(BaseEngine):
                 "- Prefer the FleetIntent; if deviating, prefix summary with 'deviate:'.\n"
                 "- Use only allowed tools supported by capabilities. Choose plausible parameters (e.g., bearings from contacts).\n"
                 "- If no change is needed, return set_nav holding current values with a brief summary.\n"
+                "- The 'summary' MUST be one short, human-readable sentence explaining intent and rationale (e.g., 'Heading to 3000,2000 to investigate passive sonar contact').\n"
                 "- Output ONLY one JSON with keys {tool, arguments, summary}."
             )
             content = await self._chat(system, user)
@@ -372,6 +373,7 @@ class OpenAIAgentsEngine(BaseEngine):
             "- Prefer the FleetIntent; if deviating, prefix summary with 'deviate:'.\n"
             "- Use only allowed tools supported by capabilities. Choose plausible parameters (e.g., bearings from contacts).\n"
             "- If no change is needed, return set_nav holding current values with a brief summary.\n"
+            "- The 'summary' MUST be one short, human-readable sentence explaining intent and rationale (e.g., 'Heading to 3000,2000 to investigate passive sonar contact').\n"
             "- Output ONLY one JSON with keys {tool, arguments, summary}."
         )
         content = await self._chat(system, user)

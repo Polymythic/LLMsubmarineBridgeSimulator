@@ -62,15 +62,20 @@
             if (processedKeys.has(key)) continue;
             processedKeys.add(key);
             const when = r.at || new Date().toISOString();
+             const prov = r.provider || 'stub';
+             const mdl = r.model || 'stub';
+             const ok = (r.ok === false) ? 'FAIL' : 'OK';
+             const src = r.source ? ` ${r.source}` : '';
+             const auto = r.autoSummary ? ' autoSummary' : '';
              if (r.agent === 'fleet') {
                const summary = r.summary ? ` | ${r.summary}` : '';
                const tool = r.tool_calls && r.tool_calls.length ? r.tool_calls[0].tool : 'no-op';
-               appendLog(`${when} - fleet commander - ${tool}${summary}`);
+               appendLog(`${when} - fleet commander - ${tool}${summary} [${ok} ${prov}:${mdl}${src}${auto}]`);
             } else if (r.agent === 'ship') {
               const sid = r.ship_id || 'unknown';
                const summary = r.summary ? ` | ${r.summary}` : '';
                const tool = r.tool_calls && r.tool_calls.length ? r.tool_calls[0].tool : 'no-op';
-               appendLog(`${when} - ${sid} - ${tool}${summary}`);
+               appendLog(`${when} - ${sid} - ${tool}${summary} [${ok} ${prov}:${mdl}${src}${auto}]`);
             } else if (r.agent === 'system' && r.tool_calls && r.tool_calls[0] && r.tool_calls[0].tool === 'health_check') {
               const okFleet = r.tool_calls[0].arguments && r.tool_calls[0].arguments.fleet && r.tool_calls[0].arguments.fleet.ok;
               const okShip = r.tool_calls[0].arguments && r.tool_calls[0].arguments.ship && r.tool_calls[0].arguments.ship.ok;

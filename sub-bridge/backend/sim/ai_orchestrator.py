@@ -530,6 +530,10 @@ class AgentsOrchestrator:
                 self._recent_runs = []  # type: ignore[attr-defined]
             self._recent_runs.append({
                 "agent": "fleet",
+                "provider": self._fleet_engine_kind,
+                "model": self._fleet_model,
+                "ok": True,
+                "source": "llm",
                 "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "tool_calls": result["tool_calls_validated"],
                 "summary": fleet_thought,
@@ -543,6 +547,10 @@ class AgentsOrchestrator:
                     self._recent_runs = []  # type: ignore[attr-defined]
                 self._recent_runs.append({  # type: ignore[attr-defined]
                     "agent": "fleet",
+                    "provider": self._fleet_engine_kind,
+                    "model": self._fleet_model,
+                    "ok": False,
+                    "source": "llm",
                     "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                     "error": result["error"],
                     "api_call_debug": {
@@ -728,6 +736,30 @@ class AgentsOrchestrator:
             world = self._world_getter()
             ship = world.get_ship(ship_id)
             summary = self._build_ship_summary(ship)
+            # Policy: if ship engine is 'stub', do not allow actions; record failure for clarity
+            if self._ship_engine_kind == "stub":
+                api_call_debug = {
+                    "system_prompt": "",
+                    "user_prompt": "",
+                    "model": self._ship_model,
+                    "provider_meta": getattr(self._ship_engine, "_last_call_meta", None),
+                }
+                result["error"] = "ship engine 'stub' disabled by policy; only LLM actions allowed"
+                if not hasattr(self, "_recent_runs"):
+                    self._recent_runs = []  # type: ignore[attr-defined]
+                self._recent_runs.append({
+                    "agent": "ship",
+                    "ship_id": ship_id,
+                    "provider": self._ship_engine_kind,
+                    "model": self._ship_model,
+                    "ok": False,
+                    "source": "disabled_stub",
+                    "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "tool_calls": [],
+                    "summary": "",
+                    "api_call_debug": api_call_debug,
+                })  # type: ignore[attr-defined]
+                return result
             # Capture full API call for debugging (mission-agnostic prompts)
             api_call_debug = {
                 "system_prompt": (
@@ -752,6 +784,7 @@ class AgentsOrchestrator:
                     "- Prefer the FleetIntent; if deviating, prefix summary with 'deviate:'.\n"
                     "- Use only tools supported by capabilities.\n"
                     "- If no change is needed, return set_nav holding current values with a brief summary.\n"
+                    "- The 'summary' MUST be one short, human-readable sentence explaining intent and rationale (e.g., 'Heading to 3000,2000 to investigate passive sonar contact').\n"
                 ),
                 "summary_size": len(str(summary)),
             }
@@ -771,11 +804,24 @@ class AgentsOrchestrator:
                 if nav is not None:
                     result["tool_calls_validated"] = [nav]
                     result["error"] = "Unknown tool; applied intent-derived navigation"
+                    source = "intent_fallback"
                 else:
                     result["tool_calls_validated"] = []
                     result["error"] = "Unknown tool returned by engine; no action applied"
+                    source = "none"
             else:
+                # Check presence of a concise human summary; track metadata instead of mutating content
+                auto_summary = False
+                try:
+                    summ = tool.get("summary") if isinstance(tool, dict) else None
+                    if not isinstance(summ, str) or not summ.strip():
+                        auto_summary = True
+                        # Surface a soft error for visibility in /fleet API history
+                        result["error"] = (result.get("error") + "; " if result.get("error") else "") + "missing summary; auto-generated"
+                except Exception:
+                    auto_summary = True
                 result["tool_calls_validated"] = [tool]
+                source = "llm"
             # Add concise human summary of the decision
             try:
                 chosen = result["tool_calls_validated"][0] if result.get("tool_calls_validated") else None
@@ -804,6 +850,11 @@ class AgentsOrchestrator:
             self._recent_runs.append({
                 "agent": "ship",
                 "ship_id": ship_id,
+                "provider": self._ship_engine_kind,
+                "model": self._ship_model,
+                "ok": not bool(result.get("error")),
+                "source": source,
+                "autoSummary": bool('missing summary' in (result.get("error") or "")),
                 "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "tool_calls": result["tool_calls_validated"],
                 "summary": ship_thought,
@@ -818,6 +869,11 @@ class AgentsOrchestrator:
                 self._recent_runs.append({  # type: ignore[attr-defined]
                     "agent": "ship",
                     "ship_id": ship_id,
+                    "provider": self._ship_engine_kind,
+                    "model": self._ship_model,
+                    "ok": False,
+                    "source": "llm",
+                    "autoSummary": False,
                     "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                     "error": result["error"],
                     "api_call_debug": {

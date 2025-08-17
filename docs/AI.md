@@ -208,6 +208,7 @@ SHIP_SUMMARY_JSON:
 FORMAT & BEHAVIOR:
 - Prefer the FleetIntent; if deviating, prefix summary with 'deviate:'.
 - Use only allowed tools supported by capabilities. If no change is needed, return set_nav with current values and a brief summary.
+- The 'summary' MUST be one short, human-readable sentence explaining intent and rationale (e.g., 'Heading to 3000,2000 to investigate passive sonar contact').
 ```
 
 

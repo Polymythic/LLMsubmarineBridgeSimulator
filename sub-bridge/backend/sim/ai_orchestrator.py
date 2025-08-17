@@ -17,6 +17,29 @@ from .ai_tools import LocalAIStub
 from .sonar import passive_contacts as _passive_contacts
 
 
+def _round_floats(obj: Any, ndigits: int = 1) -> Any:
+    """Recursively round all float values within a structure to ndigits.
+
+    - Leaves integers and non-numeric types unchanged
+    - Preserves lists and dict structure
+    """
+    try:
+        # Fast path for exact float
+        if isinstance(obj, float):
+            return round(obj, ndigits)
+        # Avoid converting ints to floats
+        if isinstance(obj, int):
+            return obj
+        if isinstance(obj, list):
+            return [_round_floats(v, ndigits) for v in obj]
+        if isinstance(obj, tuple):
+            return tuple(_round_floats(v, ndigits) for v in obj)
+        if isinstance(obj, dict):
+            return {k: _round_floats(v, ndigits) for k, v in obj.items()}
+        return obj
+    except Exception:
+        return obj
+
 class RunResult(TypedDict, total=False):
     run_id: str
     parent_run_id: Optional[str]
@@ -271,7 +294,8 @@ class AgentsOrchestrator:
             result["contact_history"] = list(getattr(self, "_fleet_contact_history", []))[-100:]
         except Exception:
             pass
-        return result
+        # Truncate numeric precision to save prompt space
+        return _round_floats(result, 1)
 
     def _build_ship_summary(self, ship: Ship) -> Dict[str, Any]:
         # Provide a narrow slice of fleet intent if available, e.g., guidance for this ship
@@ -365,7 +389,7 @@ class AgentsOrchestrator:
             alert_flag = bool(alert_map.get(ship.id, False))
         except Exception:
             alert_flag = False
-        return {
+        result = {
             "self": {
                 "id": ship.id,
                 "class": getattr(ship, "ship_class", None),
@@ -398,6 +422,8 @@ class AgentsOrchestrator:
             "fleet_intent": {**fleet_intent, "summary": fleet_summary_line} if isinstance(fleet_intent, dict) else fleet_intent,
             "detected_state": {"alert": alert_flag},
         }
+        # Truncate numeric precision to save prompt space
+        return _round_floats(result, 1)
 
     # ---------- Engines ----------
     async def _fleet_decide(self, fleet_summary: Dict[str, Any]) -> Dict[str, Any]:

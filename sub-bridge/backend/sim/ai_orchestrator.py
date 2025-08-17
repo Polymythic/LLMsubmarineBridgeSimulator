@@ -4,6 +4,7 @@ import asyncio
 import time
 import hashlib
 import math
+import re
 from typing import Any, Dict, List, Literal, Optional, TypedDict
 import httpx
 
@@ -314,6 +315,7 @@ class AgentsOrchestrator:
             fleet_summary_line = ""
         # Build local passive + visual contacts for this ship against non-friendly ships
         local_contacts: List[Dict[str, Any]] = []
+        fleet_fused_contacts: List[Dict[str, Any]] = []
         try:
             world = self._world_getter()
             others = [s for s in world.all_ships() if s.id != ship.id and s.side != ship.side]
@@ -354,6 +356,37 @@ class AgentsOrchestrator:
             local_contacts = list(by_id.values())
         except Exception:
             local_contacts = []
+        # Derive bearings to any FleetIntent-estimated positions (from notes) and expose to LLM
+        try:
+            fi = fleet_intent if isinstance(fleet_intent, dict) else {}
+            notes = fi.get("notes") if isinstance(fi, dict) else None
+            if isinstance(notes, list):
+                coord_re = re.compile(r"\[\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\]")
+                for n in notes:
+                    if not isinstance(n, dict):
+                        continue
+                    text = str(n.get("text", ""))
+                    m = coord_re.search(text)
+                    if not m:
+                        continue
+                    try:
+                        ex = float(m.group(1))
+                        ey = float(m.group(2))
+                        dx = ex - ship.kin.x
+                        dy = ey - ship.kin.y
+                        rng = math.hypot(dx, dy)
+                        brg_true = (math.degrees(math.atan2(dx, dy)) % 360.0)
+                        fleet_fused_contacts.append({
+                            "bearing": float(round(brg_true, 1)),
+                            "range_est": float(round(rng, 1)),
+                            "pos_est": [float(round(ex, 1)), float(round(ey, 1))],
+                            "source": "fleet_note",
+                            "text": text,
+                        })
+                    except Exception:
+                        continue
+        except Exception:
+            fleet_fused_contacts = []
         # Maintain short contact history per ship for LLM memory (last 6 sightings)
         try:
             if not hasattr(self, "_contacts_history_by_ship"):
@@ -417,6 +450,7 @@ class AgentsOrchestrator:
             "sensors": {"passive_ok": getattr(ship.systems, 'sonar_ok', True), "has_active": getattr(getattr(ship, 'capabilities', None), 'has_active_sonar', False)},
             # Local contacts should come from sonar; orchestrator does not have ground-truth enemy positions
             "contacts": local_contacts,
+            "fleet_fused_contacts": fleet_fused_contacts,
             "contacts_history": hist,
             "orders_last": orders_last,
             "fleet_intent": {**fleet_intent, "summary": fleet_summary_line} if isinstance(fleet_intent, dict) else fleet_intent,

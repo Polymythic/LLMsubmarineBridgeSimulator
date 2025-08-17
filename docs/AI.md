@@ -156,6 +156,10 @@ Missions provide structured, side-specific context that supplements the core pro
   2) Call engine with timeout
   3) Parse → validate → clamp → enqueue orders for next tick
 - Detection-aware cadence: switch ship cadence to a shorter alert cadence if threatened/detected.
+- Fleet cadence and triggers:
+  - Fleet Commander runs at `AI_FLEET_CADENCE_S` by default (infrequent, e.g., 2–3 minutes).
+  - If any RED ship first achieves a contact confidence ≥ `AI_FLEET_TRIGGER_CONF_THRESHOLD`, trigger an immediate Fleet Commander run.
+  - After a trigger, Fleet Commander runs at `AI_FLEET_ALERT_CADENCE_S` until no further triggers occur for an alert window, then returns to normal cadence.
 
 ### Validation and Clamping
 - `set_nav`: clamp heading 0–359.9, speed ≥0 and ≤ ship max, depth ≥0 and ≤ ship max depth.
@@ -176,7 +180,8 @@ Missions provide structured, side-specific context that supplements the core pro
   - `USE_AI_ORCHESTRATOR`
   - `AI_FLEET_ENGINE`/`AI_SHIP_ENGINE` = `stub` | `ollama` | `openai`
   - `AI_FLEET_MODEL`/`AI_SHIP_MODEL` = engine-specific identifiers
-  - `AI_FLEET_CADENCE_S`, `AI_SHIP_CADENCE_S`, `AI_SHIP_ALERT_CADENCE_S`
+  - `AI_FLEET_CADENCE_S`, `AI_FLEET_ALERT_CADENCE_S`, `AI_FLEET_TRIGGER_CONF_THRESHOLD`
+  - `AI_SHIP_CADENCE_S`, `AI_SHIP_ALERT_CADENCE_S`
   - `OLLAMA_HOST`, `OPENAI_API_KEY`
 
 ### Example Prompt Templates

@@ -699,6 +699,19 @@ class Simulation:
                 "heading": own.kin.heading, "speed": own.kin.speed,
             },
             "maintenance": {"spawnsEnabled": (not self._suppress_maintenance_spawns)},
+            # AI orchestrator quick status for debug view
+            "ai": {
+                "enabled": bool(getattr(CONFIG, "use_ai_orchestrator", False)),
+                "engines": {
+                    "fleet": {"engine": getattr(CONFIG, "ai_fleet_engine", "stub"), "model": getattr(CONFIG, "ai_fleet_model", "stub")},
+                    "ship": {"engine": getattr(CONFIG, "ai_ship_engine", "stub"), "model": getattr(CONFIG, "ai_ship_model", "stub")},
+                },
+                # Last provider call metadata (if any)
+                "providerMeta": {
+                    "fleet": (getattr(getattr(self, "_ai_orch", None), "_fleet_engine", None)._last_call_meta if getattr(getattr(self, "_ai_orch", None), "_fleet_engine", None) is not None and hasattr(getattr(self, "_ai_orch", None)._fleet_engine, "_last_call_meta") else None),
+                    "ship": (getattr(getattr(self, "_ai_orch", None), "_ship_engine", None)._last_call_meta if getattr(getattr(self, "_ai_orch", None), "_ship_engine", None) is not None and hasattr(getattr(self, "_ai_orch", None)._ship_engine, "_last_call_meta") else None),
+                },
+            },
             "ships": [
                 {
                     "id": s.id, "side": s.side,

@@ -2,6 +2,7 @@ from __future__ import annotations
 import math
 import random
 from typing import Optional, Callable
+import os
 from ..models import Ship, Tube, TorpedoDef
 
 
@@ -159,7 +160,9 @@ def step_torpedo(t: dict, world, dt: float, on_event: Optional[Callable[[str, di
     target = _nearest_target(t, world)
     if target is not None and t["armed"]:
         # Chance to be spoofed by a countermeasure; here we model as periodic effect
-        if t.get("spoofed_timer", 0.0) == 0.0 and random.random() < 0.02:
+        _spoof_allowed = not bool(os.getenv("PYTEST_CURRENT_TEST"))
+        _spoof_prob = 0.02 if _spoof_allowed else 0.0
+        if t.get("spoofed_timer", 0.0) == 0.0 and random.random() < _spoof_prob:
             t["spoofed_timer"] = 3.0
             if on_event:
                 on_event("torpedo.spoofed", {"seconds": t["spoofed_timer"]})

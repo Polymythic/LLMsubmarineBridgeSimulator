@@ -46,6 +46,8 @@ class Config:
     ai_ship_model: str = os.getenv("AI_SHIP_MODEL", "stub")
     # Agent cadences (seconds)
     ai_fleet_cadence_s: float = _get_env_float("AI_FLEET_CADENCE_S", 45.0)
+    ai_fleet_alert_cadence_s: float = _get_env_float("AI_FLEET_ALERT_CADENCE_S", 20.0)
+    ai_fleet_trigger_conf_threshold: float = _get_env_float("AI_FLEET_TRIGGER_CONF_THRESHOLD", 0.7)
     ai_ship_cadence_s: float = _get_env_float("AI_SHIP_CADENCE_S", 20.0)
     ai_ship_alert_cadence_s: float = _get_env_float("AI_SHIP_ALERT_CADENCE_S", 10.0)
     # Engines configuration

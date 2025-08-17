@@ -353,10 +353,42 @@ class Simulation:
             self._ai_fleet_timer += dt
             # Default cadences (configurable)
             fleet_cadence = getattr(CONFIG, "ai_fleet_cadence_s", 45.0)
+            fleet_alert_cadence = getattr(CONFIG, "ai_fleet_alert_cadence_s", 20.0)
+            fleet_trigger_conf = getattr(CONFIG, "ai_fleet_trigger_conf_threshold", 0.7)
             ship_normal_cadence = getattr(CONFIG, "ai_ship_cadence_s", 20.0)
             ship_alert_cadence = getattr(CONFIG, "ai_ship_alert_cadence_s", 10.0)
-            # Schedule fleet run
-            if self._ai_fleet_timer >= fleet_cadence:
+            # Contact-confidence trigger: if any RED ship first crosses confidence >= threshold on any contact, trigger immediate fleet run and switch to alert cadence
+            try:
+                if not hasattr(self, "_fleet_conf_tripped"):
+                    self._fleet_conf_tripped = False  # type: ignore[attr-defined]
+                if not hasattr(self, "_fleet_last_alert_time"):
+                    self._fleet_last_alert_time = 0.0  # type: ignore[attr-defined]
+                trigger_now = False
+                if isinstance(fleet_trigger_conf, (int, float)) and fleet_trigger_conf > 0.0:
+                    for s in self.world.all_ships():
+                        if s.side != "RED":
+                            continue
+                        # Build local contacts as orchestrator does; use passive_contacts for bearing-only confidence
+                        contacts = passive_contacts(s, [x for x in self.world.all_ships() if x.side != s.side and x.id != s.id])
+                        for c in contacts:
+                            conf = float(getattr(c, "confidence", 0.0))
+                            # Consider a first-time crossing per ship to avoid repeated triggers
+                            key = f"_{s.id}_conf_crossed"
+                            if conf >= float(fleet_trigger_conf) and not getattr(self, key, False):
+                                setattr(self, key, True)
+                                trigger_now = True
+                                break
+                        if trigger_now:
+                            break
+                # Fleet cadence selection: alert cadence while in tripped state
+                chosen_fleet_cadence = fleet_alert_cadence if trigger_now or getattr(self, "_fleet_conf_tripped", False) else fleet_cadence
+                if trigger_now:
+                    self._fleet_conf_tripped = True  # type: ignore[attr-defined]
+                # Schedule fleet run
+                do_run_fleet = (self._ai_fleet_timer >= chosen_fleet_cadence) or trigger_now
+            except Exception:
+                do_run_fleet = (self._ai_fleet_timer >= fleet_cadence)
+            if do_run_fleet:
                 self._ai_fleet_timer = 0.0
                 # Mirror current mission brief to orchestrator before the run
                 try:
@@ -413,8 +445,14 @@ class Simulation:
                                     pass
                             except Exception:
                                 pass
-                    # Mirror recent runs into sim for Fleet UI
+                    # Mirror recent runs into sim for Fleet UI; drop alert after one alert cadence window with no additional triggers
                     self._ai_recent_runs = getattr(self._ai_orch, "_recent_runs", [])
+                    try:
+                        if getattr(self, "_fleet_conf_tripped", False):
+                            # If no trigger occurs for one alert cadence window, reset to normal cadence
+                            self._fleet_last_alert_time = 0.0
+                    except Exception:
+                        pass
                 t = asyncio.create_task(_fleet_job())
                 self._ai_pending.add(t)
                 t.add_done_callback(lambda _t: self._ai_pending.discard(_t))

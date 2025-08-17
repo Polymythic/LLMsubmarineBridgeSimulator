@@ -86,6 +86,96 @@ def passive_contacts(self_ship: Ship, others: List[Ship]) -> List[TelemetryConta
     return contacts
 
 
+def passive_projectiles(self_ship: Ship, torpedoes: List[dict] | None, depth_charges: List[dict] | None) -> List[TelemetryContact]:
+    """Render torpedoes and depth charges as passive contacts for sonar UI.
+
+    - Uses a simplified source level model for moving torpedoes and sinking depth charges
+    - Applies same baffles and transmission loss as ships
+    - Classifies as "Torpedo?" or "DepthCharge?" with confidence scaled by detectability
+    """
+    if getattr(self_ship, "systems", None) is not None and not self_ship.systems.sonar_ok:
+        return []
+    contacts: List[TelemetryContact] = []
+    torps = torpedoes or []
+    dcs = depth_charges or []
+    # Common environment terms
+    ambient = 60.0
+    layer_atten = 4.0 if self_ship.acoustics.thermocline_on else 0.0
+    for t in torps:
+        try:
+            tx = float(t.get("x", 0.0)); ty = float(t.get("y", 0.0))
+            dx = tx - self_ship.kin.x; dy = ty - self_ship.kin.y
+            rng = math.hypot(dx, dy)
+            brg = normalize_angle_deg(math.degrees(math.atan2(dx, dy)))
+            rel = angle_diff(brg, self_ship.kin.heading)
+            if abs(rel) > 180 - BAFFLES_DEG / 2:
+                continue
+            speed = float(t.get("speed", 35.0))
+            src_lvl = 145.0 + 0.2 * speed  # loud propulsors
+            tl_geo = 20.0 * math.log10(max(1.0, rng))
+            tl = tl_geo + layer_atten
+            penalty = getattr(self_ship.acoustics, "passive_snr_penalty_db", 0.0)
+            snr_db = max(0.0, src_lvl - tl - ambient - penalty)
+            detect = max(0.0, min(1.0, snr_db / 30.0))
+            if detect < 0.12:
+                continue
+            sigma = max(0.8, 6.0 - 0.05 * speed)
+            noisy_bearing = normalize_angle_deg(brg + random.gauss(0, sigma))
+            confidence = min(1.0, detect * 1.3)
+            tid = t.get("id") or f"torpedo_{int(tx)}_{int(ty)}"
+            contacts.append(TelemetryContact(
+                id=str(tid),
+                bearing=noisy_bearing,
+                strength=detect,
+                classifiedAs="Torpedo?",
+                confidence=confidence,
+                bearingKnown=True,
+                rangeKnown=False,
+                detectability=detect,
+                snrDb=snr_db,
+                bearingSigmaDeg=sigma,
+            ))
+        except Exception:
+            continue
+    for dc in dcs:
+        try:
+            dx = float(dc.get("x", 0.0)) - self_ship.kin.x
+            dy = float(dc.get("y", 0.0)) - self_ship.kin.y
+            rng = math.hypot(dx, dy)
+            brg = normalize_angle_deg(math.degrees(math.atan2(dx, dy)))
+            rel = angle_diff(brg, self_ship.kin.heading)
+            if abs(rel) > 180 - BAFFLES_DEG / 2:
+                continue
+            # Depth charges are moderately loud while sinking; louder initially
+            sink_rate = float(dc.get("sink_rate_mps", 5.0))
+            src_lvl = 125.0 + 2.0 * min(5.0, sink_rate)
+            tl_geo = 20.0 * math.log10(max(1.0, rng))
+            tl = tl_geo + layer_atten
+            penalty = getattr(self_ship.acoustics, "passive_snr_penalty_db", 0.0)
+            snr_db = max(0.0, src_lvl - tl - ambient - penalty)
+            detect = max(0.0, min(1.0, snr_db / 30.0))
+            if detect < 0.1:
+                continue
+            sigma = 8.0
+            noisy_bearing = normalize_angle_deg(brg + random.gauss(0, sigma))
+            confidence = min(1.0, detect * 1.1)
+            dcid = dc.get("id") or f"depth_charge_{int(dc.get('x',0))}_{int(dc.get('y',0))}"
+            contacts.append(TelemetryContact(
+                id=str(dcid),
+                bearing=noisy_bearing,
+                strength=detect,
+                classifiedAs="DepthCharge?",
+                confidence=confidence,
+                bearingKnown=True,
+                rangeKnown=False,
+                detectability=detect,
+                snrDb=snr_db,
+                bearingSigmaDeg=sigma,
+            ))
+        except Exception:
+            continue
+    return contacts
+
 class ActivePingState:
     def __init__(self, cooldown_s: float = 12.0) -> None:
         self.cooldown_s = cooldown_s

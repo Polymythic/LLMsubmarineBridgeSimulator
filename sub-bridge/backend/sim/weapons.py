@@ -330,7 +330,7 @@ def step_depth_charge(dc: dict, world, dt: float, on_event: Optional[Callable[[s
                     on_event("depth_charge.near", {"target": ship.id, "range_m": dist})
         dc["exploded"] = True
         if on_event:
-            on_event("depth_charge.detonated", {"depth_m": dc["depth"]})
+            on_event("depth_charge.detonated", {"depth_m": dc["depth"], "x": float(dc.get("x", 0.0)), "y": float(dc.get("y", 0.0))})
 
 
 # -------------------- Quick Torpedo (AI-only) --------------------

@@ -224,7 +224,8 @@ class OllamaAgentsEngine(BaseEngine):
                 "Output EXACTLY one JSON object with keys {tool, arguments, summary}. No markdown or extra keys. Allowed tools: "
                 "set_nav(heading: float 0-359.9, speed: float >=0, depth: float >=0); "
                 "fire_torpedo(tube: int, bearing: float 0-359.9, run_depth: float, enable_range: float); "
-                "deploy_countermeasure(type: 'noisemaker'|'decoy'). Use only tools supported by your capabilities."
+                "deploy_countermeasure(type: 'noisemaker'|'decoy'); "
+                "drop_depth_charges(spread_meters: float, minDepth: float>=15, maxDepth: float, spreadSize: int). Use only tools supported by your capabilities."
             )
             ss = dict(ship_summary)
             ss.pop("_prompt_hint", None)
@@ -233,6 +234,8 @@ class OllamaAgentsEngine(BaseEngine):
                 "\n\nFORMAT & BEHAVIOR:\n"
                 "- Prefer the FleetIntent; if deviating, prefix summary with 'deviate:'.\n"
                 "- Use only allowed tools supported by capabilities. Choose plausible parameters (e.g., bearings from contacts).\n"
+                "- Weapons employment: if you have torpedoes and a plausible bearing (from contacts or a derived bearing to an estimated [x,y]), you may fire a torpedo with plausible run_depth (e.g., 100–200 m) and enable_range (e.g., 1000–3000 m).\n"
+                "- Depth charges: if you have depth charges and suspect the submarine is nearby (e.g., within ~1 km), you may drop a spread using minDepth >= 15 m.\n"
                 "- If no change is needed, return set_nav holding current values with a brief summary.\n"
                 "- The 'summary' MUST be one short, human-readable sentence explaining intent and rationale (e.g., 'Heading to 3000,2000 to investigate passive sonar contact').\n"
                 "- Output ONLY one JSON with keys {tool, arguments, summary}."
@@ -363,7 +366,8 @@ class OpenAIAgentsEngine(BaseEngine):
             "Output EXACTLY one JSON object with keys {tool, arguments, summary}. No markdown or extra keys. Allowed tools: "
             "set_nav(heading: float 0-359.9, speed: float >=0, depth: float >=0); "
             "fire_torpedo(tube: int, bearing: float 0-359.9, run_depth: float, enable_range: float); "
-            "deploy_countermeasure(type: 'noisemaker'|'decoy'). Use only tools supported by your capabilities."
+            "deploy_countermeasure(type: 'noisemaker'|'decoy'); "
+            "drop_depth_charges(spread_meters: float, minDepth: float>=15, maxDepth: float, spreadSize: int). Use only tools supported by your capabilities."
         )
         ss = dict(ship_summary)
         ss.pop("_prompt_hint", None)
@@ -372,8 +376,9 @@ class OpenAIAgentsEngine(BaseEngine):
             "\n\nFORMAT & BEHAVIOR:\n"
             "- Prefer the FleetIntent; if deviating, prefix summary with 'deviate:'.\n"
             "- Use only allowed tools supported by capabilities. Choose plausible parameters (e.g., bearings from contacts).\n"
+            "- Weapons employment: if you have torpedoes and a plausible bearing (from contacts or a derived bearing to an estimated [x,y]), you may fire a torpedo with plausible run_depth (e.g., 100–200 m) and enable_range (e.g., 1000–3000 m).\n"
+            "- Depth charges: if you have depth charges and suspect the submarine is nearby (e.g., within ~1 km), you may drop a spread using minDepth >= 15 m.\n"
             "- If no change is needed, return set_nav holding current values with a brief summary.\n"
-            "- The 'summary' MUST be one short, human-readable sentence explaining intent and rationale (e.g., 'Heading to 3000,2000 to investigate passive sonar contact').\n"
             "- Output ONLY one JSON with keys {tool, arguments, summary}."
         )
         content = await self._chat(system, user)

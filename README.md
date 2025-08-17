@@ -60,6 +60,10 @@ A cooperative, local-multiplayer submarine bridge simulator. Five players occupy
 - Each `Ship` now carries `ship_class` (e.g., `SSN`, `Convoy`, `Destroyer`) and `capabilities` (navigation, sensors, weapons, countermeasures).
 - A debug `ai.tool` command applies minimal tool calls for LLM control:
   - `set_nav`: `{"ship_id":"red-01","tool":"set_nav","arguments":{"heading":120,"speed":6,"depth":0}}`
+- Fleet Commander prompt (high-level): emphasizes formations/strategy (in `summary`), per-ship objectives, EMCON settings, fused contact picture (from bearings), and concise, actionable `notes`. Strict JSON-only.
+- Ship Commander outputs must include a short human-readable `summary` explaining intent; the `/fleet` log displays it.
+- When the orchestrator is enabled, stub-generated ship actions are disabled — only LLM-produced ship actions are applied.
+- The `/fleet` UI shows engines/models and enhanced AI run metadata: provider/model, OK/FAIL, decision source (llm/intent_fallback/disabled_stub/none), and autoSummary flag.
 
 ### Two-Tier AI Control (Fleet Commander + Ship Commanders)
 - Design: One global Fleet Commander plans strategy; each hostile ship executes local orders via tool calls.

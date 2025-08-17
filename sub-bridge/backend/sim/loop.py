@@ -658,6 +658,8 @@ class Simulation:
 
         base = {
             "ownship": {
+                "x": own.kin.x,
+                "y": own.kin.y,
                 "heading": heading,
                 "orderedHeading": self.ordered["heading"],
                 "orderedSpeed": self.ordered["speed"],

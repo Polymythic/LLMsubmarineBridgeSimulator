@@ -125,6 +125,7 @@ Missions provide structured, side-specific context that supplements the core pro
   "contacts": [
     {"bearing": 95, "range_est": 3200, "class": "Unknown", "confidence": 0.35}
   ],
+  "fleet_fused_contacts": [ { "bearing": 205.0, "range_est": 1800.0, "pos_est": [4000,-2000], "source": "fleet_note" } ],
   "orders_last": {"heading": 135, "speed": 9, "depth": 0},
   "fleet_intent": {"objectives": {}, "summary": "..."},
   "detected_state": {"alert": false}
@@ -141,6 +142,15 @@ Missions provide structured, side-specific context that supplements the core pro
 ```json
 {"tool":"deploy_countermeasure","arguments":{"type":"noisemaker"}}
 ```
+```json
+{"tool":"drop_depth_charges","arguments":{"spread_meters":20,"minDepth":20,"maxDepth":60,"spreadSize":3}}
+```
+
+### Engagement Guidance (LLM)
+- Use bearings from `contacts` or precomputed `fleet_fused_contacts` to employ weapons.
+- Torpedoes: assume quick-launch available if `has_torpedoes=true` (tubes list may be empty); choose plausible `run_depth` (~100–200 m) and `enable_range` (1–3 km).
+- Depth charges: if suspected submarine is nearby (≈≤1 km), drop a spread with `minDepth ≥ 15`.
+- EMCON: if `fleet_intent.emcon.active_ping_allowed=false`, avoid active ping; rely on passive contacts/fused bearings.
 
 ### Engine Abstraction
 - Engines: `StubEngine` (deterministic/local), `OllamaEngine` (local HTTP), `OpenAIEngine` (remote HTTP)

@@ -788,6 +788,12 @@ class AgentsOrchestrator:
             if name == "deploy_countermeasure":
                 t = str(args.get("type", ""))
                 return f"{ship_id}: deploy {t}"
+            if name == "drop_depth_charges":
+                sp = float(args.get("spread_meters", args.get("spread_m", 0.0)))
+                md = float(args.get("minDepth", 0.0))
+                xd = float(args.get("maxDepth", 0.0))
+                n = int(args.get("spreadSize", args.get("count", 0)))
+                return f"{ship_id}: drop depth charges spread {n} @ {sp:.0f}m, depths {md:.0f}-{xd:.0f}"
             return ""
         except Exception:
             return ""
@@ -855,6 +861,8 @@ class AgentsOrchestrator:
                     "BEHAVIOR:\n- As a RED ship captain, use the FleetIntent's objectives as a guide, but prioritize the needs of your own ship.\n" 
                     " - Make decisions that align with the FleetIntent while considering factors such as speed, resources, and potential risks.\n"
                     " - Use only tools supported by capabilities.\n"
+                    " - EMCON: if fleet_intent.emcon.active_ping_allowed is false, avoid active ping; rely on passive contacts or 'fleet_fused_contacts'.\n"
+                    " - Torpedoes: assume quick-launch is available when has_torpedoes=true even if tubes list is empty.\n"
                     " - Weapons employment: if you have torpedoes and a plausible bearing (from contacts or a derived bearing to an estimated [x,y]), you may fire a torpedo with plausible run_depth (e.g., 100–200 m) and enable_range (e.g., 1000–3000 m).\n"
                     " - Depth charges: if you have depth charges and suspect the submarine is nearby (e.g., within ~1 km), you may drop a spread using minDepth >= 15 m.\n"
                     " - If no change is needed, return set_nav holding current values with a brief summary.\n"
@@ -872,7 +880,7 @@ class AgentsOrchestrator:
             result["tool_calls"] = [tool]
             # Validate tool; avoid stub fallback on failures
             tool_name = (tool or {}).get("tool") if isinstance(tool, dict) else None
-            if tool_name not in ("set_nav", "fire_torpedo", "deploy_countermeasure"):
+            if tool_name not in ("set_nav", "fire_torpedo", "deploy_countermeasure", "drop_depth_charges"):
                 # Prefer to not apply any action if output invalid; as a safe alternative, derive navigation from FleetIntent if available
                 nav = self._nav_from_intent(ship, summary)
                 if nav is not None:

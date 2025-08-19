@@ -1,0 +1,36 @@
+{
+  "id": "weapons_validation_destroyers",
+  "title": "Weapons Validation - Destroyers",
+  "red_mission_summary": "RED destroyers are conducting weapons validation exercises. Test torpedo and depth charge capabilities against simulated submarine threats.",
+  "blue_mission_summary": "BLUE submarine is participating in weapons validation exercises. RED destroyers will test their ASW capabilities.",
+  "objective": "Validate destroyer weapons systems and submarine evasion capabilities.",
+  "side_objectives": { "RED": "validate_weapons_systems", "BLUE": "test_evasion_capabilities" },
+  "blue_captain_summary": "Weapons validation exercise. RED destroyers will test torpedo and depth charge systems. Practice evasion and counter-detection techniques.",
+  "roe": [
+    "Weapons release authorized for validation purposes."
+  ],
+  "target_wp": [0, 0],
+  "environment": { "timeOfDay": "day", "weather": "calm" },
+  "ship_behaviors": {
+    "red-dd-torp-01": "You are a destroyer conducting torpedo validation exercises. When you detect the submarine, fire torpedoes at the contact bearing. Use realistic engagement parameters: run depth 100-200m, enable range 1000-3000m. Test both single and salvo firing.",
+    "red-dd-torp-02": "You are a destroyer conducting torpedo validation exercises. When you detect the submarine, fire torpedoes at the contact bearing. Use realistic engagement parameters: run depth 100-200m, enable range 1000-3000m. Test both single and salvo firing.",
+    "red-dd-dc-01": "You are a destroyer conducting depth charge validation exercises. When you detect the submarine, close to within 1 km and drop depth charge spreads. Use realistic parameters: spread 20-50m, depths 20-100m, multiple charges per spread.",
+    "red-dd-dc-02": "You are a destroyer conducting depth charge validation exercises. When you detect the submarine, close to within 1 km and drop depth charge spreads. Use realistic parameters: spread 20-50m, depths 20-100m, multiple charges per spread."
+  },
+  "ships": [
+    { "id": "ownship", "side": "BLUE", "class": "SSN", "spawn": { "x": 0, "y": 0, "depth": 3, "heading": 0, "speed": 5 } },
+
+    { "id": "red-dd-torp-01", "side": "RED", "class": "Destroyer", "spawn": { "x": 3500, "y": 500, "depth": 0, "heading": 200, "speed": 10 } },
+    { "id": "red-dd-torp-02", "side": "RED", "class": "Destroyer", "spawn": { "x": -4000, "y": -700, "depth": 0, "heading": 20, "speed": 10 } },
+
+    { "id": "red-dd-dc-01", "side": "RED", "class": "Destroyer", "spawn": { "x": 600, "y": 0, "depth": 0, "heading": 270, "speed": 8 } },
+    { "id": "red-dd-dc-02", "side": "RED", "class": "Destroyer", "spawn": { "x": 0, "y": -800, "depth": 0, "heading": 0, "speed": 8 } }
+  ],
+  "triggers": [
+    { "at_s": 15.0, "comms": "INFO: Weapons validation commencing. Expect torpedo salvos and depth charge spreads." },
+    { "at_s": 45.0, "comms": "INFO: Torpedo units cleared to fire pairs at suspected bearings." },
+    { "at_s": 75.0, "comms": "INFO: Depth charge units cleared to drop multiple spreads when within 1 km." }
+  ]
+}
+
+

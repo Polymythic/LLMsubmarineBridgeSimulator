@@ -6,6 +6,7 @@ import hashlib
 import math
 import re
 from typing import Any, Dict, List, Literal, Optional, TypedDict
+from pathlib import Path
 import httpx
 
 from ..config import CONFIG
@@ -76,6 +77,8 @@ class AgentsOrchestrator:
         self._stub = LocalAIStub()
         self._fleet_engine: BaseEngine = StubEngine()
         self._ship_engine: BaseEngine = StubEngine()
+        # Optional JSONL log file path for /fleet API call history
+        self._log_file_path: Optional[str] = None
 
     # ---------- Public configuration ----------
     def set_fleet_engine(self, kind: Literal["stub", "ollama", "openai"], model: str) -> None:
@@ -164,46 +167,50 @@ class AgentsOrchestrator:
                         "confidence": float(getattr(c, "confidence", 0.0)),
                         "classifiedAs": str(getattr(c, "classifiedAs", "Unknown")),
                     })
-                # Visual contacts: near-surface targets within ~15 km
-                for blu in blue_ships:
-                    try:
-                        if blu.kin.depth <= 5.0:
-                            dx = blu.kin.x - red.kin.x
-                            dy = blu.kin.y - red.kin.y
-                            rng = math.hypot(dx, dy)
-                            if rng <= 15000.0:
-                                # Calculate bearing from RED ship to BLUE ship
-                                # Compass convention: 0°=North, 90°=East, 180°=South, 270°=West
-                                # For bearing calculation: atan2(dx, dy) gives angle from Y-axis (North), which is correct
-                                brg_true = (math.degrees(math.atan2(dx, dy)) % 360.0)
-                                merged[blu.id] = {
-                                    "id": blu.id,
-                                    "side": blu.side,  # Critical for friendly identification
-                                    "bearing": float(brg_true),
-                                    "range_est": float(rng),
-                                    "confidence": 0.85,
-                                    "class": str(getattr(blu, "ship_class", "Unknown")),
-                                    "detectability": 1.0,
-                                    "last_seen": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                                }
-                                # Append visual contact event with estimated position
-                                heading_rad = math.radians(brg_true)
-                                est_x = red.kin.x + math.sin(heading_rad) * rng
-                                est_y = red.kin.y + math.cos(heading_rad) * rng
-                                history_events.append({
-                                    "time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                                    "reportedBy": red.id,
-                                    "reporter_pos": [red.kin.x, red.kin.y],
-                                    "type": "visual",
-                                    "id": blu.id,
-                                    "bearing": float(brg_true),
-                                    "range_est": float(rng),
-                                    "confidence": 0.85,
-                                    "classifiedAs": str(getattr(blu, "ship_class", "Unknown")),
-                                    "est_pos": [float(est_x), float(est_y)],
-                                })
-                    except Exception:
-                        continue
+                # Visual contacts: use probabilistic lock state provided by Simulation
+                try:
+                    vis_map = getattr(self, "_visual_detection_map", {}) or {}
+                    from_obs = vis_map.get(red.id, {}) if isinstance(vis_map, dict) else {}
+                    for blu in blue_ships:
+                        st = from_obs.get(blu.id, {}) if isinstance(from_obs, dict) else {}
+                        if not bool(st.get("detected", False)):
+                            continue
+                        dx = blu.kin.x - red.kin.x
+                        dy = blu.kin.y - red.kin.y
+                        rng = math.hypot(dx, dy)
+                        if rng > 15000.0:
+                            continue
+                        brg_true = (math.degrees(math.atan2(dx, dy)) % 360.0)
+                        merged[blu.id] = {
+                            "id": blu.id,
+                            "side": blu.side,
+                            "bearing": float(brg_true),
+                            "range_est": float(rng),
+                            "confidence": 0.9 if st.get("mode") == "surface" else 0.7,
+                            "class": str(getattr(blu, "ship_class", "Unknown")),
+                            "detectability": 1.0,
+                            "last_seen": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                            "visual_mode": st.get("mode"),
+                        }
+                        # Append visual contact event with estimated position
+                        heading_rad = math.radians(brg_true)
+                        est_x = red.kin.x + math.sin(heading_rad) * rng
+                        est_y = red.kin.y + math.cos(heading_rad) * rng
+                        history_events.append({
+                            "time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                            "reportedBy": red.id,
+                            "reporter_pos": [red.kin.x, red.kin.y],
+                            "type": "visual",
+                            "id": blu.id,
+                            "bearing": float(brg_true),
+                            "range_est": float(rng),
+                            "confidence": 0.9 if st.get("mode") == "surface" else 0.7,
+                            "classifiedAs": str(getattr(blu, "ship_class", "Unknown")),
+                            "est_pos": [float(est_x), float(est_y)],
+                            "mode": st.get("mode"),
+                        })
+                except Exception:
+                    pass
             enemy_belief = list(merged.values())
         except Exception:
             enemy_belief = []
@@ -332,27 +339,32 @@ class AgentsOrchestrator:
                     "confidence": float(getattr(c, "confidence", 0.0)),
                     "detectability": float((getattr(c, "detectability", 0.0) or getattr(c, "strength", 0.0))),
                 }
-            # Visual adds range when target is near-surface within ~15 km
-            for oth in others:
-                try:
-                    if oth.kin.depth <= 5.0:
-                        dx = oth.kin.x - ship.kin.x
-                        dy = oth.kin.y - ship.kin.y
-                        rng = math.hypot(dx, dy)
-                        if rng <= 15000.0:
-                            brg_true = (math.degrees(math.atan2(dx, dy)) % 360.0)
-                            by_id[oth.id] = {
-                                **(by_id.get(oth.id, {})),
-                                "id": oth.id,
-                                "side": oth.side,  # Critical for friendly identification
-                                "bearing": float(brg_true),
-                                "range_est": float(rng),
-                                "class": str(getattr(oth, "ship_class", "Unknown")),
-                                "confidence": max(0.7, float(by_id.get(oth.id, {}).get("confidence", 0.0))),
-                                "detectability": max(0.8, float(by_id.get(oth.id, {}).get("detectability", 0.0))),
-                            }
-                except Exception:
-                    continue
+            # Visual adds range when detection is locked in Simulation's probabilistic model
+            try:
+                vis_map = getattr(self, "_visual_detection_map", {}) or {}
+                from_obs = vis_map.get(ship.id, {}) if isinstance(vis_map, dict) else {}
+                for oth in others:
+                    st = from_obs.get(oth.id, {}) if isinstance(from_obs, dict) else {}
+                    if not bool(st.get("detected", False)):
+                        continue
+                    dx = oth.kin.x - ship.kin.x
+                    dy = oth.kin.y - ship.kin.y
+                    rng = math.hypot(dx, dy)
+                    if rng > 15000.0:
+                        continue
+                    brg_true = (math.degrees(math.atan2(dx, dy)) % 360.0)
+                    by_id[oth.id] = {
+                        **(by_id.get(oth.id, {})),
+                        "id": oth.id,
+                        "side": oth.side,
+                        "bearing": float(brg_true),
+                        "range_est": float(rng),
+                        "class": str(getattr(oth, "ship_class", "Unknown")),
+                        "confidence": max(0.7 if st.get("mode") == "surface" else 0.5, float(by_id.get(oth.id, {}).get("confidence", 0.0))),
+                        "detectability": max(0.8 if st.get("mode") == "surface" else 0.6, float(by_id.get(oth.id, {}).get("detectability", 0.0))),
+                    }
+            except Exception:
+                pass
             local_contacts = list(by_id.values())
         except Exception:
             local_contacts = []
@@ -600,7 +612,7 @@ class AgentsOrchestrator:
             # Record recent run for Fleet UI
             if not hasattr(self, "_recent_runs"):
                 self._recent_runs = []  # type: ignore[attr-defined]
-            self._recent_runs.append({
+            run_entry = {
                 "agent": "fleet",
                 "provider": self._fleet_engine_kind,
                 "model": self._fleet_model,
@@ -610,14 +622,20 @@ class AgentsOrchestrator:
                 "tool_calls": result["tool_calls_validated"],
                 "summary": fleet_thought,
                 "api_call_debug": api_call_debug,
-            })  # type: ignore[attr-defined]
+            }
+            self._recent_runs.append(run_entry)  # type: ignore[attr-defined]
+            # Append to log file if configured
+            try:
+                self._append_run_log(run_entry)
+            except Exception:
+                pass
         except Exception as e:
             result["error"] = str(e)
             # Surface errors to Fleet UI recent runs
             try:
                 if not hasattr(self, "_recent_runs"):
                     self._recent_runs = []  # type: ignore[attr-defined]
-                self._recent_runs.append({  # type: ignore[attr-defined]
+                run_entry = {  # type: ignore[var-annotated]
                     "agent": "fleet",
                     "provider": self._fleet_engine_kind,
                     "model": self._fleet_model,
@@ -629,7 +647,12 @@ class AgentsOrchestrator:
                         "model": self._fleet_model,
                         "provider_meta": getattr(self._fleet_engine, "_last_call_meta", None),
                     },
-                })
+                }
+                self._recent_runs.append(run_entry)  # type: ignore[attr-defined]
+                try:
+                    self._append_run_log(run_entry)
+                except Exception:
+                    pass
             except Exception:
                 pass
         finally:
@@ -870,6 +893,16 @@ class AgentsOrchestrator:
                 ),
                 "summary_size": len(str(summary)),
             }
+            
+            # Add ship-specific behavior instructions if available
+            world = self._world_getter()
+            mission_brief = getattr(world, 'mission_brief', {})
+            ship_behaviors = mission_brief.get('ship_behaviors', {})
+            ship_behavior = ship_behaviors.get(ship_id, "")
+            
+            if ship_behavior:
+                api_call_debug["user_prompt"] += f"\nSHIP-SPECIFIC BEHAVIOR:\n{ship_behavior}\n"
+            
             # Ensure engines receive EXACTLY these prompts by passing a prompt hint
             summary_for_engine = dict(summary)
             summary_for_engine["_prompt_hint"] = {
@@ -929,7 +962,7 @@ class AgentsOrchestrator:
             }))
             if not hasattr(self, "_recent_runs"):
                 self._recent_runs = []  # type: ignore[attr-defined]
-            self._recent_runs.append({
+            run_entry = {
                 "agent": "ship",
                 "ship_id": ship_id,
                 "provider": self._ship_engine_kind,
@@ -941,14 +974,19 @@ class AgentsOrchestrator:
                 "tool_calls": result["tool_calls_validated"],
                 "summary": ship_thought,
                 "api_call_debug": api_call_debug,
-            })  # type: ignore[attr-defined]
+            }
+            self._recent_runs.append(run_entry)  # type: ignore[attr-defined]
+            try:
+                self._append_run_log(run_entry)
+            except Exception:
+                pass
         except Exception as e:
             result["error"] = str(e)
             # Surface errors to Fleet UI recent runs
             try:
                 if not hasattr(self, "_recent_runs"):
                     self._recent_runs = []  # type: ignore[attr-defined]
-                self._recent_runs.append({  # type: ignore[attr-defined]
+                run_entry = {  # type: ignore[var-annotated]
                     "agent": "ship",
                     "ship_id": ship_id,
                     "provider": self._ship_engine_kind,
@@ -962,12 +1000,31 @@ class AgentsOrchestrator:
                         "model": self._ship_model,
                         "provider_meta": getattr(self._ship_engine, "_last_call_meta", None),
                     },
-                })
+                }
+                self._recent_runs.append(run_entry)  # type: ignore[attr-defined]
+                try:
+                    self._append_run_log(run_entry)
+                except Exception:
+                    pass
             except Exception:
                 pass
         finally:
             result["duration_ms"] = int((time.perf_counter() - started) * 1000)
         return result
+
+    # ---------- Logging ----------
+    def _append_run_log(self, entry: Dict[str, Any]) -> None:
+        """Append a single run entry (as JSON) to the configured log file, if set."""
+        try:
+            path = getattr(self, "_log_file_path", None)
+            if not path:
+                return
+            p = Path(path)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with p.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, separators=(",", ":")) + "\n")
+        except Exception:
+            pass
 
     def _nav_from_intent(self, ship: Ship, ship_summary: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         import math as _math

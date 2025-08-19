@@ -1,0 +1,40 @@
+{
+  "id": "interdict_dual_convoys",
+  "title": "Interdict Dual Convoys",
+  "red_mission_summary": "Two RED convoys are transiting south under destroyer escort; maintain formation, minimize detectability, and reach the destination while denying BLUE interdiction.",
+  "blue_mission_summary": "Two RED convoys (each 1x Destroyer + 2x Convoy) are moving in parallel a couple kilometers apart to a far-south waypoint. Interdict and sink all Convoy ships without losing our submarine.",
+  "objective": "BLUE must sink all RED Convoy ships before they reach the destination. Avoid ownship loss.",
+  "side_objectives": { "RED": "escort_convoys_to_destination", "BLUE": "interdict_and_sink_convoys" },
+  "blue_captain_summary": "Intel reports two parallel RED convoys moving south, separated by ~2 km, each with a destroyer escort and two cargo ships. Your task is to interdict and sink the cargo ships. Avoid detection and survive counter-attack.",
+  "roe": [
+    "Weapons release authorized."
+  ],
+  "target_wp": [0, -25000],
+  "environment": { "timeOfDay": "day", "weather": "calm" },
+  "ship_behaviors": {
+    "red-a-dd-01": "You are an escorting destroyer. If an enemy submarine is detected, you take an aggressive posture to destroy it. When you have a contact bearing, immediately close on the submarine at high speed (15-20 knots) and drop depth charges when within 1 km. Use active sonar to localize the threat and coordinate with other escorts. Your primary mission is to protect the convoy, but destroying the submarine takes priority when detected.",
+    "red-b-dd-01": "You are an escorting destroyer. If an enemy submarine is detected, you take an aggressive posture to destroy it. When you have a contact bearing, immediately close on the submarine at high speed (15-20 knots) and drop depth charges when within 1 km. Use active sonar to localize the threat and coordinate with other escorts. Your primary mission is to protect the convoy, but destroying the submarine takes priority when detected.",
+    "red-a-cv-01": "You are a convoy cargo vessel with no weapons. Your survival depends on speed and evasion. If threatened, increase speed to maximum and attempt to escape while the destroyer escorts engage the threat.",
+    "red-a-cv-02": "You are a convoy cargo vessel with no weapons. Your survival depends on speed and evasion. If threatened, increase speed to maximum and attempt to escape while the destroyer escorts engage the threat.",
+    "red-b-cv-01": "You are a convoy cargo vessel with no weapons. Your survival depends on speed and evasion. If threatened, increase speed to maximum and attempt to escape while the destroyer escorts engage the threat.",
+    "red-b-cv-02": "You are a convoy cargo vessel with no weapons. Your survival depends on speed and evasion. If threatened, increase speed to maximum and attempt to escape while the destroyer escorts engage the threat."
+  },
+  "ships": [
+    { "id": "ownship", "side": "BLUE", "class": "SSN", "spawn": { "x": 0, "y": 0, "depth": 120, "heading": 0, "speed": 8 } },
+
+    { "id": "red-a-dd-01", "side": "RED", "class": "Destroyer", "spawn": { "x": -1000, "y": 12000, "depth": 0, "heading": 180, "speed": 10 } },
+    { "id": "red-a-cv-01", "side": "RED", "class": "Convoy",     "spawn": { "x": -1000, "y": 11650, "depth": 0, "heading": 180, "speed": 10 } },
+    { "id": "red-a-cv-02", "side": "RED", "class": "Convoy",     "spawn": { "x": -1000, "y": 11300, "depth": 0, "heading": 180, "speed": 10 } },
+
+    { "id": "red-b-dd-01", "side": "RED", "class": "Destroyer", "spawn": { "x": 1000, "y": 12000, "depth": 0, "heading": 180, "speed": 10 } },
+    { "id": "red-b-cv-01", "side": "RED", "class": "Convoy",     "spawn": { "x": 1000, "y": 11650, "depth": 0, "heading": 180, "speed": 10 } },
+    { "id": "red-b-cv-02", "side": "RED", "class": "Convoy",     "spawn": { "x": 1000, "y": 11300, "depth": 0, "heading": 180, "speed": 10 } }
+  ],
+  "triggers": [
+    { "at_s": 120.0, "comms": "INFO: Convoys report maintaining southbound transit; escorts holding EMCON." },
+    { "at_s": 480.0, "comms": "INFO: Convoys approaching mid-transit; escorts advise readiness for counter-submarine measures." }
+  ]
+}
+
+
+

@@ -1,8 +1,10 @@
 {
   "id": "surface_training",
   "title": "Surface Vessel Intercept (Training)",
+  "red_mission_summary": "RED convoy must reach the waypoint while maintaining formation and avoiding detection. No weapons available, so speed and evasion are critical.",
+  "blue_mission_summary": "BLUE submarine will shadow the RED convoy and practice contact management and weapons procedures. Maintain EMCON and interdict the convoy.",
   "objective": "BLUE interdicts RED convoy to destroy it; RED convoy racing to reach waypoint.",
-  "captain_summary": "Training mission. BLUE will shadow the RED convoy (red-01, red-02, red-03) and practice contact management and weapons procedures. Maintain EMCON. BLUE objective: interdict or delay convoy. RED objective: escort convoy to waypoint with minimal risk.",
+  "blue_captain_summary": "Training mission. BLUE will shadow the RED convoy (red-01, red-02, red-03) and practice contact management and weapons procedures. Maintain EMCON. BLUE objective: interdict or delay convoy. RED objective: escort convoy to waypoint with minimal risk.",
   "roe": [
     "Weapons release authorized.",
     "Minimize active sonar to preserve EMCON."
@@ -30,6 +32,11 @@
     "BLUE": {"disable_or_delay": {"convoy_speed_below_kn": 3, "duration_s": 120}}
   },
   "environment": { "timeOfDay": "dawn", "weather": "calm" },
+  "ship_behaviors": {
+    "red-01": "You are red-01, a convoy cargo vessel with no weapons so speed and evasion is critical. Follow FleetIntent to reach waypoint X:5000, Y:0. You may override the FleetIntent if it is not safe. Hold column position and spacing; avoid high-risk areas.",
+    "red-02": "You are red-02, a convoy cargo vessel with no weapons so speed and evasion is critical. Follow FleetIntent to reach waypoint X:5000, Y:0. You may override the FleetIntent if it is not safe. Hold column position and spacing; avoid high-risk areas.",
+    "red-03": "You are red-03, a convoy cargo vessel with no weapons so speed and evasion is critical. Follow FleetIntent to reach waypoint X:5000, Y:0. You may override the FleetIntent if it is not safe. Hold column position and spacing; avoid high-risk areas."
+  },
   "ships": [
     {
       "id": "ownship",
@@ -57,13 +64,6 @@
     }
 
   ],
-  "ai_fleet_prompt": "You command RED convoy ships. Objective: Get the convoy (red-01, red-02, red-03) to waypoint X:5000, Y:0 while minimizing detectability and obeying ROE. Maintain column formation with ~300 m spacing and keep convoy speed between 4–8 kn. Use conservative routing; avoid suspected submarine activity near X:2500 Y:-500 (radius ~1500 m).",
-  "ai_ship_prompts": {
-    "red-01": "You are red-01, a convoy cargo vessel with no weapons so speed and evasion is critical. Follow FleetIntent to reach waypoint X:5000, Y:0. You may override the FleetIntent if it is not safe. Hold column position and spacing; avoid high-risk areas.",
-    "red-02": "You are red-02, a convoy cargo vessel with no weapons so speed and evasion is critical. Follow FleetIntent to reach waypoint X:5000, Y:0. You may override the FleetIntent if it is not safe. Hold column position and spacing; avoid high-risk areas.",
-    "red-03": "You are red-03, a convoy cargo vessel with no weapons so speed and evasion is critical. Follow FleetIntent to reach waypoint X:5000, Y:0. You may override the FleetIntent if it is not safe. Hold column position and spacing; avoid high-risk areas."
-
-  },
   "triggers": [
     { "at_s": 90.0, "comms": "INFO: Surface contact maintaining 5 kn on easterly course." }
   ]

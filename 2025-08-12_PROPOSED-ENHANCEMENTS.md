@@ -271,4 +271,68 @@ Target four items that are tightly scoped and visibly impactful:
 - Keep messages compact; only add fields noted above.
 - Ensure unit tests cover consent TTL behavior, noise threshold events, and ping cooldown states.
 
+## Ship-Specific Behavior Instructions (Implemented)
+
+### Problem
+The destroyers in missions like `interdict_dual_convoys` were not behaving aggressively enough when detecting submarines. They were using generic behavior prompts that didn't specify their role as escorts that should aggressively engage submarines.
+
+### Solution
+Implemented a new `ship_behaviors` field in mission JSON files that allows specifying ship-specific behavior instructions for each RED ship. These instructions are incorporated into the AI prompts to guide ship behavior.
+
+### Implementation
+1. **Mission Schema**: Added `ship_behaviors: Dict[str, str]` field to `MissionConfig` model
+2. **AI Integration**: Modified `ai_orchestrator.py` to include ship-specific behavior instructions in the prompt when available
+3. **Mission Updates**: Updated all missions with appropriate ship behaviors:
+   - `interdict_dual_convoys`: Aggressive destroyer behavior for escort ships
+   - `evade_destroyers`: Aggressive hunting behavior for destroyers
+   - `weapons_validation_destroyers`: Specific validation behavior
+   - `surface_training`: Convoy behavior for cargo ships
+
+### Example Usage
+```json
+{
+  "ship_behaviors": {
+    "red-a-dd-01": "You are an escorting destroyer. If an enemy submarine is detected, you take an aggressive posture to destroy it. When you have a contact bearing, immediately close on the submarine at high speed (15-20 knots) and drop depth charges when within 1 km. Use active sonar to localize the threat and coordinate with other escorts. Your primary mission is to protect the convoy, but destroying the submarine takes priority when detected."
+  }
+}
+```
+
+### Benefits
+- **Realistic Behavior**: Ships now behave according to their role and mission
+- **Flexible**: Each mission can specify different behaviors for the same ship types
+- **Maintainable**: Behavior instructions are centralized in mission files
+- **Backward Compatible**: Existing missions without ship_behaviors continue to work
+
+## Future Enhancements
+
+### Enhanced Torpedo Guidance
+- Implement more sophisticated torpedo guidance algorithms
+- Add wire-guided torpedo simulation
+- Improve torpedo evasion mechanics
+
+### Advanced Sonar Modeling
+- Add frequency-dependent sonar performance
+- Implement towed array sonar
+- Add sonar interference and jamming
+
+### Weather and Environmental Effects
+- Add sea state effects on surface ship performance
+- Implement thermal layer modeling
+- Add weather effects on sonar performance
+
+### Multiplayer Enhancements
+- Add support for multiple submarines
+- Implement team coordination mechanics
+- Add competitive scoring systems
+
+### Mission Editor
+- Create a visual mission editor
+- Add mission validation tools
+- Implement mission sharing capabilities
+
+### AI Improvements
+- Add learning capabilities to AI agents
+- Implement more sophisticated fleet coordination
+- Add adaptive difficulty based on player performance
+
 

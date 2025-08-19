@@ -35,6 +35,11 @@ class MissionConfig(BaseModel):
     blue_captain_summary: Optional[str] = None
     red_mission_summary: Optional[str] = None
     blue_mission_summary: Optional[str] = None
+    # Structured mission supplements (passed through to AI)
+    side_objectives: Dict[str, Any] = Field(default_factory=dict)
+    success_criteria: Dict[str, Any] = Field(default_factory=dict)
+    # Ship-specific behavior instructions for AI
+    ship_behaviors: Dict[str, str] = Field(default_factory=dict)
     # Legacy prompt fields (no longer used by orchestrator)
     ai_fleet_prompt: Optional[str] = None
     ai_ship_prompts: Dict[str, str] = Field(default_factory=dict)
@@ -137,6 +142,11 @@ def apply_mission_to_world(mission: MissionConfig, world_getter, set_mission_bri
         # Side mission summaries for AI and UI
         "red_mission_summary": mission.red_mission_summary,
         "blue_mission_summary": mission.blue_mission_summary,
+        # Structured mission supplements for AI
+        "side_objectives": mission.side_objectives,
+        "success_criteria": mission.success_criteria,
+        # Ship-specific behavior instructions for AI
+        "ship_behaviors": mission.ship_behaviors,
         "comms_schedule": [
             {"at_s": float(t.get("at_s", 0.0)), "msg": t.get("comms")}
             for t in mission.triggers if "comms" in t

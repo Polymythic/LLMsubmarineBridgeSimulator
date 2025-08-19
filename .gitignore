@@ -19,6 +19,9 @@ sub-bridge.db
 # Environment variables (never commit real API keys)
 .env
 
+# Logs directory (runtime API call history, not for source control)
+logs/
+
 # Node/build (future frontend)
 node_modules/
 dist/

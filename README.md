@@ -1,4 +1,4 @@
-# Submarine Bridge Simulator (MVP)
+# Large Language Model(s) Driven - Submarine Bridge Simulator (MVP)
 
 A cooperative, local-multiplayer submarine bridge simulator that serves as a sandbox for testing multiple LLMs as fleet command and ship AI agents. Five players occupy classic stations on a nuclear attack submarine and must coordinate under time pressure, conflicting objectives, and imperfect information. The backend runs an authoritative 20 Hz sim loop; the frontends are lightweight station UIs served from one host.
 

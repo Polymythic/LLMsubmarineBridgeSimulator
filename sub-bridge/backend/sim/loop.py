@@ -520,10 +520,10 @@ class Simulation:
                                     tgt = self.world.get_ship(_sid)
                                 except Exception:
                                     continue
-                                tgt.kin.heading = float(args.get("heading", tgt.kin.heading)) % 360.0
+                                tgt.kin.heading = float(args.get("heading") or tgt.kin.heading) % 360.0
                                 # Clamp against platform limits
-                                spd = float(args.get("speed", tgt.kin.speed))
-                                dpt = float(args.get("depth", tgt.kin.depth))
+                                spd = float(args.get("speed") or tgt.kin.speed)
+                                dpt = float(args.get("depth") or tgt.kin.depth)
                                 tgt.kin.speed = max(0.0, min(tgt.hull.max_speed, spd))
                                 tgt.kin.depth = max(0.0, min(tgt.hull.max_depth, dpt))
                                 insert_event(self.engine, self.run_id, "ai.tool.apply", json.dumps({"ship_id": _sid, **tc}))
@@ -547,10 +547,10 @@ class Simulation:
                                     break
                                 if not getattr(getattr(tgt, "capabilities", None), "has_torpedoes", False):
                                     break
-                                bearing = float(args.get("bearing", tgt.kin.heading))
-                                run_depth = float(args.get("run_depth", tgt.kin.depth))
-                                enable_range = float(args.get("enable_range", 800.0)) if args.get("enable_range") is not None else None
-                                doctrine = str(args.get("doctrine", "passive_then_active"))
+                                bearing = float(args.get("bearing") or tgt.kin.heading)
+                                run_depth = float(args.get("run_depth") or tgt.kin.depth)
+                                enable_range = float(args.get("enable_range") or 800.0) if args.get("enable_range") is not None else None
+                                doctrine = str(args.get("doctrine") or "passive_then_active")
                                 res = try_launch_torpedo_quick(tgt, bearing, run_depth, enable_range, doctrine)
                                 if res.get("ok"):
                                     torp = res.get("data")
@@ -565,10 +565,11 @@ class Simulation:
                                     break
                                 if not getattr(getattr(tgt, "capabilities", None), "has_depth_charges", False):
                                     break
-                                spread_m = float(args.get("spread_meters", 20.0))
-                                min_d = float(args.get("minDepth", 30.0))
-                                max_d = float(args.get("maxDepth", 50.0))
-                                n = int(args.get("spreadSize", 3))
+                                # Handle None values and convert to appropriate types
+                                spread_m = int(args.get("spread_meters") or 20)
+                                min_d = int(args.get("minDepth") or 30)
+                                max_d = int(args.get("maxDepth") or 50)
+                                n = int(args.get("spreadSize") or 3)
                                 res = try_drop_depth_charges(tgt, spread_m, min_d, max_d, n)
                                 if res.get("ok"):
                                     for dc in res.get("data", []) or []:
@@ -1142,10 +1143,10 @@ class Simulation:
             if tool == "set_nav":
                 if caps and not caps.can_set_nav:
                     return "Tool not supported"
-                tgt.kin.heading = float(args.get("heading", tgt.kin.heading)) % 360.0
-                tgt.kin.speed = max(0.0, float(args.get("speed", tgt.kin.speed)))
+                tgt.kin.heading = float(args.get("heading") or tgt.kin.heading) % 360.0
+                tgt.kin.speed = max(0.0, float(args.get("speed") or tgt.kin.speed))
                 # Clamp against platform max depth so surface vessels cannot submerge
-                tgt.kin.depth = max(0.0, min(tgt.hull.max_depth, float(args.get("depth", tgt.kin.depth))))
+                tgt.kin.depth = max(0.0, min(tgt.hull.max_depth, float(args.get("depth") or tgt.kin.depth)))
                 return None
             if tool == "fire_torpedo":
                 if not caps or not caps.has_torpedoes:

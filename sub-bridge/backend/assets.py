@@ -69,6 +69,8 @@ def load_ship_catalog(path: Path = SHIPS_CATALOG_PATH) -> None:
             reload_time_s=w.get("reload_time_s", 45.0),
             flood_time_s=w.get("flood_time_s", 8.0),
             doors_time_s=w.get("doors_time_s", 3.0),
+            depth_charges_stored=w.get("depth_charges_stored", 0),
+            depth_charge_cooldown_s=w.get("depth_charge_cooldown_s", 2.0),
             tubes=[models.Tube(**t) for t in tubes] if isinstance(tubes, list) else models.WeaponsSuite().tubes,
         )
         acoustics = models.Acoustics(**entry.get("acoustics", {}))

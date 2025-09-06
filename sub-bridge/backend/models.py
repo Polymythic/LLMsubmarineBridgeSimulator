@@ -131,59 +131,9 @@ class ShipDef(BaseModel):
     default_acoustics: Acoustics = Acoustics()
 
 
-SHIP_CATALOG: Dict[str, ShipDef] = {
-    "SSN": ShipDef(
-        name="Nuclear Attack Submarine",
-        ship_class="SSN",
-        capabilities=ShipCapabilities(
-            can_set_nav=True,
-            has_active_sonar=True,
-            has_torpedoes=True,
-            has_guns=False,
-            has_depth_charges=False,
-            countermeasures=["noisemaker", "decoy"],
-        ),
-        default_hull=Hull(max_depth=300.0, max_speed=30.0, quiet_speed=5.0),
-        default_weapons=WeaponsSuite(),
-        default_acoustics=Acoustics(),
-    ),
-    "Convoy": ShipDef(
-        name="Convoy Cargo Vessel",
-        ship_class="Convoy",
-        capabilities=ShipCapabilities(
-            can_set_nav=True,
-            has_active_sonar=False,
-            has_torpedoes=False,
-            has_guns=False,
-            has_depth_charges=False,
-            countermeasures=[],
-        ),
-        default_hull=Hull(max_depth=20.0, max_speed=20.0, quiet_speed=5.0),
-        default_weapons=WeaponsSuite(tube_count=0, torpedoes_stored=0, tubes=[]),
-        default_acoustics=Acoustics(
-            thermocline_on=False,
-            source_level_by_speed={5: 120.0, 10: 130.0, 15: 140.0},
-        ),
-    ),
-    "Destroyer": ShipDef(
-        name="Destroyer (ASW)",
-        ship_class="Destroyer",
-        capabilities=ShipCapabilities(
-            can_set_nav=True,
-            has_active_sonar=True,
-            has_torpedoes=False,  # placeholder until depth charges/ASROC modeled
-            has_guns=True,
-            has_depth_charges=True,
-            countermeasures=[],
-        ),
-        default_hull=Hull(max_depth=50.0, max_speed=32.0, quiet_speed=8.0),
-        default_weapons=WeaponsSuite(tube_count=0, torpedoes_stored=0, tubes=[], depth_charges_stored=30),
-        default_acoustics=Acoustics(
-            thermocline_on=False,
-            source_level_by_speed={5: 125.0, 15: 140.0, 25: 150.0},
-        ),
-    ),
-}
+# Ship catalog is loaded from assets/ships/catalog.json at runtime
+# This provides a fallback for tests and ensures the catalog is always available
+SHIP_CATALOG: Dict[str, ShipDef] = {}
 
 
 class MaintenanceTask(BaseModel):

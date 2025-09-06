@@ -856,7 +856,7 @@ class AgentsOrchestrator:
             result["tool_calls"] = [tool]
             # Validate tool; avoid stub fallback on failures
             tool_name = (tool or {}).get("tool") if isinstance(tool, dict) else None
-            if tool_name not in ("set_nav", "fire_torpedo", "deploy_countermeasure", "drop_depth_charges"):
+            if tool_name not in ("set_nav", "fire_torpedo", "deploy_countermeasure", "drop_depth_charges", "active_ping"):
                 # Prefer to not apply any action if output invalid; as a safe alternative, derive navigation from FleetIntent if available
                 nav = self._nav_from_intent(ship, summary)
                 if nav is not None:

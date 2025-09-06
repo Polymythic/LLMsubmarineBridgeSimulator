@@ -158,7 +158,10 @@
       peakHold = Math.max(peakHold - 1, px);
       dbPeak.style.bottom = (peakHold-2) + 'px';
     }
-    mw.oninput = () => mwv.textContent = mw.value;
+    mw.oninput = () => {
+        mwv.textContent = mw.value;
+        mw.dataset.userSet = '1'; // Mark that user has manually adjusted the slider
+    };
     function showToast(msg){ const t=document.getElementById('toast'); t.textContent = msg; t.style.display='block'; setTimeout(()=>t.style.display='none', 2500); }
     
     // Track existing task elements by ID to avoid recreation
@@ -191,7 +194,10 @@
       try { const m = JSON.parse(ev.data); if (m.topic === 'telemetry') {
         tel.textContent = JSON.stringify(m.data, null, 2);
         mwv.textContent = (m.data.reactor?.output_mw ?? 0).toFixed(0);
-        mw.value = (m.data.reactor?.output_mw ?? 0);
+        // Only update slider value from telemetry if user hasn't manually adjusted it
+        if (!mw.dataset.userSet) {
+            mw.value = (m.data.reactor?.output_mw ?? 0);
+        }
         mwmax.textContent = (m.data.reactor?.max_mw ?? 0).toFixed(0);
         bat.textContent = (m.data.reactor?.battery_pct ?? 0).toFixed(0);
         flood.textContent = (m.data.damage?.flooding_rate ?? 0).toFixed(1);
@@ -323,7 +329,11 @@
       } else if (m.topic === 'error') { showToast(m.error || 'Error'); }
       } catch(e){}
     };
-    document.getElementById('set').onclick = () => ws.send(JSON.stringify({topic:'engineering.reactor.set', data:{mw: parseFloat(mw.value)}}));
+    document.getElementById('set').onclick = () => {
+        ws.send(JSON.stringify({topic:'engineering.reactor.set', data:{mw: parseFloat(mw.value)}}));
+        // Reset user interaction flag so slider can be updated from telemetry again
+        mw.dataset.userSet = '';
+    };
     document.getElementById('scram').onclick = () => ws.send(JSON.stringify({topic:'engineering.reactor.scram', data:{scrammed:true}}));
     document.getElementById('pumpF').onclick = () => ws.send(JSON.stringify({topic:'engineering.pump.toggle', data:{pump:'fwd', enabled:true}}));
     document.getElementById('pumpA').onclick = () => ws.send(JSON.stringify({topic:'engineering.pump.toggle', data:{pump:'aft', enabled:true}}));

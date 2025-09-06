@@ -24,11 +24,24 @@ def step_engineering(ship: Ship, dt: float) -> None:
     # Effects:
     # - Propulsion MW caps achievable speed handled in physics via reactor.output_mw equivalence.
     # - Sensors MW can throttle sonar update richness (not implemented here; exposed via telemetry).
+    # Apply hull damage effects to sonar performance
+    hull_damage_factor = max(0.1, 1.0 - ship.damage.hull)  # Sonar heavily affected by hull damage
+    damage_sensors_factor = max(0.2, hull_damage_factor)  # Sonar still functional at 20% damage
+    
+    # Apply damage effects to sonar performance
+    ship.acoustics.passive_snr_penalty_db = max(0.0, ship.acoustics.passive_snr_penalty_db + (1.0 - damage_sensors_factor) * 15.0)
+    ship.acoustics.bearing_noise_extra = max(0.0, ship.acoustics.bearing_noise_extra + (1.0 - damage_sensors_factor) * 5.0)
+    ship.acoustics.active_range_noise_add_m = max(0.0, ship.acoustics.active_range_noise_add_m + (1.0 - damage_sensors_factor) * 200.0)
+    ship.acoustics.active_bearing_noise_extra = max(0.0, ship.acoustics.active_bearing_noise_extra + (1.0 - damage_sensors_factor) * 2.0)
     # - Weapons MW affects tube timers (scale timers by power factor).
     # - Engineering MW accelerates maintenance countdowns.
-    ship.weapons.reload_time_s = 45.0 / max(0.2, (mw_weapons / max(1.0, ship.reactor.max_mw)))
-    ship.weapons.flood_time_s = 8.0 / max(0.2, (mw_weapons / max(1.0, ship.reactor.max_mw)))
-    ship.weapons.doors_time_s = 3.0 / max(0.2, (mw_weapons / max(1.0, ship.reactor.max_mw)))
+    # Apply hull damage effects to weapons performance
+    hull_damage_factor = max(0.3, 1.0 - ship.damage.hull)  # Weapons less affected by hull damage
+    damage_weapons_factor = max(0.5, hull_damage_factor)  # Weapons still functional at 50% damage
+    
+    ship.weapons.reload_time_s = 45.0 / max(0.2, (mw_weapons / max(1.0, ship.reactor.max_mw))) / damage_weapons_factor
+    ship.weapons.flood_time_s = 8.0 / max(0.2, (mw_weapons / max(1.0, ship.reactor.max_mw))) / damage_weapons_factor
+    ship.weapons.doors_time_s = 3.0 / max(0.2, (mw_weapons / max(1.0, ship.reactor.max_mw))) / damage_weapons_factor
 
     # Maintenance progression/decay
     maint = ship.maintenance.levels

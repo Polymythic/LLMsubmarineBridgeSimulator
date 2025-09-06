@@ -28,23 +28,29 @@ def integrate_kinematics(
     hull = ship.hull
     kin = ship.kin
 
-    reactor_cap_speed = hull.max_speed * (ship.reactor.output_mw / max(1.0, ship.reactor.max_mw))
+    # Apply hull damage effects to performance
+    hull_damage_factor = max(0.1, 1.0 - ship.damage.hull)  # 0.1 = 10% performance at 100% damage
+    damage_accel_factor = max(0.2, hull_damage_factor)  # Acceleration less affected than top speed
+    damage_turn_factor = max(0.3, hull_damage_factor)  # Turning moderately affected
+
+    reactor_cap_speed = hull.max_speed * (ship.reactor.output_mw / max(1.0, ship.reactor.max_mw)) * hull_damage_factor
     target_speed = clamp(ordered_speed, 0.0, reactor_cap_speed)
 
     if target_speed > kin.speed:
-        kin.speed = min(target_speed, kin.speed + hull.accel_max * dt)
+        kin.speed = min(target_speed, kin.speed + hull.accel_max * damage_accel_factor * dt)
     else:
-        kin.speed = max(target_speed, kin.speed - hull.decel_max * dt)
+        kin.speed = max(target_speed, kin.speed - hull.decel_max * damage_accel_factor * dt)
 
     # Rudder failure disables turning
     rudder_ok = getattr(ship, "systems", None) is None or ship.systems.rudder_ok
     dh = ((ordered_heading - kin.heading + 540) % 360) - 180
-    max_turn = hull.turn_rate_max * dt
+    max_turn = hull.turn_rate_max * damage_turn_factor * dt
     turn = 0.0 if not rudder_ok else clamp(dh, -max_turn, max_turn)
     kin.heading = (kin.heading + turn) % 360
 
     ballast_ok = getattr(ship, "systems", None) is None or ship.systems.ballast_ok
-    max_depth_rate = (6.0 if ballast_boost else 3.0) if ballast_ok else 0.5
+    base_depth_rate = (6.0 if ballast_boost else 3.0) if ballast_ok else 0.5
+    max_depth_rate = base_depth_rate * damage_turn_factor  # Depth control also affected by damage
     # Enforce platform depth limits for surface vessels and subs alike
     limited_ordered_depth = clamp(ordered_depth, 0.0, hull.max_depth)
     dz = limited_ordered_depth - kin.depth

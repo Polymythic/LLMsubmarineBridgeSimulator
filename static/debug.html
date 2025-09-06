@@ -173,7 +173,9 @@
 
       // Ownship fixed at center
       const [ox, oy] = worldToScreen(data.ownship.x, data.ownship.y);
-      drawShip(ox, oy, data.ownship.heading, '#6EE7A7', `OWN hdg ${data.ownship.heading.toFixed(0)} spd ${data.ownship.speed.toFixed(1)} dpt ${data.ownship.depth.toFixed(0)}`);
+      const ownDamage = data.ownship.damage || {hull: 0, flooding_rate: 0};
+      const ownDamageText = `OWN hdg ${data.ownship.heading.toFixed(0)} spd ${data.ownship.speed.toFixed(1)} dpt ${data.ownship.depth.toFixed(0)} | HULL ${(ownDamage.hull * 100).toFixed(0)}% FLD ${ownDamage.flooding_rate.toFixed(1)}`;
+      drawShip(ox, oy, data.ownship.heading, '#6EE7A7', ownDamageText);
 
       // Clear list before adding new items
       list.innerHTML = '';
@@ -238,7 +240,9 @@
       // Enemies
       data.ships.forEach(s => {
         const [sx, sy] = worldToScreen(s.x, s.y);
-        drawShip(sx, sy, s.heading, '#E87979', `${s.id}`);
+        const shipDamage = s.damage || {hull: 0, flooding_rate: 0};
+        const damageText = `${s.id} | HULL ${(shipDamage.hull * 100).toFixed(0)}% FLD ${shipDamage.flooding_rate.toFixed(1)}`;
+        drawShip(sx, sy, s.heading, '#E87979', damageText);
         // Bearing line from ownship
         ctx.strokeStyle = '#E87979';
         ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(sx, sy); ctx.stroke();
@@ -248,12 +252,12 @@
         const bRel = (s.bearing_rel ?? 0).toFixed(0);
         const rng = (s.range_from_own ?? 0).toFixed(0);
         const det = Math.round(((s.passiveDetect || 0) * 100));
-        li.textContent = `${s.id} hdg ${s.heading.toFixed(0)} spd ${s.speed.toFixed(1)} dpt ${s.depth.toFixed(0)} brgT ${bTrue} brgR ${bRel} rng ${rng} detect ${det}%`;
+        li.textContent = `${s.id} hdg ${s.heading.toFixed(0)} spd ${s.speed.toFixed(1)} dpt ${s.depth.toFixed(0)} brgT ${bTrue} brgR ${bRel} rng ${rng} detect ${det}% | HULL ${(shipDamage.hull * 100).toFixed(0)}% FLD ${shipDamage.flooding_rate.toFixed(1)}`;
         // Color pip based on detectability
         if (det >= 70) { li.style.color = '#FF6B6B'; }
         else if (det >= 40) { li.style.color = '#FACC15'; }
         else { li.style.color = '#8DEB8D'; }
-        li.title = `Passive detect: ${det}%  | snrDb: ${((s.snrDb||0)).toFixed(1)}`;
+        li.title = `Passive detect: ${det}%  | snrDb: ${((s.snrDb||0)).toFixed(1)} | Hull damage: ${(shipDamage.hull * 100).toFixed(0)}% | Flooding: ${shipDamage.flooding_rate.toFixed(1)}`;
         list.appendChild(li);
       });
     }

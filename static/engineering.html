@@ -14,6 +14,12 @@
     #dbWrap { width: 30px; height: 160px; border:1px solid #1B2440; background:#0B1020; position: relative; border-radius:4px; }
     #dbFill { position:absolute; bottom:0; left:0; right:0; background: linear-gradient(180deg, #8DEB8D 0%, #FACC15 60%, #EF4444 100%); }
     #dbPeak { position:absolute; left:0; right:0; height:3px; background:#FF6B6B; box-shadow:0 0 6px rgba(255,107,107,0.8); }
+    .damage-led { width:12px; height:12px; border-radius:50%; display:inline-block; margin-left:8px; border:2px solid #333; }
+    .damage-led.flashing { animation: flash 1s infinite; }
+    .damage-led.hull-damage { background:#FF6B6B; }
+    .damage-led.flooding { background:#4A90E2; }
+    .damage-led.normal { background:#8BE28B; }
+    @keyframes flash { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0.3; } }
   </style>
 </head>
 <body>
@@ -21,6 +27,7 @@
     <h2>Engineering <span class="pill" id="wsStatus" title="WebSocket connection status" style="margin-left: 8px; font-size: 14px; font-weight: normal;">WebSocket: Connecting...</span></h2>
     <div id="toast" style="position:fixed;top:8px;right:8px;background:#2B0F14;color:#FFD1D1;border:1px solid #5F1B25;padding:8px 12px;border-radius:6px;display:none;">Error</div>
     <div title="Reactor output and SCRAM state">Reactor MW <span id="mwv">60</span> / <span id="mwmax">100</span> <span class="pill" id="scramState">SCRAM: OFF</span></div>
+    <div class="pill">Damage: <span id="hullDamage" class="damage-led normal" title="Hull Damage"></span><span id="flooding" class="damage-led normal" title="Flooding"></span></div>
     <input id="mw" type="range" min="0" max="100" step="1" value="60" title="Adjust reactor power (MW)" />
     <div class="row">
       <button id="set" title="Set reactor power to slider value">Set MW</button>
@@ -156,6 +163,29 @@
     
     // Track existing task elements by ID to avoid recreation
     let existingTaskElements = new Map();
+    
+    function updateDamageLEDs(damage) {
+      const hullLed = document.getElementById('hullDamage');
+      const floodLed = document.getElementById('flooding');
+      
+      // Hull damage LED
+      if (damage.hull > 0.1) {
+        hullLed.className = 'damage-led hull-damage flashing';
+        hullLed.title = `Hull Damage: ${(damage.hull * 100).toFixed(0)}%`;
+      } else {
+        hullLed.className = 'damage-led normal';
+        hullLed.title = 'Hull Damage: OK';
+      }
+      
+      // Flooding LED
+      if (damage.flooding_rate > 0.5) {
+        floodLed.className = 'damage-led flooding flashing';
+        floodLed.title = `Flooding Rate: ${damage.flooding_rate.toFixed(1)}`;
+      } else {
+        floodLed.className = 'damage-led normal';
+        floodLed.title = 'Flooding: OK';
+      }
+    }
 
     ws.onmessage = (ev) => {
       try { const m = JSON.parse(ev.data); if (m.topic === 'telemetry') {
@@ -167,6 +197,7 @@
         flood.textContent = (m.data.damage?.flooding_rate ?? 0).toFixed(1);
         hull.textContent = (m.data.damage?.hull ?? 0).toFixed(2);
         const s = !!m.data.reactor?.scrammed; scramState.textContent = `SCRAM: ${s ? 'ON' : 'OFF'}`;
+        if (m.data.ownship && m.data.ownship.damage) { updateDamageLEDs(m.data.ownship.damage); }
         // Power allocations
         const p = m.data.power || {};
         // Update current allocation labels

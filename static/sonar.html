@@ -15,6 +15,12 @@
     #legend { width:100%; height:24px; background:#0B1020; border:1px solid #1B2440; border-radius:6px; margin-bottom:6px; }
     #waterfall { width:100%; height:220px; background:#050814; border:1px solid #1B2440; border-radius:6px; }
     .label { font-size:12px; opacity:0.8; }
+    .damage-led { width:12px; height:12px; border-radius:50%; display:inline-block; margin-left:8px; border:2px solid #333; }
+    .damage-led.flashing { animation: flash 1s infinite; }
+    .damage-led.hull-damage { background:#FF6B6B; }
+    .damage-led.flooding { background:#4A90E2; }
+    .damage-led.normal { background:#8BE28B; }
+    @keyframes flash { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0.3; } }
   </style>
 </head>
 <body>
@@ -25,6 +31,7 @@
         <button id="ping" title="Send an active ping; reveals ownship and returns noisy range+bearing">Active Ping</button>
         <div title="Ping cooldown in seconds">Ping cooldown: <span id="cd">0</span>s</div>
         <div class="label" title="Current EMCON risk from acoustics">EMCON: <span id="emcon">low</span></div>
+        <div class="label">Damage: <span id="hullDamage" class="damage-led normal" title="Hull Damage"></span><span id="flooding" class="damage-led normal" title="Flooding"></span></div>
         <h3>Contacts</h3>
         <ul id="contacts" title="Bearing-only passive contacts"></ul>
         <h3>Ping Responses</h3>
@@ -187,6 +194,29 @@
     // Track existing task elements by ID to avoid recreation
     let existingTaskElements = new Map();
     
+    function updateDamageLEDs(damage) {
+      const hullLed = document.getElementById('hullDamage');
+      const floodLed = document.getElementById('flooding');
+      
+      // Hull damage LED
+      if (damage.hull > 0.1) {
+        hullLed.className = 'damage-led hull-damage flashing';
+        hullLed.title = `Hull Damage: ${(damage.hull * 100).toFixed(0)}%`;
+      } else {
+        hullLed.className = 'damage-led normal';
+        hullLed.title = 'Hull Damage: OK';
+      }
+      
+      // Flooding LED
+      if (damage.flooding_rate > 0.5) {
+        floodLed.className = 'damage-led flooding flashing';
+        floodLed.title = `Flooding Rate: ${damage.flooding_rate.toFixed(1)}`;
+      } else {
+        floodLed.className = 'damage-led normal';
+        floodLed.title = 'Flooding: OK';
+      }
+    }
+    
     ws.onmessage = (ev) => {
       try {
         const m = JSON.parse(ev.data);
@@ -194,6 +224,7 @@
           tel.textContent = JSON.stringify(m.data, null, 2);
           cd.textContent = (m.data.pingCooldown || 0).toFixed(1);
           if (m.data.acoustics) { emcon.textContent = (m.data.acoustics.emconRisk || 'low'); }
+          if (m.data.ownship && m.data.ownship.damage) { updateDamageLEDs(m.data.ownship.damage); }
           const nz = (m.data.noise && m.data.noise.sonar_dB) || 0; sonarNoise.textContent = nz.toFixed(0); setDbMeter(nz);
           
           const tasks = m.data.tasks || [];

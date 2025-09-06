@@ -740,6 +740,12 @@ class Simulation:
                 "speed": speed,
                 "depth": depth,
                 "cavitation": cav,
+                "damage": {
+                    "hull": own.damage.hull,
+                    "sensors": own.damage.sensors,
+                    "propulsion": own.damage.propulsion,
+                    "flooding_rate": own.damage.flooding_rate
+                },
             },
             "acoustics": {
                 "noiseBudget": noise_budget, 
@@ -854,6 +860,13 @@ class Simulation:
                     "weapons": (getattr(s, "weapons", None).dict() if getattr(s, "weapons", None) else None),
                     "x": s.kin.x, "y": s.kin.y, "depth": s.kin.depth,
                     "heading": s.kin.heading, "speed": s.kin.speed,
+                    # Damage information
+                    "damage": {
+                        "hull": s.damage.hull,
+                        "sensors": s.damage.sensors,
+                        "propulsion": s.damage.propulsion,
+                        "flooding_rate": s.damage.flooding_rate
+                    },
                     # Passive detectability breakdown for debug
                     "slDb": getattr(s.acoustics, "last_snr_db", 0.0) + (20.0 * 0),
                     "snrDb": getattr(s.acoustics, "last_snr_db", 0.0),

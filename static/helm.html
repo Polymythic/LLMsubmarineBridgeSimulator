@@ -17,6 +17,12 @@
     #dbWrap { width: 30px; height: 160px; border:1px solid #1B2440; background:#0B1020; position: relative; border-radius:4px; }
     #dbFill { position:absolute; bottom:0; left:0; right:0; background: linear-gradient(180deg, #8DEB8D 0%, #FACC15 60%, #EF4444 100%); }
     #dbPeak { position:absolute; left:0; right:0; height:3px; background:#FF6B6B; box-shadow:0 0 6px rgba(255,107,107,0.8); }
+    .damage-led { width:12px; height:12px; border-radius:50%; display:inline-block; margin-left:8px; border:2px solid #333; }
+    .damage-led.flashing { animation: flash 1s infinite; }
+    .damage-led.hull-damage { background:#FF6B6B; }
+    .damage-led.flooding { background:#4A90E2; }
+    .damage-led.normal { background:#8BE28B; }
+    @keyframes flash { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0.3; } }
   </style>
 </head>
 <body>
@@ -28,6 +34,7 @@
         <div class="row">
           <div class="pill" id="cav" title="Cavitation increases detectability and noise">Cavitation: NO</div>
           <div class="pill" id="therm" title="Thermocline may attenuate sound; affects detection">Thermocline: ON</div>
+          <div class="pill">Damage: <span id="hullDamage" class="damage-led normal" title="Hull Damage"></span><span id="flooding" class="damage-led normal" title="Flooding"></span></div>
         </div>
       </div>
       <div class="col">
@@ -154,6 +161,28 @@
     function stageColor(stage){ return stage === 'task' ? '#FACC15' : (stage === 'failing' ? '#F59E0B' : '#EF4444'); }
     function stageBg(stage){ return stage === 'task' ? 'rgba(250, 204, 21, 0.1)' : (stage === 'failing' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)'); }
     function stageLabel(stage){ return stage === 'task' ? 'MAINTENANCE' : (stage === 'failing' ? 'FAILING' : 'FAILED'); }
+    function updateDamageLEDs(damage) {
+      const hullLed = document.getElementById('hullDamage');
+      const floodLed = document.getElementById('flooding');
+      
+      // Hull damage LED
+      if (damage.hull > 0.1) {
+        hullLed.className = 'damage-led hull-damage flashing';
+        hullLed.title = `Hull Damage: ${(damage.hull * 100).toFixed(0)}%`;
+      } else {
+        hullLed.className = 'damage-led normal';
+        hullLed.title = 'Hull Damage: OK';
+      }
+      
+      // Flooding LED
+      if (damage.flooding_rate > 0.5) {
+        floodLed.className = 'damage-led flooding flashing';
+        floodLed.title = `Flooding Rate: ${damage.flooding_rate.toFixed(1)}`;
+      } else {
+        floodLed.className = 'damage-led normal';
+        floodLed.title = 'Flooding: OK';
+      }
+    }
     
     // Track existing task elements by ID to avoid recreation
     let existingTaskElements = new Map();
@@ -169,7 +198,8 @@
                 therm.textContent = 'Thermocline: ' + ((d.thermocline ?? true) ? 'ON' : 'OFF'); 
                 drawDial(hdgDial, d.ownship.heading, d.ownship.orderedHeading); 
                 drawLadder(depthLadder, d.ownship.depth, d.ownship.orderedDepth); 
-                drawTele(speedTele, d.ownship.speed, d.ownship.orderedSpeed); 
+                drawTele(speedTele, d.ownship.speed, d.ownship.orderedSpeed);
+                if (d.ownship && d.ownship.damage) { updateDamageLEDs(d.ownship.damage); } 
                 const nz = (d.noise && d.noise.helm_dB) || 0; helmNoise.textContent = nz.toFixed(0); setDbMeter(nz);
                 
                                                 const tasks = d.tasks || []; 

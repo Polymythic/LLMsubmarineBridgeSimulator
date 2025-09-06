@@ -44,7 +44,36 @@ class Simulation:
         # Load external assets
         try:
             load_ship_catalog()
-        except Exception:
+            # Ensure we have at least the basic ships if catalog loading failed
+            if not models.SHIP_CATALOG:
+                print("WARNING: Ship catalog is empty, using fallback definitions")
+                # Add minimal fallback ships
+                models.SHIP_CATALOG.update({
+                    "SSN": models.ShipDef(
+                        name="Nuclear Attack Submarine",
+                        ship_class="SSN",
+                        capabilities=models.ShipCapabilities(
+                            can_set_nav=True, has_active_sonar=True, has_torpedoes=True,
+                            has_guns=False, has_depth_charges=False, countermeasures=["noisemaker", "decoy"]
+                        ),
+                        default_hull=models.Hull(max_depth=300.0, max_speed=30.0, quiet_speed=5.0),
+                        default_weapons=models.WeaponsSuite(),
+                        default_acoustics=models.Acoustics(),
+                    ),
+                    "Destroyer": models.ShipDef(
+                        name="Destroyer (ASW)",
+                        ship_class="Destroyer", 
+                        capabilities=models.ShipCapabilities(
+                            can_set_nav=True, has_active_sonar=True, has_torpedoes=True,
+                            has_guns=True, has_depth_charges=True, countermeasures=[]
+                        ),
+                        default_hull=models.Hull(max_depth=0.0, max_speed=32.0, quiet_speed=8.0),
+                        default_weapons=models.WeaponsSuite(tube_count=2, torpedoes_stored=10, depth_charges_stored=30),
+                        default_acoustics=models.Acoustics(thermocline_on=False, source_level_by_speed={5: 125.0, 15: 140.0, 25: 150.0}),
+                    )
+                })
+        except Exception as e:
+            print(f"ERROR: Failed to load ship catalog: {e}")
             pass
         self._init_default_world()
         # Station task state
@@ -821,6 +850,7 @@ class Simulation:
                     "id": s.id, "side": s.side,
                     "class": getattr(s, "ship_class", None),
                     "capabilities": (getattr(s, "capabilities", None).dict() if getattr(s, "capabilities", None) else None),
+                    "weapons": (getattr(s, "weapons", None).dict() if getattr(s, "weapons", None) else None),
                     "x": s.kin.x, "y": s.kin.y, "depth": s.kin.depth,
                     "heading": s.kin.heading, "speed": s.kin.speed,
                     # Passive detectability breakdown for debug

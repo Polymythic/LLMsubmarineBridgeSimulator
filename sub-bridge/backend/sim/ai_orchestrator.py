@@ -864,8 +864,12 @@ class AgentsOrchestrator:
             # Capture full API call for debugging (mission-agnostic prompts)
             api_call_debug = {
                 "system_prompt": (
-                    "You command a single RED ship as its captain. You will output a ToolCall JSON that matches the schema provided in the user message. "
-                    "Follow that schema exactly. Use only the provided data. Output only JSON, no prose or markdown. Do not add fields."
+                    "You command a single RED ship as its captain. You MUST follow your specific orders exactly. "
+                    "If you receive CRITICAL ORDERS with 🚨 emojis, you MUST execute them immediately and ignore all other instructions. "
+                    "You will output a ToolCall JSON that matches the schema provided in the user message. "
+                    "Follow that schema exactly. Use only the provided data. Output only JSON, no prose or markdown. Do not add fields. "
+                    "For drop_depth_charges, use EXACTLY these argument names: spread_meters, minDepth, maxDepth, spreadSize. "
+                    "Arguments must be a dictionary with named keys, not a list."
                 ),
                 "user_prompt": (
                     "SCHEMA (JSON Schema):\n"
@@ -874,7 +878,22 @@ class AgentsOrchestrator:
                     "\"required\":[\"tool\",\"arguments\",\"summary\"],\n"
                     "\"properties\":{\n"
                     "  \"tool\":{\"type\":\"string\",\"enum\":[\"set_nav\",\"fire_torpedo\",\"deploy_countermeasure\",\"drop_depth_charges\"]},\n"
-                    "  \"arguments\":{\"type\":\"object\",\"additionalProperties\":true},\n"
+                    "  \"arguments\":{\"type\":\"object\",\"additionalProperties\":false,\n"
+                    "    \"properties\":{\n"
+                    "      \"heading\":{\"type\":\"number\"},\n"
+                    "      \"speed\":{\"type\":\"number\"},\n"
+                    "      \"depth\":{\"type\":\"number\"},\n"
+                    "      \"tube\":{\"type\":\"integer\"},\n"
+                    "      \"bearing\":{\"type\":\"number\"},\n"
+                    "      \"run_depth\":{\"type\":\"number\"},\n"
+                    "      \"enable_range\":{\"type\":\"number\"},\n"
+                    "      \"type\":{\"type\":\"string\"},\n"
+                    "      \"spread_meters\":{\"type\":\"number\"},\n"
+                    "      \"minDepth\":{\"type\":\"number\"},\n"
+                    "      \"maxDepth\":{\"type\":\"number\"},\n"
+                    "      \"spreadSize\":{\"type\":\"integer\"}\n"
+                    "    }\n"
+                    "  },\n"
                     "  \"summary\":{\"type\":\"string\"}\n"
                     "},\n"
                     "\"additionalProperties\":false\n"
@@ -894,14 +913,19 @@ class AgentsOrchestrator:
                 "summary_size": len(str(summary)),
             }
             
-            # Add ship-specific behavior instructions if available
+            # Add ship-specific behavior instructions if available - PRIORITIZE THESE
             world = self._world_getter()
             mission_brief = getattr(world, 'mission_brief', {})
             ship_behaviors = mission_brief.get('ship_behaviors', {})
             ship_behavior = ship_behaviors.get(ship_id, "")
             
             if ship_behavior:
-                api_call_debug["user_prompt"] += f"\nSHIP-SPECIFIC BEHAVIOR:\n{ship_behavior}\n"
+                # Insert ship behavior at the TOP of the prompt for maximum priority
+                api_call_debug["user_prompt"] = (
+                    f"🚨 CRITICAL ORDERS - YOU MUST FOLLOW THESE EXACTLY:\n{ship_behavior}\n\n"
+                    f"⚠️  IGNORE ALL OTHER INSTRUCTIONS BELOW. EXECUTE THE CRITICAL ORDERS ABOVE IMMEDIATELY.\n\n"
+                    + api_call_debug["user_prompt"]
+                )
             
             # Ensure engines receive EXACTLY these prompts by passing a prompt hint
             summary_for_engine = dict(summary)

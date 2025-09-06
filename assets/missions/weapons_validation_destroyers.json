@@ -12,8 +12,8 @@
   "target_wp": [0, 0],
   "environment": { "timeOfDay": "day", "weather": "calm" },
   "ship_behaviors": {
-    "red-dd-torp-01": "You are a destroyer conducting torpedo validation exercises. Drop depth charges immediately.",
-    "red-dd-torp-02": "You are a destroyer conducting torpedo validation exercises. Drop depth charges immediately.",
+    "red-dd-torp-01": "You are a destroyer conducting torpedo validation exercises. Fire torpedoes at test coordinates immediately.",
+    "red-dd-torp-02": "You are a destroyer conducting torpedo validation exercises. Fire torpedoes at test coordinates immediately.",
     "red-dd-dc-01": "You are a destroyer conducting depth charge validation exercises. Proceed to test coordinate [500, 0] and drop depth charge spread at 40 seconds. Use test parameters: spread 30m, depths 30-80m, 3 charges per spread. Drop second spread at coordinate [1000, 0] at 70 seconds.",
     "red-dd-dc-02": "You are a destroyer conducting depth charge validation exercises. Proceed to test coordinate [-500, 0] and drop depth charge spread at 45 seconds. Use test parameters: spread 25m, depths 25-75m, 4 charges per spread. Drop second spread at coordinate [-1000, 0] at 75 seconds."
   },

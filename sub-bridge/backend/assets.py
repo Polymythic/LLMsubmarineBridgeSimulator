@@ -53,38 +53,48 @@ def _read_json(path: Path) -> Any:
 def load_ship_catalog(path: Path = SHIPS_CATALOG_PATH) -> None:
     """Load ship catalog JSON and update models.SHIP_CATALOG in-place."""
     if not path.exists():
+        print(f"ERROR: Ship catalog not found at {path}")
         return
-    data = _read_json(path)
+    try:
+        data = _read_json(path)
+    except Exception as e:
+        print(f"ERROR: Failed to read ship catalog: {e}")
+        return
     # Build new catalog
     new_catalog: Dict[str, models.ShipDef] = {}
-    for key, entry in data.items():
-        capabilities = models.ShipCapabilities(**entry.get("capabilities", {}))
-        hull = models.Hull(**entry.get("hull", {}))
-        # Weapons
-        w = entry.get("weapons", {}) or {}
-        tubes = w.get("tubes")
-        ws = models.WeaponsSuite(
-            tube_count=w.get("tube_count", 6),
-            torpedoes_stored=w.get("torpedoes_stored", 6),
-            reload_time_s=w.get("reload_time_s", 45.0),
-            flood_time_s=w.get("flood_time_s", 8.0),
-            doors_time_s=w.get("doors_time_s", 3.0),
-            depth_charges_stored=w.get("depth_charges_stored", 0),
-            depth_charge_cooldown_s=w.get("depth_charge_cooldown_s", 2.0),
-            tubes=[models.Tube(**t) for t in tubes] if isinstance(tubes, list) else models.WeaponsSuite().tubes,
-        )
-        acoustics = models.Acoustics(**entry.get("acoustics", {}))
-        new_catalog[key] = models.ShipDef(
-            name=entry.get("name", key),
-            ship_class=entry.get("ship_class", key),
-            capabilities=capabilities,
-            default_hull=hull,
-            default_weapons=ws,
-            default_acoustics=acoustics,
-        )
-    # Update in place so existing imports see the change
-    models.SHIP_CATALOG.clear()
-    models.SHIP_CATALOG.update(new_catalog)
+    try:
+        for key, entry in data.items():
+            capabilities = models.ShipCapabilities(**entry.get("capabilities", {}))
+            hull = models.Hull(**entry.get("hull", {}))
+            # Weapons
+            w = entry.get("weapons", {}) or {}
+            tubes = w.get("tubes")
+            ws = models.WeaponsSuite(
+                tube_count=w.get("tube_count", 6),
+                torpedoes_stored=w.get("torpedoes_stored", 6),
+                reload_time_s=w.get("reload_time_s", 45.0),
+                flood_time_s=w.get("flood_time_s", 8.0),
+                doors_time_s=w.get("doors_time_s", 3.0),
+                depth_charges_stored=w.get("depth_charges_stored", 0),
+                depth_charge_cooldown_s=w.get("depth_charge_cooldown_s", 2.0),
+                tubes=[models.Tube(**t) for t in tubes] if isinstance(tubes, list) else models.WeaponsSuite().tubes,
+            )
+            acoustics = models.Acoustics(**entry.get("acoustics", {}))
+            new_catalog[key] = models.ShipDef(
+                name=entry.get("name", key),
+                ship_class=entry.get("ship_class", key),
+                capabilities=capabilities,
+                default_hull=hull,
+                default_weapons=ws,
+                default_acoustics=acoustics,
+            )
+        # Update in place so existing imports see the change
+        models.SHIP_CATALOG.clear()
+        models.SHIP_CATALOG.update(new_catalog)
+        print(f"INFO: Loaded {len(new_catalog)} ship definitions from catalog")
+    except Exception as e:
+        print(f"ERROR: Failed to build ship catalog: {e}")
+        # Keep existing catalog if building fails
 
 
 def load_mission_by_id(mission_id: str) -> Optional[MissionConfig]:

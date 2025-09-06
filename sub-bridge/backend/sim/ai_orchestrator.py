@@ -905,6 +905,7 @@ class AgentsOrchestrator:
                     " - Make decisions that align with the FleetIntent while considering factors such as speed, resources, and potential risks.\n"
                     " - Use only tools supported by capabilities.\n"
                     " - EMCON: if fleet_intent.emcon.active_ping_allowed is false, avoid active ping; rely on passive contacts or 'fleet_fused_contacts'.\n"
+                    " - Active Sonar: if you have has_active_sonar=true, use active_ping tool every 15-20 seconds to search for contacts. This provides exact bearing and range.\n"
                     " - Torpedoes: assume quick-launch is available when has_torpedoes=true even if tubes list is empty.\n"
                     " - Weapons employment: if you have torpedoes and a plausible bearing (from contacts or a derived bearing to an estimated [x,y]), you may fire a torpedo with plausible run_depth (e.g., 100–200 m) and enable_range (e.g., 1000–3000 m).\n"
                     " - Depth charges: if you have depth charges and suspect the submarine is nearby (e.g., within ~1 km), you may drop a spread using minDepth >= 15 m.\n"

@@ -189,6 +189,8 @@ class Ship(BaseModel):
     capabilities: Optional[ShipCapabilities] = None
     # Contact tracking for intercept calculations
     contact_tracks: List[ContactTrack] = Field(default_factory=list)
+    # Active sonar cooldown for AI ships
+    active_sonar_cooldown: float = 0.0
 
 
 class TelemetryOwnship(BaseModel):

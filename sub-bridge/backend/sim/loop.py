@@ -8,12 +8,12 @@ import os
 import random
 from ..bus import BUS
 from ..config import CONFIG, reload_from_env
-from ..models import Ship, Kinematics, Hull, Acoustics, WeaponsSuite, Reactor, DamageState, MaintenanceTask, SHIP_CATALOG
+from ..models import Ship, Kinematics, Hull, Acoustics, WeaponsSuite, Reactor, DamageState, MaintenanceTask, SHIP_CATALOG, TelemetryContact
 from ..assets import load_ship_catalog, load_mission_by_id, apply_mission_to_world
 from ..storage import init_engine, create_run, insert_snapshot, insert_event
 from .ecs import World
 from .physics import integrate_kinematics
-from .sonar import passive_contacts, ActivePingState, active_ping, passive_projectiles
+from .sonar import passive_contacts, ActivePingState, active_ping, passive_projectiles, normalize_angle_deg
 from .weapons import try_load_tube, try_flood_tube, try_set_doors, try_fire, step_torpedo, step_tubes, try_drop_depth_charges, step_depth_charge, try_launch_torpedo_quick
 from .ai_tools import LocalAIStub
 from .ai_orchestrator import AgentsOrchestrator
@@ -43,6 +43,8 @@ class Simulation:
         self._last_ping_at = None
         # Load external assets
         try:
+            # Import models here to avoid circular import issues
+            from .. import models
             load_ship_catalog()
             # Ensure we have at least the basic ships if catalog loading failed
             if not models.SHIP_CATALOG:
@@ -631,6 +633,34 @@ class Simulation:
                                     if torp:
                                         self.world.torpedoes.append(torp)
                                         insert_event(self.engine, self.run_id, "ai.tool.apply", json.dumps({"ship_id": _sid, **tc}))
+                            if tool == "active_ping":
+                                try:
+                                    tgt = self.world.get_ship(_sid)
+                                except Exception:
+                                    break
+                                if not getattr(getattr(tgt, "capabilities", None), "has_active_sonar", False):
+                                    break
+                                # Check cooldown
+                                if tgt.active_sonar_cooldown > 0.0:
+                                    break
+                                # Perform active ping
+                                res = active_ping(tgt, [s for s in self.world.all_ships() if s.id != tgt.id])
+                                if res:
+                                    # Set cooldown (12 seconds)
+                                    tgt.active_sonar_cooldown = 12.0
+                                    # Store ping responses for this ship
+                                    now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                                    ping_responses = [
+                                        {"id": rid, "bearing": brg, "range_est": rng, "strength": st, "at": now_iso, "source": tgt.id}
+                                        for (rid, rng, brg, st) in res
+                                    ]
+                                    # Store in ship-specific ping responses
+                                    if not hasattr(self, "_ai_ping_responses"):
+                                        self._ai_ping_responses = {}
+                                    self._ai_ping_responses[tgt.id] = ping_responses
+                                    # Add counter-detection event
+                                    self._transient_events.append({"type": "counterDetected", "at": now_iso, "source": tgt.id})
+                                    insert_event(self.engine, self.run_id, "ai.tool.apply", json.dumps({"ship_id": _sid, **tc}))
                             break
                         # Mirror recent runs into sim for Fleet UI
                         self._ai_recent_runs = getattr(self._ai_orch, "_recent_runs", [])
@@ -711,6 +741,12 @@ class Simulation:
         self._step_station_tasks(own, dt)
 
         self.active_ping_state.tick(dt)
+        
+        # Tick AI ship active sonar cooldowns
+        for ship in self.world.all_ships():
+            if ship.side != "ownship" and ship.active_sonar_cooldown > 0.0:
+                ship.active_sonar_cooldown = max(0.0, ship.active_sonar_cooldown - dt)
+        
         # Acoustic noise budget and detectability
         noise_from_speed = min(100.0, (speed / max(1.0, own.hull.max_speed)) * 70.0)
         noise_cav = 30.0 if cav else 0.0
@@ -858,7 +894,13 @@ class Simulation:
         # Initialize explosion overlays list if absent
         if not hasattr(self, "_sonar_explosions"):
             self._sonar_explosions = []
-        tel_sonar = {**base, "contacts": [c.dict() for c in (contacts + proj_contacts)], "pingCooldown": max(0.0, self.active_ping_state.timer), "pingResponses": list(self._last_ping_responses), "lastPingAt": getattr(self, "_last_ping_at", None), "explosions": list(self._sonar_explosions), "tasks": [t.__dict__ for t in self._active_tasks['sonar']]}
+        # Collect all AI ping responses
+        all_ai_ping_responses = []
+        if hasattr(self, "_ai_ping_responses"):
+            for ship_id, responses in self._ai_ping_responses.items():
+                all_ai_ping_responses.extend(responses)
+        
+        tel_sonar = {**base, "contacts": [c.dict() for c in (contacts + proj_contacts)], "pingCooldown": max(0.0, self.active_ping_state.timer), "pingResponses": list(self._last_ping_responses) + all_ai_ping_responses, "lastPingAt": getattr(self, "_last_ping_at", None), "explosions": list(self._sonar_explosions), "tasks": [t.__dict__ for t in self._active_tasks['sonar']]}
         tel_weapons = {**base, "tubes": [t.dict() for t in own.weapons.tubes], "consentRequired": CONFIG.require_captain_consent, "captainConsent": self._captain_consent, "tasks": [t.__dict__ for t in self._active_tasks['weapons']]}
         tel_engineering = {**base, "reactor": own.reactor.dict(), "pumps": {"fwd": self._pump_fwd, "aft": self._pump_aft}, "damage": own.damage.dict(), "power": own.power.dict(), "systems": own.systems.dict(), "maintenance": own.maintenance.levels, "tasks": [t.__dict__ for t in self._active_tasks['engineering']]}
 
@@ -912,6 +954,8 @@ class Simulation:
                     "passiveDetect": getattr(s.acoustics, "last_detectability", 0.0),
                     **bearings_to(s.kin.x, s.kin.y),
                     "range_from_own": (( ( (s.kin.x - own.kin.x)**2 + (s.kin.y - own.kin.y)**2 ) ** 0.5 )),
+                    # Include contacts this ship has detected (e.g., from player's active ping)
+                    "contacts": [c.dict() for c in getattr(self, "_enemy_ship_contacts", {}).get(s.id, [])]
                 }
                 for s in self.world.all_ships() if s.id != own.id
             ],
@@ -924,6 +968,28 @@ class Simulation:
                 debug_payload["contactHistory"] = list(getattr(self._ai_orch, "_fleet_contact_history", []))[-100:]
         except Exception:
             pass
+        
+        # Clean up old enemy ship contacts (older than 30 seconds)
+        if hasattr(self, "_enemy_ship_contacts") and hasattr(self, "_enemy_ship_contacts_timestamps"):
+            current_time = time.time()
+            for ship_id in list(self._enemy_ship_contacts.keys()):
+                if ship_id in self._enemy_ship_contacts_timestamps:
+                    # Keep contacts and timestamps that are less than 30 seconds old
+                    valid_indices = [
+                        i for i, timestamp in enumerate(self._enemy_ship_contacts_timestamps[ship_id])
+                        if (current_time - timestamp) < 30.0
+                    ]
+                    self._enemy_ship_contacts[ship_id] = [
+                        self._enemy_ship_contacts[ship_id][i] for i in valid_indices
+                    ]
+                    self._enemy_ship_contacts_timestamps[ship_id] = [
+                        self._enemy_ship_contacts_timestamps[ship_id][i] for i in valid_indices
+                    ]
+                    
+                    # Remove empty entries
+                    if not self._enemy_ship_contacts[ship_id]:
+                        del self._enemy_ship_contacts[ship_id]
+                        del self._enemy_ship_contacts_timestamps[ship_id]
 
         await BUS.publish("tick:all", {"topic": "telemetry", "data": tel_all})
         await BUS.publish("tick:captain", {"topic": "telemetry", "data": tel_captain})
@@ -1003,6 +1069,65 @@ class Simulation:
                     {"id": rid, "bearing": brg, "range_est": rng, "strength": st, "at": now_iso}
                     for (rid, rng, brg, st) in res
                 ]
+                
+                # Create counter-detection contacts for enemy ships
+                for ship in self.world.all_ships():
+                    if ship.side == "RED":  # Enemy ships
+                        dx = own.kin.x - ship.kin.x
+                        dy = own.kin.y - ship.kin.y
+                        dist_m = math.hypot(dx, dy)
+                        # Enemy ships can detect player's ping within active sonar range
+                        if dist_m <= 15000.0:  # 15km active sonar range
+                            # Calculate bearing from enemy ship to player
+                            brg = normalize_angle_deg(math.degrees(math.atan2(dx, dy)))
+                            # Add some noise to the bearing
+                            brg_noise = normalize_angle_deg(brg + random.gauss(0, 2.0))
+                            # Calculate signal strength based on distance
+                            strength = max(0.0, min(1.0, 1.0 / (1.0 + (dist_m / 10000.0))))
+                            
+                            # Create a contact for this enemy ship to detect
+                            enemy_contact = TelemetryContact(
+                                id="ENEMY_ACTIVE_SONAR",
+                                bearing=brg_noise,
+                                strength=strength,
+                                classifiedAs="ENEMY_ACTIVE_SONAR",
+                                confidence=0.8,  # High confidence for active sonar detection
+                                bearingKnown=True,
+                                rangeKnown=False  # No range for passive detection
+                            )
+                            
+                            # Store the contact for this enemy ship with timestamp
+                            if not hasattr(self, "_enemy_ship_contacts"):
+                                self._enemy_ship_contacts = {}
+                            if not hasattr(self, "_enemy_ship_contacts_timestamps"):
+                                self._enemy_ship_contacts_timestamps = {}
+                            if ship.id not in self._enemy_ship_contacts:
+                                self._enemy_ship_contacts[ship.id] = []
+                                self._enemy_ship_contacts_timestamps[ship.id] = []
+                            
+                            self._enemy_ship_contacts[ship.id].append(enemy_contact)
+                            self._enemy_ship_contacts_timestamps[ship.id].append(time.time())
+                            
+                            # Add to AI orchestrator's contact history for debug display
+                            if hasattr(self, "_ai_orch") and self._ai_orch is not None:
+                                if not hasattr(self._ai_orch, "_fleet_contact_history"):
+                                    self._ai_orch._fleet_contact_history = []
+                                
+                                history_entry = {
+                                    "time": now_iso,
+                                    "reportedBy": ship.id,
+                                    "reporter_pos": [ship.kin.x, ship.kin.y],
+                                    "type": "active_sonar_detection",
+                                    "id": "ownship",
+                                    "bearing": brg_noise,
+                                    "range_est": None,  # No range for passive detection
+                                    "confidence": 0.8,
+                                    "classifiedAs": "ENEMY_ACTIVE_SONAR"
+                                }
+                                self._ai_orch._fleet_contact_history.append(history_entry)
+                                # Keep last 100 entries
+                                self._ai_orch._fleet_contact_history = self._ai_orch._fleet_contact_history[-100:]
+                
                 # Active ping raises EMCON risk; emit counter-detected event for UI
                 self._transient_events.append({"type": "counterDetected", "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
                 return None

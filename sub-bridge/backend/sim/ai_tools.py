@@ -45,6 +45,10 @@ AI_TOOL_SCHEMA = {
             "doctrine": "str (optional)"
         }
     },
+    "active_ping": {
+        "description": "Use active sonar to detect contacts. Provides exact bearing and range with signal strength. 12s cooldown.",
+        "args": {}
+    },
 }
 
 

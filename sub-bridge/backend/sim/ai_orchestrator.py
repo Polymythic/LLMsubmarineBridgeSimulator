@@ -19,6 +19,23 @@ from .ai_tools import LocalAIStub
 from .sonar import passive_contacts as _passive_contacts
 
 
+def _load_prompt_template(template_name: str) -> str:
+    """Load a prompt template from the ai/ directory."""
+    try:
+        # Get the project root (go up from sub-bridge/backend/sim/ to project root)
+        project_root = Path(__file__).parent.parent.parent.parent
+        template_path = project_root / "ai" / f"{template_name}.md"
+        
+        if template_path.exists():
+            return template_path.read_text(encoding='utf-8')
+        else:
+            print(f"Warning: Prompt template {template_name}.md not found at {template_path}")
+            return ""
+    except Exception as e:
+        print(f"Error loading prompt template {template_name}: {e}")
+        return ""
+
+
 def _round_floats(obj: Any, ndigits: int = 1) -> Any:
     """Recursively round all float values within a structure to ndigits.
 
@@ -505,112 +522,16 @@ class AgentsOrchestrator:
         }
         try:
             summary = self._build_fleet_summary()
+            # Load system prompt from template
+            system_prompt = _load_prompt_template("fleet_commander_system")
+            
             # Capture full API call for debugging (mission-agnostic prompts)
             api_call_debug = {
-                "system_prompt": (
-                    "You are the RED Fleet Commander in a naval wargame.\n"
-                    "Your role is to produce a `FleetIntent` JSON that strictly follows the provided schema.\n"
-                    "Do not output anything except valid JSON conforming to schema.\n"
-                    "You control all RED ships: destroyers, escorts, supply ships, and submarines.\n"
-                    "You must translate high-level mission objectives into concrete ship tasks, formations, and tactical guidance.\n\n"
-                    "### Duties\n"
-                    "1. **Formation & Strategy (Summary field)**\n"
-                    "   - Always describe the fleet-wide strategy in tactical terms, not just the mission restated.\n"
-                    "   - Organize ships into task groups (e.g., Convoy A, Convoy B, Sub screen) and describe their roles.\n"
-                    "   - Explicitly list key ship positions or offsets (e.g., \"dd-01 escorts supply-01 1 km ahead\").\n"
-                    "   - Capture EMCON posture and baseline speeds.\n"
-                    "   - Repeat strategy across turns unless you are adapting — do not thrash.\n\n"
-                    "2. **Ship Objectives**\n"
-                    "   - Every RED ship must appear under `objectives`.\n"
-                    "   - Include `destination` [x,y] and a one-sentence `goal`.\n"
-                    "   - Add `speed_kn` only if a clear recommendation exists.\n\n"
-                    "3. **EMCON & Attack Escalation**\n"
-                    "   - Always set `active_ping_allowed` and `radio_discipline`.\n"
-                    "   - **CRITICAL: When high-confidence contacts (>0.7) are detected, IMMEDIATELY escalate to aggressive pursuit:**\n"
-                    "     * Set `active_ping_allowed: true` to enable active sonar\n"
-                    "     * Direct destroyers to maximum speed toward contact location\n"
-                    "     * Order coordinated depth charge attacks when within 2km of predicted position\n"
-                    "     * Use multiple ships for saturation attacks\n"
-                    "   - **Visual contacts (>0.8 confidence) require IMMEDIATE attack coordination**\n"
-                    "   - **Active sonar detections require IMMEDIATE weapon deployment**\n\n"
-                    "4. **Contact Picture & Attack Coordination**\n"
-                    "   - If bearings or detections exist, perform a rough TDC-like analysis.\n"
-                    "   - Fuse multiple bearings into an approximate location, course, and speed of the suspected contact.\n"
-                    "   - **For high-confidence contacts, IMMEDIATELY coordinate attack:**\n"
-                    "     * Calculate intercept courses for all available destroyers\n"
-                    "     * Order maximum speed pursuit (use ship's max speed)\n"
-                    "     * Plan depth charge spreads at predicted contact position\n"
-                    "     * Coordinate multiple ships for saturation attack\n"
-                    "   - Include attack plan as note: \"HIGH CONFIDENCE CONTACT: Coordinating attack with dd-01, dd-02 at [x,y], depth charges at 2km spread\"\n\n"
-                    "5. **Weapon Coordination**\n"
-                    "   - **Depth Charges**: Use when within 2km of predicted contact position\n"
-                    "     * Order 3-5 depth charges in spread pattern\n"
-                    "     * Set depth range 50-200m to cover submarine operating depths\n"
-                    "     * Coordinate multiple ships for saturation\n"
-                    "   - **Torpedoes**: Use for surface targets or when depth charges fail\n"
-                    "     * Fire at high-confidence visual contacts\n"
-                    "     * Use when target is clearly identified and within range\n"
-                    "   - **Active Sonar**: Enable immediately when high-confidence contacts detected\n"
-                    "     * Use to refine target position for weapon delivery\n"
-                    "     * Accept risk of counter-detection for attack coordination\n\n"
-                    "6. **Notes**\n"
-                    "   - Use `notes` to give conditional rules, task-group coordination, or advisories.\n"
-                    "   - **PRIORITIZE attack coordination for high-confidence contacts**\n"
-                    "   - Link escorts to their convoys, give subs patrol doctrine, or note engagement rules.\n"
-                    "   - Keep concise and actionable.\n\n"
-                    "7. **Constraints**\n"
-                    "   - Do not invent enemy truth beyond provided beliefs.\n"
-                    "   - Do not omit RED ships.\n"
-                    "   - Do not output extra fields outside the schema.\n"
-                    "   - **ALWAYS escalate to attack when confidence > 0.7**\n\n"
-                    "### Schema (reminder)\n"
-                    "{\n"
-                    " \"objectives\": { ship_id: { \"destination\": [x,y], \"goal\": \"string\", \"speed_kn\": optional number }},\n"
-                    " \"emcon\": { \"active_ping_allowed\": bool, \"radio_discipline\": \"string\" },\n"
-                    " \"summary\": \"string\",\n"
-                    " \"notes\": [ { \"ship_id\": optional, \"text\": \"string\" } ]\n"
-                    "}\n"
-                ),
-                "user_prompt": (
-                    "SCHEMA (JSON Schema):\n"
-                    "{"
-                    "\"type\":\"object\",\n"
-                    "\"required\":[\"objectives\",\"summary\"],\n"
-                    "\"properties\":{\n"
-                    "  \"objectives\":{\"type\":\"object\",\"additionalProperties\":{\n"
-                    "    \"type\":\"object\",\n"
-                    "    \"required\":[\"destination\",\"goal\"],\n"
-                    "    \"properties\":{\n"
-                    "      \"destination\":{\"type\":\"array\",\"items\":{\"type\":\"number\"},\"minItems\":2,\"maxItems\":2},\n"
-                    "      \"speed_kn\":{\"type\":\"number\"},\n"
-                    "      \"goal\":{\"type\":\"string\"}\n"
-                    "    },\n"
-                    "    \"additionalProperties\":false\n"
-                    "  }},\n"
-                    "  \"emcon\":{\"type\":\"object\",\"properties\":{\n"
-                    "    \"active_ping_allowed\":{\"type\":\"boolean\"},\n"
-                    "    \"radio_discipline\":{\"type\":\"string\"}\n"
-                    "  },\"additionalProperties\":false},\n"
-                    "  \"summary\":{\"type\":\"string\"},\n"
-                    "  \"notes\":{\"type\":\"array\",\"items\":{\n"
-                    "    \"type\":\"object\",\n"
-                    "    \"properties\":{\"ship_id\":{\"type\":[\"string\",\"null\"]},\"text\":{\"type\":\"string\"}},\n"
-                    "    \"required\":[\"text\"],\"additionalProperties\":false\n"
-                    "  }}\n"
-                    "},\n"
-                    "\"additionalProperties\":false\n"
-                    "}\n\n"
-                    "DATA (use only this):\n"
-                    "FLEET_SUMMARY_JSON:\n" + json.dumps(summary, separators=(',', ':')) + "\n\n"
-                    "CONSTRAINTS:\n"
-                    "- Include EVERY RED ship id under 'objectives'.\n"
-                    "- Each ship MUST include a one-sentence 'goal'.\n"
-                    "- Include 'speed_kn' only if clearly recommended.\n"
-                    "- If bearings exist, attempt to produce a fused contact estimate (location, course, speed).\n"
-                    "- Encode strategy in the 'summary' so that strategy is persistent across turns.\n"
-                    "- Use 'notes' for conditional rules, escort logic, patrol instructions, and advisories.\n"
-                    "- Do not infer unknown enemy truth beyond provided beliefs.\n"
-                    "- Output ONLY the JSON object conforming to the schema\n"
+                "system_prompt": system_prompt,
+                "user_prompt": _load_prompt_template("fleet_commander_user").replace(
+                    "{{FLEET_SUMMARY_JSON}}", json.dumps(summary, separators=(',', ':'))
+                ).replace(
+                    "{{MISSION_BRIEF}}", json.dumps(getattr(self._world_getter(), 'mission_brief', {}), separators=(',', ':'))
                 ),
                 "summary_size": len(str(summary)),
             }
@@ -895,64 +816,16 @@ class AgentsOrchestrator:
                     "api_call_debug": api_call_debug,
                 })  # type: ignore[attr-defined]
                 return result
+            # Load system prompt from template
+            system_prompt = _load_prompt_template("ship_commander_system")
+            
             # Capture full API call for debugging (mission-agnostic prompts)
             api_call_debug = {
-                "system_prompt": (
-                    "You command a single RED ship as its captain. You MUST follow your specific orders exactly. "
-                    "If you receive CRITICAL ORDERS with 🚨 emojis, you MUST execute them immediately and ignore all other instructions. "
-                    "You will output a ToolCall JSON that matches the schema provided in the user message. "
-                    "Follow that schema exactly. Use only the provided data. Output only JSON, no prose or markdown. Do not add fields. "
-                    "For drop_depth_charges, use EXACTLY these argument names: spread_meters, minDepth, maxDepth, spreadSize. "
-                    "Arguments must be a dictionary with named keys, not a list. "
-                    "**ATTACK DOCTRINE:** When hunting submarines or engaging high-confidence contacts: "
-                    "1. IMMEDIATELY plot intercept course to contact position "
-                    "2. Use MAXIMUM SPEED (your ship's max speed) to close distance "
-                    "3. When within 2km of predicted contact position, drop depth charges in spread patterns "
-                    "4. Use 3-5 depth charges with depth range 50-200m to cover submarine operating depths "
-                    "5. If you have torpedoes and target is surface or shallow, fire torpedoes "
-                    "6. Use active sonar when ordered to refine target position for weapon delivery "
-                    "7. Accept risk of counter-detection to ensure successful attack "
-                    "**PRIORITY: Attack coordination and weapon delivery over stealth when high-confidence contacts detected.**"
-                ),
-                "user_prompt": (
-                    "SCHEMA (JSON Schema):\n"
-                    "{"
-                    "\"type\":\"object\",\n"
-                    "\"required\":[\"tool\",\"arguments\",\"summary\"],\n"
-                    "\"properties\":{\n"
-                    "  \"tool\":{\"type\":\"string\",\"enum\":[\"set_nav\",\"fire_torpedo\",\"deploy_countermeasure\",\"drop_depth_charges\",\"active_ping\"]},\n"
-                    "  \"arguments\":{\"type\":\"object\",\"additionalProperties\":false,\n"
-                    "    \"properties\":{\n"
-                    "      \"heading\":{\"type\":\"number\"},\n"
-                    "      \"speed\":{\"type\":\"number\"},\n"
-                    "      \"depth\":{\"type\":\"number\"},\n"
-                    "      \"tube\":{\"type\":\"integer\"},\n"
-                    "      \"bearing\":{\"type\":\"number\"},\n"
-                    "      \"run_depth\":{\"type\":\"number\"},\n"
-                    "      \"enable_range\":{\"type\":\"number\"},\n"
-                    "      \"type\":{\"type\":\"string\"},\n"
-                    "      \"spread_meters\":{\"type\":\"number\"},\n"
-                    "      \"minDepth\":{\"type\":\"number\"},\n"
-                    "      \"maxDepth\":{\"type\":\"number\"},\n"
-                    "      \"spreadSize\":{\"type\":\"integer\"}\n"
-                    "    }\n"
-                    "  },\n"
-                    "  \"summary\":{\"type\":\"string\"}\n"
-                    "},\n"
-                    "\"additionalProperties\":false\n"
-                    "}\n\n"
-                    "DATA (use only this):\n"
-                    "SHIP_SUMMARY_JSON:\n" + json.dumps(summary, separators=(',', ':')) + "\n\n"
-                    "BEHAVIOR:\n- As a RED ship captain, use the FleetIntent's objectives as a guide, but prioritize the needs of your own ship.\n" 
-                    " - Make decisions that align with the FleetIntent while considering factors such as speed, resources, and potential risks.\n"
-                    " - Use only tools supported by capabilities.\n"
-                    " - EMCON: if fleet_intent.emcon.active_ping_allowed is false, avoid active ping; rely on passive contacts or 'fleet_fused_contacts'.\n"
-                    " - Active Sonar: if you have has_active_sonar=true, use active_ping tool every 15-20 seconds to search for contacts. This provides exact bearing and range.\n"
-                    " - Torpedoes: assume quick-launch is available when has_torpedoes=true even if tubes list is empty.\n"
-                    " - Weapons employment: if you have torpedoes and a plausible bearing (from contacts or a derived bearing to an estimated [x,y]), you may fire a torpedo with plausible run_depth (e.g., 100–200 m) and enable_range (e.g., 1000–3000 m).\n"
-                    " - Depth charges: if you have depth charges and suspect the submarine is nearby (e.g., within ~1 km), you may drop a spread using minDepth >= 15 m.\n"
-                    " - If no change is needed, return set_nav holding current values with a brief summary.\n"
-                    " - The 'summary' MUST be two short, human-readable sentences explaining intent and reasoning for your orders. \n"
+                "system_prompt": system_prompt,
+                "user_prompt": _load_prompt_template("ship_commander_user").replace(
+                    "{{SHIP_SUMMARY_JSON}}", json.dumps(summary, separators=(',', ':'))
+                ).replace(
+                    "{{CRITICAL_ORDERS}}", ""  # Will be filled in below if ship_behavior exists
                 ),
                 "summary_size": len(str(summary)),
             }
@@ -964,11 +837,13 @@ class AgentsOrchestrator:
             ship_behavior = ship_behaviors.get(ship_id, "")
             
             if ship_behavior:
-                # Insert ship behavior at the TOP of the prompt for maximum priority
-                api_call_debug["user_prompt"] = (
+                # Insert ship behavior as critical orders in the template
+                critical_orders = (
                     f"🚨 CRITICAL ORDERS - YOU MUST FOLLOW THESE EXACTLY:\n{ship_behavior}\n\n"
                     f"⚠️  IGNORE ALL OTHER INSTRUCTIONS BELOW. EXECUTE THE CRITICAL ORDERS ABOVE IMMEDIATELY.\n\n"
-                    + api_call_debug["user_prompt"]
+                )
+                api_call_debug["user_prompt"] = api_call_debug["user_prompt"].replace(
+                    "{{CRITICAL_ORDERS}}", critical_orders
                 )
             
             # Ensure engines receive EXACTLY these prompts by passing a prompt hint

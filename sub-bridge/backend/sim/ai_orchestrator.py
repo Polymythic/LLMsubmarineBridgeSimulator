@@ -173,7 +173,8 @@ class AgentsOrchestrator:
                     from_obs = vis_map.get(red.id, {}) if isinstance(vis_map, dict) else {}
                     for blu in blue_ships:
                         st = from_obs.get(blu.id, {}) if isinstance(from_obs, dict) else {}
-                        if not bool(st.get("detected", False)):
+                        # Include contact if it was detected this cycle OR has recent history
+                        if not st:  # No contact data
                             continue
                         dx = blu.kin.x - red.kin.x
                         dy = blu.kin.y - red.kin.y
@@ -181,16 +182,25 @@ class AgentsOrchestrator:
                         if rng > 15000.0:
                             continue
                         brg_true = (math.degrees(math.atan2(dx, dy)) % 360.0)
+                        
+                        # Use enhanced visual detection data
+                        confidence = st.get("confidence", 0.7)
+                        last_seen = st.get("last_seen", time.time())
+                        detection_count = st.get("detection_count", 0)
+                        detected_this_cycle = st.get("detected", False)
+                        
                         merged[blu.id] = {
                             "id": blu.id,
                             "side": blu.side,
                             "bearing": float(brg_true),
                             "range_est": float(rng),
-                            "confidence": 0.9 if st.get("mode") == "surface" else 0.7,
+                            "confidence": float(confidence),
                             "class": str(getattr(blu, "ship_class", "Unknown")),
                             "detectability": 1.0,
-                            "last_seen": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                            "visual_mode": st.get("mode"),
+                            "last_seen": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(last_seen)),
+                            "visual_mode": st.get("mode", "unknown"),
+                            "detection_count": detection_count,
+                            "detected_this_cycle": detected_this_cycle,
                         }
                         # Append visual contact event with estimated position
                         heading_rad = math.radians(brg_true)

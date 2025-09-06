@@ -34,6 +34,11 @@ class Simulation:
         self._radio_raised = False
         self._pump_fwd = False
         self._pump_aft = False
+        # Debug toggles for visual detection (disabled by default)
+        self._debug_player_visual_100 = False
+        self._debug_enemy_visual_100 = False
+        # Visual contact tracking for persistence and improved re-detection
+        self._visual_contacts = {}  # {observer_id: {target_id: {"last_seen": timestamp, "detection_count": int, "last_confidence": float}}}
         # Lazily initialize asyncio.Event to avoid requiring an event loop during tests
         self._stop: Optional[asyncio.Event] = None
         self._last_snapshot = 0.0
@@ -803,6 +808,151 @@ class Simulation:
         except Exception:
             pass
 
+        # Build visual detection map for enemy ships to detect surface vessels
+        try:
+            if hasattr(self, "_ai_orch") and getattr(self, "_ai_orch", None) is not None:
+                visual_detection_map = {}
+                
+                # Initialize enemy search timers if not exists
+                if not hasattr(self, "_enemy_search_timers"):
+                    self._enemy_search_timers = {}
+                
+                # For each enemy ship, check if they can visually detect other ships
+                for observer in self.world.all_ships():
+                    if observer.side != "RED":  # Only enemy ships can visually detect
+                        continue
+                    
+                    # Initialize search timer for this observer
+                    if observer.id not in self._enemy_search_timers:
+                        self._enemy_search_timers[observer.id] = 0.0
+                    
+                    # Update search timer (re-roll detection every 5 seconds, same as periscope)
+                    self._enemy_search_timers[observer.id] += dt
+                    search_interval = 5.0  # 5 seconds between search attempts
+                    
+                    # Only perform detection check every 5 seconds to simulate realistic visual scanning
+                    if self._enemy_search_timers[observer.id] >= search_interval:
+                        self._enemy_search_timers[observer.id] = 0.0  # Reset timer
+                        
+                        observer_detections = {}
+                        
+                        # Check detection of all other ships
+                        for target in self.world.all_ships():
+                            if target.id == observer.id:
+                                continue
+                            
+                            # Calculate distance and check if target is within visual range
+                            dx = target.kin.x - observer.kin.x
+                            dy = target.kin.y - observer.kin.y
+                            dist_m = math.hypot(dx, dy)
+                            
+                            # Visual detection range: 15km (same as periscope)
+                            if dist_m > 15000.0:
+                                continue
+                            
+                            # Visual detection conditions:
+                            # 1. Target must be at or near surface (≤5m depth, same as periscope detection)
+                            # 2. Observer must be at surface or shallow depth (≤10m depth for surface ships)
+                            
+                            target_surface = target.kin.depth <= 5.0
+                            observer_surface = observer.kin.depth <= 10.0
+                            
+                            if target_surface and observer_surface:
+                                # Initialize visual contact tracking for this observer
+                                if observer.id not in self._visual_contacts:
+                                    self._visual_contacts[observer.id] = {}
+                                
+                                # Check if we have previous contact history for this target
+                                contact_history = self._visual_contacts[observer.id].get(target.id, {})
+                                last_seen = contact_history.get("last_seen", 0.0)
+                                detection_count = contact_history.get("detection_count", 0)
+                                last_confidence = contact_history.get("last_confidence", 0.0)
+                                
+                                # Calculate detection probability based on distance and conditions
+                                if self._debug_enemy_visual_100:
+                                    # Debug mode: 100% detection
+                                    detection_prob = 1.0
+                                    detection_roll = 0.0  # Always pass
+                                else:
+                                    # Normal mode: probabilistic detection
+                                    # Base detection probability decreases with distance
+                                    base_prob = max(0.0, 1.0 - (dist_m / 15000.0))
+                                    
+                                    # Surface vessels are easier to detect than submarines
+                                    if target.ship_class == "Convoy":
+                                        detection_prob = base_prob * 1.3  # 30% easier to detect
+                                    elif target.ship_class == "Destroyer":
+                                        detection_prob = base_prob * 1.1  # 10% easier to detect
+                                    else:
+                                        detection_prob = base_prob
+                                    
+                                    # Improve detection probability for previously spotted targets
+                                    if detection_count > 0:
+                                        # Increase probability by 20% per previous detection (capped at 50% bonus)
+                                        memory_bonus = min(0.5, detection_count * 0.2)
+                                        detection_prob = min(0.95, detection_prob + memory_bonus)
+                                    
+                                    # Cap at 95% maximum detection probability (never perfect, but very high for known targets)
+                                    detection_prob = min(0.95, detection_prob)
+                                    
+                                    # Roll for detection
+                                    detection_roll = random.random()
+                                
+                                # Check for detection
+                                detected_this_cycle = detection_roll < detection_prob
+                                
+                                # If we detect the target OR we have recent contact history, include it
+                                current_time = time.time()
+                                time_since_last_seen = current_time - last_seen
+                                
+                                # Include contact if:
+                                # 1. We detected it this cycle, OR
+                                # 2. We saw it recently (within 30 seconds) and it's still in range
+                                if detected_this_cycle or (detection_count > 0 and time_since_last_seen <= 30.0 and dist_m <= 15000.0):
+                                    # Determine detection mode based on target depth
+                                    if target.kin.depth <= 1.0:
+                                        mode = "surface"  # Fully surfaced
+                                    else:
+                                        mode = "periscope"  # Periscope depth
+                                    
+                                    # Update contact history if we detected it this cycle
+                                    if detected_this_cycle:
+                                        self._visual_contacts[observer.id][target.id] = {
+                                            "last_seen": current_time,
+                                            "detection_count": detection_count + 1,
+                                            "last_confidence": detection_prob
+                                        }
+                                    
+                                    # Use current detection confidence or last known confidence
+                                    current_confidence = detection_prob if detected_this_cycle else last_confidence
+                                    
+                                    observer_detections[target.id] = {
+                                        "detected": detected_this_cycle,
+                                        "mode": mode,
+                                        "distance": dist_m,
+                                        "confidence": current_confidence,
+                                        "last_seen": last_seen if not detected_this_cycle else current_time,
+                                        "detection_count": detection_count + (1 if detected_this_cycle else 0)
+                                    }
+                        
+                        if observer_detections:
+                            visual_detection_map[observer.id] = observer_detections
+                
+                setattr(self._ai_orch, "_visual_detection_map", visual_detection_map)
+                
+                # Clean up old visual contacts (older than 60 seconds)
+                current_time = time.time()
+                for observer_id in list(self._visual_contacts.keys()):
+                    for target_id in list(self._visual_contacts[observer_id].keys()):
+                        contact = self._visual_contacts[observer_id][target_id]
+                        if current_time - contact.get("last_seen", 0.0) > 60.0:  # 60 seconds
+                            del self._visual_contacts[observer_id][target_id]
+                    # Remove empty observer entries
+                    if not self._visual_contacts[observer_id]:
+                        del self._visual_contacts[observer_id]
+        except Exception:
+            pass
+
 
         base = {
             "ownship": {
@@ -870,19 +1020,108 @@ class Simulation:
             "engineering": station_status("engineering", own.systems.ballast_ok),
         }
 
-        # Periscope spotting: precise bearing/range/type/speed for shallow targets within 15km when scope up and at depth
+        # Periscope spotting: probabilistic detection with realistic search behavior and contact persistence
         periscope_contacts = []
-        if self._periscope_raised and own.kin.depth <= 20.0:
-            for s in self.world.all_ships():
-                if s.id == own.id:
-                    continue
-                if s.kin.depth <= 5.0:
-                    dx = s.kin.x - own.kin.x
-                    dy = s.kin.y - own.kin.y
-                    rng = (dx*dx + dy*dy) ** 0.5
-                    if rng <= 15000.0:
-                        brg_true = (math.degrees(math.atan2(dx, dy)) % 360.0)
-                        periscope_contacts.append({"id": s.id, "bearing": brg_true, "range_m": rng, "speed_kn": s.kin.speed, "type": (s.side + " vessel")})
+        
+        # Check if periscope is raised, at proper depth, and system is functional
+        periscope_ok = getattr(own.systems, "periscope_ok", True)  # Default to True if systems not initialized
+        if self._periscope_raised and own.kin.depth <= 20.0 and periscope_ok:
+            # Initialize periscope search timer if not exists
+            if not hasattr(self, "_periscope_search_timer"):
+                self._periscope_search_timer = 0.0
+            
+            # Initialize player visual contact tracking if not exists
+            if "ownship" not in self._visual_contacts:
+                self._visual_contacts["ownship"] = {}
+            
+            # Update search timer (re-roll detection every 5 seconds)
+            self._periscope_search_timer += dt
+            search_interval = 5.0  # 5 seconds between search attempts
+            
+            # Only perform detection check every 5 seconds to simulate realistic periscope scanning
+            if self._periscope_search_timer >= search_interval:
+                self._periscope_search_timer = 0.0  # Reset timer
+                
+                for s in self.world.all_ships():
+                    if s.id == own.id:
+                        continue
+                    if s.kin.depth <= 5.0:  # Target must be at or near surface
+                        dx = s.kin.x - own.kin.x
+                        dy = s.kin.y - own.kin.y
+                        rng = (dx*dx + dy*dy) ** 0.5
+                        if rng <= 15000.0:  # Within 15km range
+                            # Check if we have previous contact history for this target
+                            contact_history = self._visual_contacts["ownship"].get(s.id, {})
+                            last_seen = contact_history.get("last_seen", 0.0)
+                            detection_count = contact_history.get("detection_count", 0)
+                            last_confidence = contact_history.get("last_confidence", 0.0)
+                            
+                            # Calculate detection probability based on range and conditions
+                            if self._debug_player_visual_100:
+                                # Debug mode: 100% detection
+                                detection_prob = 1.0
+                                detection_roll = 0.0  # Always pass
+                            else:
+                                # Normal mode: probabilistic detection
+                                # Base probability decreases with distance
+                                base_prob = max(0.0, 1.0 - (rng / 15000.0))
+                                
+                                # Apply maintenance penalty if periscope system is degraded
+                                maintenance_factor = getattr(own.maintenance.levels, "periscope", 1.0) if hasattr(own, "maintenance") else 1.0
+                                detection_prob = base_prob * maintenance_factor
+                                
+                                # Surface vessels are easier to detect than submarines
+                                if s.ship_class == "Convoy":
+                                    detection_prob *= 1.3  # 30% easier to detect
+                                elif s.ship_class == "Destroyer":
+                                    detection_prob *= 1.1  # 10% easier to detect
+                                
+                                # Improve detection probability for previously spotted targets
+                                if detection_count > 0:
+                                    # Increase probability by 20% per previous detection (capped at 50% bonus)
+                                    memory_bonus = min(0.5, detection_count * 0.2)
+                                    detection_prob = min(0.95, detection_prob + memory_bonus)
+                                
+                                # Cap at 95% maximum detection probability (never perfect, but very high for known targets)
+                                detection_prob = min(0.95, detection_prob)
+                                
+                                # Roll for detection
+                                detection_roll = random.random()
+                            
+                            # Check for detection
+                            detected_this_cycle = detection_roll < detection_prob
+                            
+                            # If we detect the target OR we have recent contact history, include it
+                            current_time = time.time()
+                            time_since_last_seen = current_time - last_seen
+                            
+                            # Include contact if:
+                            # 1. We detected it this cycle, OR
+                            # 2. We saw it recently (within 30 seconds) and it's still in range
+                            if detected_this_cycle or (detection_count > 0 and time_since_last_seen <= 30.0 and rng <= 15000.0):
+                                # Update contact history if we detected it this cycle
+                                if detected_this_cycle:
+                                    self._visual_contacts["ownship"][s.id] = {
+                                        "last_seen": current_time,
+                                        "detection_count": detection_count + 1,
+                                        "last_confidence": detection_prob
+                                    }
+                                
+                                # Use current detection confidence or last known confidence
+                                current_confidence = detection_prob if detected_this_cycle else last_confidence
+                                
+                                brg_true = (math.degrees(math.atan2(dx, dy)) % 360.0)
+                                periscope_contacts.append({
+                                    "id": s.id, 
+                                    "bearing": brg_true, 
+                                    "range_m": rng, 
+                                    "speed_kn": s.kin.speed, 
+                                    "type": (s.side + " vessel"),
+                                    "confidence": current_confidence,
+                                    "last_seen": last_seen if not detected_this_cycle else current_time,
+                                    "detection_count": detection_count + (1 if detected_this_cycle else 0),
+                                    "detected_this_cycle": detected_this_cycle
+                                })
         tel_captain = {**base, "periscopeRaised": self._periscope_raised, "radioRaised": self._radio_raised, "mission": {"title": self.mission_brief["title"], "objective": self.mission_brief["objective"], "roe": self.mission_brief["roe"]}, "comms": getattr(self, "_captain_comms", []), "stationStatus": station_statuses, "periscopeContacts": periscope_contacts}
         tel_helm = {**base, "cavitationSpeedWarn": speed > 25.0, "thermocline": own.acoustics.thermocline_on, "tasks": [t.__dict__ for t in self._active_tasks['helm']]}
         # Prepare recent active ping responses list (bearing, range_est, strength, time)
@@ -920,6 +1159,10 @@ class Simulation:
                 "heading": own.kin.heading, "speed": own.kin.speed,
             },
             "maintenance": {"spawnsEnabled": (not self._suppress_maintenance_spawns)},
+            "debugToggles": {
+                "playerVisual100": self._debug_player_visual_100,
+                "enemyVisual100": self._debug_enemy_visual_100
+            },
             # AI orchestrator quick status for debug view
             "ai": {
                 "enabled": bool(getattr(CONFIG, "use_ai_orchestrator", False)),
@@ -1370,6 +1613,14 @@ class Simulation:
             enabled = bool(data.get("enabled", True))
             self._suppress_maintenance_spawns = (not enabled)
             return None
+        if topic == "debug.visual.player_100":
+            # Toggle 100% visual detection for player periscope
+            self._debug_player_visual_100 = bool(data.get("enabled", False))
+            return f"Player visual detection 100%: {'ON' if self._debug_player_visual_100 else 'OFF'}"
+        if topic == "debug.visual.enemy_100":
+            # Toggle 100% visual detection for enemy ships
+            self._debug_enemy_visual_100 = bool(data.get("enabled", False))
+            return f"Enemy visual detection 100%: {'ON' if self._debug_enemy_visual_100 else 'OFF'}"
         if topic == "debug.mission.surface_vessel":
             # Reset to base world, then configure a single slow surface contact (convoy ship)
             self._init_default_world()

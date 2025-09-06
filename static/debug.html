@@ -30,6 +30,14 @@
         Maint Spawns: <span id="maintState">ON</span>
         <button id="toggleMaint" style="margin-left:8px;">Toggle</button>
       </div>
+      <div class="pill" style="margin-left: 8px;">
+        Player Visual 100%: <span id="playerVisualState">OFF</span>
+        <button id="togglePlayerVisual" style="margin-left:8px;">Toggle</button>
+      </div>
+      <div class="pill" style="margin-left: 8px;">
+        Enemy Visual 100%: <span id="enemyVisualState">OFF</span>
+        <button id="toggleEnemyVisual" style="margin-left:8px;">Toggle</button>
+      </div>
     </div>
     <div class="row">
       <div class="col">
@@ -335,7 +343,20 @@
           const maint = (m.data.maintenance && typeof m.data.maintenance.spawnsEnabled === 'boolean') ? m.data.maintenance.spawnsEnabled : true; 
           const maintState = document.getElementById('maintState'); 
           maintState.textContent = maint ? 'ON' : 'OFF'; 
-          maintState.style.color = maint ? '#8DEB8D' : '#FF6B6B'; 
+          maintState.style.color = maint ? '#8DEB8D' : '#FF6B6B';
+          
+          // Update visual detection toggle states
+          const debugToggles = m.data.debugToggles || {};
+          const playerVisual = debugToggles.playerVisual100 || false;
+          const enemyVisual = debugToggles.enemyVisual100 || false;
+          
+          const playerVisualState = document.getElementById('playerVisualState');
+          playerVisualState.textContent = playerVisual ? 'ON' : 'OFF';
+          playerVisualState.style.color = playerVisual ? '#8DEB8D' : '#FF6B6B';
+          
+          const enemyVisualState = document.getElementById('enemyVisualState');
+          enemyVisualState.textContent = enemyVisual ? 'ON' : 'OFF';
+          enemyVisualState.style.color = enemyVisual ? '#8DEB8D' : '#FF6B6B'; 
         } 
       } catch(e){} 
     };
@@ -365,6 +386,18 @@
       const isOn = (document.getElementById('maintState').textContent || 'ON') === 'ON';
       const next = !isOn;
       ws.send(JSON.stringify({topic:'debug.maintenance.spawns', data:{enabled: next}}));
+    };
+    
+    document.getElementById('togglePlayerVisual').onclick = () => {
+      const isOn = (document.getElementById('playerVisualState').textContent || 'OFF') === 'ON';
+      const next = !isOn;
+      ws.send(JSON.stringify({topic:'debug.visual.player_100', data:{enabled: next}}));
+    };
+    
+    document.getElementById('toggleEnemyVisual').onclick = () => {
+      const isOn = (document.getElementById('enemyVisualState').textContent || 'OFF') === 'ON';
+      const next = !isOn;
+      ws.send(JSON.stringify({topic:'debug.visual.enemy_100', data:{enabled: next}}));
     };
   </script>
 </body>

@@ -1,21 +1,21 @@
 {
   "id": "weapons_validation_destroyers",
   "title": "Weapons Validation - Destroyers",
-  "red_mission_summary": "RED destroyers are conducting weapons validation exercises. Test torpedo and depth charge capabilities against simulated submarine threats.",
-  "blue_mission_summary": "BLUE submarine is participating in weapons validation exercises. RED destroyers will test their ASW capabilities.",
-  "objective": "Validate destroyer weapons systems and submarine evasion capabilities.",
+  "red_mission_summary": "RED destroyers are conducting weapons validation exercises at designated test coordinates. Execute depth charge tests at specified locations and times.",
+  "blue_mission_summary": "BLUE submarine is participating in weapons validation exercises. RED destroyers will test their ASW capabilities at predetermined coordinates.",
+  "objective": "Validate destroyer weapons systems at specific test coordinates with predetermined timing.",
   "side_objectives": { "RED": "validate_weapons_systems", "BLUE": "test_evasion_capabilities" },
-  "blue_captain_summary": "Weapons validation exercise. RED destroyers will test torpedo and depth charge systems. Practice evasion and counter-detection techniques.",
+  "blue_captain_summary": "Weapons validation exercise. RED destroyers will test torpedo and depth charge systems at predetermined coordinates. Practice evasion and counter-detection techniques.",
   "roe": [
-    "Weapons release authorized for validation purposes."
+    "Weapons release authorized for validation purposes at designated test coordinates."
   ],
   "target_wp": [0, 0],
   "environment": { "timeOfDay": "day", "weather": "calm" },
   "ship_behaviors": {
-    "red-dd-torp-01": "You are a destroyer conducting torpedo validation exercises. When you detect the submarine, fire torpedoes at the contact bearing. Use realistic engagement parameters: run depth 100-200m, enable range 1000-3000m. Test both single and salvo firing.",
-    "red-dd-torp-02": "You are a destroyer conducting torpedo validation exercises. When you detect the submarine, fire torpedoes at the contact bearing. Use realistic engagement parameters: run depth 100-200m, enable range 1000-3000m. Test both single and salvo firing.",
-    "red-dd-dc-01": "You are a destroyer conducting depth charge validation exercises. When you detect the submarine, close to within 1 km and drop depth charge spreads. Use realistic parameters: spread 20-50m, depths 20-100m, multiple charges per spread.",
-    "red-dd-dc-02": "You are a destroyer conducting depth charge validation exercises. When you detect the submarine, close to within 1 km and drop depth charge spreads. Use realistic parameters: spread 20-50m, depths 20-100m, multiple charges per spread."
+    "red-dd-torp-01": "You are a destroyer conducting torpedo validation exercises. Drop depth charges immediately.",
+    "red-dd-torp-02": "You are a destroyer conducting torpedo validation exercises. Drop depth charges immediately.",
+    "red-dd-dc-01": "You are a destroyer conducting depth charge validation exercises. Proceed to test coordinate [500, 0] and drop depth charge spread at 40 seconds. Use test parameters: spread 30m, depths 30-80m, 3 charges per spread. Drop second spread at coordinate [1000, 0] at 70 seconds.",
+    "red-dd-dc-02": "You are a destroyer conducting depth charge validation exercises. Proceed to test coordinate [-500, 0] and drop depth charge spread at 45 seconds. Use test parameters: spread 25m, depths 25-75m, 4 charges per spread. Drop second spread at coordinate [-1000, 0] at 75 seconds."
   },
   "ships": [
     { "id": "ownship", "side": "BLUE", "class": "SSN", "spawn": { "x": 0, "y": 0, "depth": 3, "heading": 0, "speed": 5 } },
@@ -27,9 +27,13 @@
     { "id": "red-dd-dc-02", "side": "RED", "class": "Destroyer", "spawn": { "x": 0, "y": -800, "depth": 0, "heading": 0, "speed": 8 } }
   ],
   "triggers": [
-    { "at_s": 15.0, "comms": "INFO: Weapons validation commencing. Expect torpedo salvos and depth charge spreads." },
-    { "at_s": 45.0, "comms": "INFO: Torpedo units cleared to fire pairs at suspected bearings." },
-    { "at_s": 75.0, "comms": "INFO: Depth charge units cleared to drop multiple spreads when within 1 km." }
+    { "at_s": 15.0, "comms": "INFO: Weapons validation commencing. Torpedo units proceed to test coordinates." },
+    { "at_s": 30.0, "comms": "INFO: Torpedo unit 1 cleared to fire at test coordinate [0, 500]." },
+    { "at_s": 35.0, "comms": "INFO: Torpedo unit 2 cleared to fire at test coordinate [0, -500]." },
+    { "at_s": 40.0, "comms": "INFO: Depth charge unit 1 cleared to drop at test coordinate [500, 0]." },
+    { "at_s": 45.0, "comms": "INFO: Depth charge unit 2 cleared to drop at test coordinate [-500, 0]." },
+    { "at_s": 60.0, "comms": "INFO: Second torpedo salvos cleared for test coordinates." },
+    { "at_s": 70.0, "comms": "INFO: Second depth charge spreads cleared for test coordinates." }
   ]
 }
 

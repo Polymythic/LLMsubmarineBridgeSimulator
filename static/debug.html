@@ -37,6 +37,8 @@
       </div>
       <div class="col">
         <div class="pill">Ownship: <span id="own"></span></div>
+        <div class="pill" style="margin-top: 8px; background: #1A1A2E; border-color: #60A5FA;">Noise Info</div>
+        <div id="noiseInfo" style="font-size: 12px; margin-top: 4px;"></div>
         <div id="list"></div>
         <div style="margin-top: 16px;">
           <div class="pill" style="background: #1A1A2E; border-color: #FF4444;">Torpedo Events</div>
@@ -261,6 +263,30 @@
         const m = JSON.parse(ev.data); 
         if (m.topic === 'telemetry') { 
           ownEl.textContent = `hdg ${m.data.ownship.heading.toFixed(0)} spd ${m.data.ownship.speed.toFixed(1)} dpt ${m.data.ownship.depth.toFixed(0)}`; 
+          
+          // Update noise information display
+          const noiseInfo = document.getElementById('noiseInfo');
+          if (noiseInfo && m.data.noise) {
+            const noise = m.data.noise;
+            const acoustics = m.data.acoustics || {};
+            noiseInfo.innerHTML = `
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 11px;">
+                <div>Total: <span style="color: #FBBF24;">${noise.total_dB?.toFixed(1) || '0.0'} dB</span></div>
+                <div>EMCON: <span style="color: ${acoustics.emconRisk === 'high' ? '#FF6B6B' : acoustics.emconRisk === 'med' ? '#FBBF24' : '#8DEB8D'};">${acoustics.emconRisk || 'low'}</span></div>
+                <div>Helm: ${noise.helm_dB?.toFixed(1) || '0.0'} dB</div>
+                <div>Sonar: ${noise.sonar_dB?.toFixed(1) || '0.0'} dB</div>
+                <div>Weapons: ${noise.weapons_dB?.toFixed(1) || '0.0'} dB</div>
+                <div>Engineering: ${noise.engineering_dB?.toFixed(1) || '0.0'} dB</div>
+                <div>Budget: <span style="color: ${acoustics.noiseBudget >= 75 ? '#FF6B6B' : acoustics.noiseBudget >= 40 ? '#FBBF24' : '#8DEB8D'};">${acoustics.noiseBudget?.toFixed(0) || '0'}%</span></div>
+                <div>Detect: <span style="color: ${acoustics.detectability >= 0.7 ? '#FF6B6B' : acoustics.detectability >= 0.4 ? '#FBBF24' : '#8DEB8D'};">${(acoustics.detectability * 100)?.toFixed(0) || '0'}%</span></div>
+                <div>Source Level: <span style="color: #60A5FA;">${acoustics.dynamicSourceLevel?.toFixed(1) || '0.0'} dB</span></div>
+                <div>Base Level: ${acoustics.baseSourceLevel?.toFixed(1) || '0.0'} dB</div>
+                <div>Noise Contrib: ${acoustics.noiseContributions?.toFixed(1) || '0.0'}</div>
+                <div>Station Contrib: ${acoustics.stationNoiseContrib?.toFixed(1) || '0.0'}</div>
+              </div>
+            `;
+          }
+          
           render(m.data); 
           // Update truth JSON of ships
           try {
@@ -291,7 +317,8 @@
                 const ts = e.time ? new Date(e.time).toLocaleTimeString() : '';
                 const id = e.id || 'Unknown';
                 const bearing = (typeof e.bearing === 'number') ? `${e.bearing.toFixed(0)}°` : '—';
-                const rng = (typeof e.range_est === 'number') ? `${Math.round(e.range_est)}m` : '—';
+                // Fix range display - show range if available, otherwise show "—"
+                const rng = (typeof e.range_est === 'number' && e.range_est > 0) ? `${Math.round(e.range_est)}m` : '—';
                 const conf = (typeof e.confidence === 'number') ? (e.confidence*100).toFixed(0)+'%' : '—';
                 const cls = e.classifiedAs || e.class || 'Unknown';
                 const reporter = e.reportedBy || 'RED';

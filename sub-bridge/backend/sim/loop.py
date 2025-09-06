@@ -648,6 +648,31 @@ class Simulation:
         noise_pumps = 10.0 if (self._pump_fwd or self._pump_aft) else 0.0
         noise_masts = (10.0 if self._periscope_raised else 0.0) + (10.0 if self._radio_raised else 0.0)
         noise_budget = max(0.0, min(100.0, noise_from_speed + noise_cav + noise_pumps + noise_masts))
+        
+        # Compute per-station noise dB for UI and dynamic source level
+        noise_levels = self._noise.tick(own, self.world, dt, self)
+        
+        # Update submarine's dynamic source level based on comprehensive noise budget
+        # Convert noise budget (0-100) to dB source level (110-140 dB range)
+        # Base source level from speed, then add noise contributions
+        base_src_lvl = 110.0 + (speed / max(1.0, own.hull.max_speed)) * 20.0  # 110-130 dB range
+        noise_contributions = noise_cav + noise_pumps + noise_masts  # Additional noise from operations
+        
+        # Add per-station noise contributions to source level
+        # Convert dB noise levels to source level contributions (scale factor 0.1)
+        station_noise_contrib = 0.0
+        for station, db_level in noise_levels.items():
+            if station != "total" and db_level > 0:
+                station_noise_contrib += db_level * 0.1  # Scale station noise to source level
+        
+        dynamic_src_lvl = base_src_lvl + (noise_contributions * 0.3) + station_noise_contrib
+        
+        # Update submarine's acoustics with dynamic source level
+        # This makes the submarine more detectable to enemies based on its noise
+        own.acoustics.source_level_by_speed = {
+            int(speed): dynamic_src_lvl
+        }
+        
         # EMCON pressure: sustained high noise raises alert
         if noise_budget >= 60.0:
             self._emcon_high_timer = min(30.0, self._emcon_high_timer + dt)
@@ -673,8 +698,6 @@ class Simulation:
         except Exception:
             pass
 
-        # Compute per-station noise dB for UI
-        noise_levels = self._noise.tick(own, self.world, dt, self)
 
         base = {
             "ownship": {
@@ -688,7 +711,16 @@ class Simulation:
                 "depth": depth,
                 "cavitation": cav,
             },
-            "acoustics": {"noiseBudget": noise_budget, "detectability": detectability, "emconRisk": ("high" if noise_budget >= 75 else "med" if noise_budget >= 40 else "low"), "emconAlert": emcon_alert},
+            "acoustics": {
+                "noiseBudget": noise_budget, 
+                "detectability": detectability, 
+                "emconRisk": ("high" if noise_budget >= 75 else "med" if noise_budget >= 40 else "low"), 
+                "emconAlert": emcon_alert,
+                "dynamicSourceLevel": dynamic_src_lvl,
+                "baseSourceLevel": base_src_lvl,
+                "noiseContributions": noise_contributions,
+                "stationNoiseContrib": station_noise_contrib
+            },
             "events": list(self._transient_events),
             "noise": {
                 "helm_dB": noise_levels.get("helm", 0.0),

@@ -547,9 +547,21 @@ class Simulation:
                                     break
                                 if not getattr(getattr(tgt, "capabilities", None), "has_torpedoes", False):
                                     break
-                                bearing = float(args.get("bearing") or tgt.kin.heading)
-                                run_depth = float(args.get("run_depth") or tgt.kin.depth)
-                                enable_range = float(args.get("enable_range") or 800.0) if args.get("enable_range") is not None else None
+                                # Handle potential list values and None values
+                                bearing_val = args.get("bearing")
+                                if isinstance(bearing_val, list) and len(bearing_val) > 0:
+                                    bearing_val = bearing_val[0]
+                                bearing = float(bearing_val or tgt.kin.heading)
+                                
+                                run_depth_val = args.get("run_depth")
+                                if isinstance(run_depth_val, list) and len(run_depth_val) > 0:
+                                    run_depth_val = run_depth_val[0]
+                                run_depth = float(run_depth_val or tgt.kin.depth)
+                                
+                                enable_range_val = args.get("enable_range")
+                                if isinstance(enable_range_val, list) and len(enable_range_val) > 0:
+                                    enable_range_val = enable_range_val[0]
+                                enable_range = float(enable_range_val or 800.0) if enable_range_val is not None else None
                                 doctrine = str(args.get("doctrine") or "passive_then_active")
                                 res = try_launch_torpedo_quick(tgt, bearing, run_depth, enable_range, doctrine)
                                 if res.get("ok"):
@@ -565,11 +577,26 @@ class Simulation:
                                     break
                                 if not getattr(getattr(tgt, "capabilities", None), "has_depth_charges", False):
                                     break
-                                # Handle None values and convert to appropriate types
-                                spread_m = int(args.get("spread_meters") or 20)
-                                min_d = int(args.get("minDepth") or 30)
-                                max_d = int(args.get("maxDepth") or 50)
-                                n = int(args.get("spreadSize") or 3)
+                                # Handle potential list values and None values
+                                spread_val = args.get("spread_meters")
+                                if isinstance(spread_val, list) and len(spread_val) > 0:
+                                    spread_val = spread_val[0]
+                                spread_m = int(float(spread_val or 20))
+                                
+                                min_d_val = args.get("minDepth")
+                                if isinstance(min_d_val, list) and len(min_d_val) > 0:
+                                    min_d_val = min_d_val[0]
+                                min_d = int(float(min_d_val or 30))
+                                
+                                max_d_val = args.get("maxDepth")
+                                if isinstance(max_d_val, list) and len(max_d_val) > 0:
+                                    max_d_val = max_d_val[0]
+                                max_d = int(float(max_d_val or 50))
+                                
+                                n_val = args.get("spreadSize")
+                                if isinstance(n_val, list) and len(n_val) > 0:
+                                    n_val = n_val[0]
+                                n = int(float(n_val or 3))
                                 res = try_drop_depth_charges(tgt, spread_m, min_d, max_d, n)
                                 if res.get("ok"):
                                     for dc in res.get("data", []) or []:
@@ -582,9 +609,21 @@ class Simulation:
                                     break
                                 if not getattr(getattr(tgt, "capabilities", None), "has_torpedoes", False):
                                     break
-                                bearing = float(args.get("bearing", tgt.kin.heading))
-                                run_depth = float(args.get("run_depth", tgt.kin.depth))
-                                enable_range = float(args.get("enable_range", 800.0)) if args.get("enable_range") is not None else None
+                                # Handle potential list values and None values
+                                bearing_val = args.get("bearing")
+                                if isinstance(bearing_val, list) and len(bearing_val) > 0:
+                                    bearing_val = bearing_val[0]
+                                bearing = float(bearing_val or tgt.kin.heading)
+                                
+                                run_depth_val = args.get("run_depth")
+                                if isinstance(run_depth_val, list) and len(run_depth_val) > 0:
+                                    run_depth_val = run_depth_val[0]
+                                run_depth = float(run_depth_val or tgt.kin.depth)
+                                
+                                enable_range_val = args.get("enable_range")
+                                if isinstance(enable_range_val, list) and len(enable_range_val) > 0:
+                                    enable_range_val = enable_range_val[0]
+                                enable_range = float(enable_range_val or 800.0) if enable_range_val is not None else None
                                 doctrine = str(args.get("doctrine", "passive_then_active"))
                                 res = try_launch_torpedo_quick(tgt, bearing, run_depth, enable_range, doctrine)
                                 if res.get("ok"):
@@ -1174,10 +1213,26 @@ class Simulation:
             if tool == "drop_depth_charges":
                 if not caps or not getattr(caps, "has_depth_charges", False):
                     return "Tool not supported"
-                spread_m = float(args.get("spread_meters", 20.0))
-                min_d = float(args.get("minDepth", 30.0))
-                max_d = float(args.get("maxDepth", 50.0))
-                n = int(args.get("spreadSize", 3))
+                # Handle potential list values and None values
+                spread_val = args.get("spread_meters")
+                if isinstance(spread_val, list) and len(spread_val) > 0:
+                    spread_val = spread_val[0]
+                spread_m = float(spread_val or 20.0)
+                
+                min_d_val = args.get("minDepth")
+                if isinstance(min_d_val, list) and len(min_d_val) > 0:
+                    min_d_val = min_d_val[0]
+                min_d = float(min_d_val or 30.0)
+                
+                max_d_val = args.get("maxDepth")
+                if isinstance(max_d_val, list) and len(max_d_val) > 0:
+                    max_d_val = max_d_val[0]
+                max_d = float(max_d_val or 50.0)
+                
+                n_val = args.get("spreadSize")
+                if isinstance(n_val, list) and len(n_val) > 0:
+                    n_val = n_val[0]
+                n = int(float(n_val or 3))
                 res = try_drop_depth_charges(tgt, spread_m, min_d, max_d, n)
                 if not res.get("ok"):
                     return res.get("error", "Drop failed")

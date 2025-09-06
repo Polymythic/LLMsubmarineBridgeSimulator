@@ -187,6 +187,8 @@ class Ship(BaseModel):
     # Classification & capabilities for AI and UI
     ship_class: Optional[Literal["SSN", "Convoy", "Destroyer"]] = None
     capabilities: Optional[ShipCapabilities] = None
+    # Contact tracking for intercept calculations
+    contact_tracks: List[ContactTrack] = Field(default_factory=list)
 
 
 class TelemetryOwnship(BaseModel):
@@ -209,6 +211,18 @@ class TelemetryContact(BaseModel):
     detectability: Optional[float] = None
     snrDb: Optional[float] = None
     bearingSigmaDeg: Optional[float] = None
+
+
+class ContactTrack(BaseModel):
+    """Simple contact tracking for intercept calculations"""
+    contact_id: str
+    last_known_x: float
+    last_known_y: float
+    last_known_depth: float
+    last_known_heading: float
+    last_known_speed: float
+    last_seen_time: float
+    track_confidence: float = 0.0
 
 
 class TelemetryMessage(BaseModel):

@@ -869,7 +869,8 @@ class AgentsOrchestrator:
                     "You will output a ToolCall JSON that matches the schema provided in the user message. "
                     "Follow that schema exactly. Use only the provided data. Output only JSON, no prose or markdown. Do not add fields. "
                     "For drop_depth_charges, use EXACTLY these argument names: spread_meters, minDepth, maxDepth, spreadSize. "
-                    "Arguments must be a dictionary with named keys, not a list."
+                    "Arguments must be a dictionary with named keys, not a list. "
+                    "When hunting submarines: plot intercept courses, close at maximum speed, and drop depth charges in spread patterns when within 2km of predicted contact position."
                 ),
                 "user_prompt": (
                     "SCHEMA (JSON Schema):\n"

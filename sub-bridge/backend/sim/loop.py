@@ -39,6 +39,8 @@ class Simulation:
         self._debug_enemy_visual_100 = False
         # Visual contact tracking for persistence and improved re-detection
         self._visual_contacts = {}  # {observer_id: {target_id: {"last_seen": timestamp, "detection_count": int, "last_confidence": float}}}
+        # Periscope contacts list for UI display (persists between ticks)
+        self._periscope_contacts = []
         # Lazily initialize asyncio.Event to avoid requiring an event loop during tests
         self._stop: Optional[asyncio.Event] = None
         self._last_snapshot = 0.0
@@ -1056,7 +1058,9 @@ class Simulation:
         }
 
         # Periscope spotting: probabilistic detection with realistic search behavior and contact persistence
-        periscope_contacts = []
+        # Initialize periscope contacts list if not exists
+        if not hasattr(self, "_periscope_contacts"):
+            self._periscope_contacts = []
         
         # Check if periscope is raised, at proper depth, and system is functional
         periscope_ok = getattr(own.systems, "periscope_ok", True)  # Default to True if systems not initialized
@@ -1073,24 +1077,30 @@ class Simulation:
             self._periscope_search_timer += dt
             search_interval = 5.0  # 5 seconds between search attempts
             
-            # Only perform detection check every 5 seconds to simulate realistic periscope scanning
-            if self._periscope_search_timer >= search_interval:
-                self._periscope_search_timer = 0.0  # Reset timer
-                
-                for s in self.world.all_ships():
-                    if s.id == own.id:
-                        continue
-                    if s.kin.depth <= 5.0:  # Target must be at or near surface
-                        dx = s.kin.x - own.kin.x
-                        dy = s.kin.y - own.kin.y
-                        rng = (dx*dx + dy*dy) ** 0.5
-                        if rng <= 15000.0:  # Within 15km range
-                            # Check if we have previous contact history for this target
-                            contact_history = self._visual_contacts["ownship"].get(s.id, {})
-                            last_seen = contact_history.get("last_seen", 0.0)
-                            detection_count = contact_history.get("detection_count", 0)
-                            last_confidence = contact_history.get("last_confidence", 0.0)
-                            
+            # Clear and rebuild contacts list every tick
+            self._periscope_contacts = []
+            
+            # Always check for contacts (both new detections and existing ones)
+            for s in self.world.all_ships():
+                if s.id == own.id:
+                    continue
+                if s.kin.depth <= 5.0:  # Target must be at or near surface
+                    dx = s.kin.x - own.kin.x
+                    dy = s.kin.y - own.kin.y
+                    rng = (dx*dx + dy*dy) ** 0.5
+                    if rng <= 15000.0:  # Within 15km range
+                        # Check if we have previous contact history for this target
+                        contact_history = self._visual_contacts["ownship"].get(s.id, {})
+                        last_seen = contact_history.get("last_seen", 0.0)
+                        detection_count = contact_history.get("detection_count", 0)
+                        last_confidence = contact_history.get("last_confidence", 0.0)
+                        
+                        current_time = time.time()
+                        time_since_last_seen = current_time - last_seen
+                        
+                        # Only perform new detection checks every 5 seconds
+                        detected_this_cycle = False
+                        if self._periscope_search_timer >= search_interval:
                             # Calculate detection probability based on range and conditions
                             if self._debug_player_visual_100:
                                 # Debug mode: 100% detection
@@ -1126,44 +1136,44 @@ class Simulation:
                             # Check for detection
                             detected_this_cycle = detection_roll < detection_prob
                             
-                            # If we detect the target OR we have recent contact history, include it
-                            current_time = time.time()
-                            time_since_last_seen = current_time - last_seen
+                            # Update contact history if we detected it this cycle
+                            if detected_this_cycle:
+                                self._visual_contacts["ownship"][s.id] = {
+                                    "last_seen": current_time,
+                                    "detection_count": detection_count + 1,
+                                    "last_confidence": detection_prob
+                                }
+                        
+                        # Include contact if:
+                        # 1. We detected it this cycle, OR
+                        # 2. We saw it recently (within 2 minutes) and it's still in range
+                        if detected_this_cycle or (detection_count > 0 and time_since_last_seen <= 120.0 and rng <= 15000.0):
+                            # Use current detection confidence or last known confidence
+                            current_confidence = last_confidence if not detected_this_cycle else last_confidence
                             
-                            # Include contact if:
-                            # 1. We detected it this cycle, OR
-                            # 2. We saw it recently (within 2 minutes) and it's still in range
-                            if detected_this_cycle or (detection_count > 0 and time_since_last_seen <= 120.0 and rng <= 15000.0):
-                                # Update contact history if we detected it this cycle
-                                if detected_this_cycle:
-                                    self._visual_contacts["ownship"][s.id] = {
-                                        "last_seen": current_time,
-                                        "detection_count": detection_count + 1,
-                                        "last_confidence": detection_prob
-                                    }
-                                
-                                # Use current detection confidence or last known confidence
-                                current_confidence = detection_prob if detected_this_cycle else last_confidence
-                                
-                                brg_true = (math.degrees(math.atan2(dx, dy)) % 360.0)
-                                
-                                # Calculate time since last seen for UI display
-                                time_since_last_seen = current_time - (last_seen if not detected_this_cycle else current_time)
-                                
-                                periscope_contacts.append({
-                                    "id": s.id, 
-                                    "bearing": brg_true, 
-                                    "range_m": rng, 
-                                    "speed_kn": s.kin.speed, 
-                                    "type": (s.side + " vessel"),
-                                    "confidence": current_confidence,
-                                    "last_seen": last_seen if not detected_this_cycle else current_time,
-                                    "detection_count": detection_count + (1 if detected_this_cycle else 0),
-                                    "detected_this_cycle": detected_this_cycle,
-                                    "time_since_last_seen": time_since_last_seen,
-                                    "status": "visible" if detected_this_cycle else "last_seen"
-                                })
-        tel_captain = {**base, "periscopeRaised": self._periscope_raised, "radioRaised": self._radio_raised, "mission": {"title": self.mission_brief["title"], "objective": self.mission_brief["objective"], "roe": self.mission_brief["roe"]}, "comms": getattr(self, "_captain_comms", []), "stationStatus": station_statuses, "periscopeContacts": periscope_contacts}
+                            brg_true = (math.degrees(math.atan2(dx, dy)) % 360.0)
+                            
+                            # Calculate time since last seen for UI display
+                            time_since_last_seen = current_time - (last_seen if not detected_this_cycle else current_time)
+                            
+                            self._periscope_contacts.append({
+                                "id": s.id, 
+                                "bearing": brg_true, 
+                                "range_m": rng, 
+                                "speed_kn": s.kin.speed, 
+                                "type": (s.side + " vessel"),
+                                "confidence": current_confidence,
+                                "last_seen": last_seen if not detected_this_cycle else current_time,
+                                "detection_count": detection_count + (1 if detected_this_cycle else 0),
+                                "detected_this_cycle": detected_this_cycle,
+                                "time_since_last_seen": time_since_last_seen,
+                                "status": "visible" if detected_this_cycle else "last_seen"
+                            })
+            
+            # Reset timer after detection cycle
+            if self._periscope_search_timer >= search_interval:
+                self._periscope_search_timer = 0.0
+        tel_captain = {**base, "periscopeRaised": self._periscope_raised, "radioRaised": self._radio_raised, "mission": {"title": self.mission_brief["title"], "objective": self.mission_brief["objective"], "roe": self.mission_brief["roe"]}, "comms": getattr(self, "_captain_comms", []), "stationStatus": station_statuses, "periscopeContacts": self._periscope_contacts}
         tel_helm = {**base, "cavitationSpeedWarn": speed > 25.0, "thermocline": own.acoustics.thermocline_on, "tasks": [t.__dict__ for t in self._active_tasks['helm']]}
         # Prepare recent active ping responses list (bearing, range_est, strength, time)
         # For now, only generate on demand when 'sonar.ping' happens; UI will render as DEMON dots

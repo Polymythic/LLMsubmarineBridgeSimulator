@@ -653,7 +653,7 @@ class Simulation:
                                 if res:
                                     # Set cooldown (12 seconds)
                                     tgt.active_sonar_cooldown = 12.0
-                                    # Store ping responses for this ship
+                                    # Store ping responses for this ship (for AI use)
                                     now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
                                     ping_responses = [
                                         {"id": rid, "bearing": brg, "range_est": rng, "strength": st, "at": now_iso, "source": tgt.id}
@@ -663,6 +663,40 @@ class Simulation:
                                     if not hasattr(self, "_ai_ping_responses"):
                                         self._ai_ping_responses = {}
                                     self._ai_ping_responses[tgt.id] = ping_responses
+                                    
+                                    # Create contact for player when enemy ship pings (counter-detection)
+                                    own = self.world.get_ship("ownship")
+                                    if own and own.id != tgt.id:
+                                        dx = tgt.kin.x - own.kin.x
+                                        dy = tgt.kin.y - own.kin.y
+                                        rng = math.hypot(dx, dy)
+                                        # Compass bearing: 0=N, 90=E, 180=S, 270=W
+                                        brg = normalize_angle_deg(math.degrees(math.atan2(dx, dy)))
+                                        # Add bearing noise for realism
+                                        brg_noise = normalize_angle_deg(brg + random.gauss(0, 2.0))
+                                        # Signal strength based on distance and enemy ship type
+                                        strength = max(0.0, min(1.0, 1.0 / (1.0 + (rng / 3000.0))))
+                                        
+                                        # Create contact for enemy active ping
+                                        enemy_ping_contact = TelemetryContact(
+                                            id="ENEMY_ACTIVE_SONAR",
+                                            bearing=brg_noise,
+                                            strength=strength,
+                                            classifiedAs="ENEMY_ACTIVE_SONAR",
+                                            confidence=0.9,
+                                            bearingKnown=True,
+                                            rangeKnown=False
+                                        )
+                                        
+                                        # Store in enemy ship contacts for this tick
+                                        if not hasattr(self, "_enemy_ping_contacts"):
+                                            self._enemy_ping_contacts = []
+                                        self._enemy_ping_contacts.append({
+                                            "contact": enemy_ping_contact,
+                                            "timestamp": now_iso,
+                                            "source": tgt.id
+                                        })
+                                    
                                     # Add counter-detection event
                                     self._transient_events.append({"type": "counterDetected", "at": now_iso, "source": tgt.id})
                                     insert_event(self.engine, self.run_id, "ai.tool.apply", json.dumps({"ship_id": _sid, **tc}))
@@ -1134,12 +1168,13 @@ class Simulation:
         if not hasattr(self, "_sonar_explosions"):
             self._sonar_explosions = []
         # Collect all AI ping responses
-        all_ai_ping_responses = []
-        if hasattr(self, "_ai_ping_responses"):
-            for ship_id, responses in self._ai_ping_responses.items():
-                all_ai_ping_responses.extend(responses)
+        # Include enemy ping contacts in the contacts list
+        enemy_ping_contacts = []
+        if hasattr(self, "_enemy_ping_contacts"):
+            enemy_ping_contacts = [epc["contact"] for epc in self._enemy_ping_contacts]
         
-        tel_sonar = {**base, "contacts": [c.dict() for c in (contacts + proj_contacts)], "pingCooldown": max(0.0, self.active_ping_state.timer), "pingResponses": list(self._last_ping_responses) + all_ai_ping_responses, "lastPingAt": getattr(self, "_last_ping_at", None), "explosions": list(self._sonar_explosions), "tasks": [t.__dict__ for t in self._active_tasks['sonar']]}
+        # Note: all_ai_ping_responses removed from pingResponses - enemy pings should appear as contacts, not ping responses
+        tel_sonar = {**base, "contacts": [c.dict() for c in (contacts + proj_contacts + enemy_ping_contacts)], "pingCooldown": max(0.0, self.active_ping_state.timer), "pingResponses": list(self._last_ping_responses), "lastPingAt": getattr(self, "_last_ping_at", None), "explosions": list(self._sonar_explosions), "tasks": [t.__dict__ for t in self._active_tasks['sonar']]}
         tel_weapons = {**base, "tubes": [t.dict() for t in own.weapons.tubes], "consentRequired": CONFIG.require_captain_consent, "captainConsent": self._captain_consent, "tasks": [t.__dict__ for t in self._active_tasks['weapons']]}
         tel_engineering = {**base, "reactor": own.reactor.dict(), "pumps": {"fwd": self._pump_fwd, "aft": self._pump_aft}, "damage": own.damage.dict(), "power": own.power.dict(), "systems": own.systems.dict(), "maintenance": own.maintenance.levels, "tasks": [t.__dict__ for t in self._active_tasks['engineering']]}
 
@@ -1266,6 +1301,10 @@ class Simulation:
 
         # Clear transient events after publishing
         self._transient_events.clear()
+        
+        # Clear enemy ping contacts after publishing (they're transient)
+        if hasattr(self, "_enemy_ping_contacts"):
+            self._enemy_ping_contacts.clear()
 
         self._last_snapshot += dt
         if self._last_snapshot >= CONFIG.snapshot_s:

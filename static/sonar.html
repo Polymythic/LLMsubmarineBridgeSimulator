@@ -155,11 +155,24 @@
         const bearing = ((c.bearing % 360) + 360) % 360;
         const x = xForBearing(bearing, W);
         const strength = Math.max(0, Math.min(1, (c.detectability != null ? c.detectability : c.strength) || 0));
-        const glow = Math.floor(60 + strength * 180);
-        for (let dx = -1; dx <= 1; dx++){
-          const xi = Math.max(0, Math.min(W-1, x + dx));
-          const base = xi * 4;
-          data[base+0] = glow; data[base+1] = Math.floor(glow * 0.85); data[base+2] = Math.floor(glow * 0.4); data[base+3] = 255;
+        
+        // Different colors for enemy active sonar contacts
+        if (c.classifiedAs === "ENEMY_ACTIVE_SONAR") {
+          // Enemy ping: bright magenta
+          const glow = Math.floor(100 + strength * 155);
+          for (let dx = -1; dx <= 1; dx++){
+            const xi = Math.max(0, Math.min(W-1, x + dx));
+            const base = xi * 4;
+            data[base+0] = glow; data[base+1] = Math.floor(glow * 0.2); data[base+2] = Math.floor(glow * 0.8); data[base+3] = 255;
+          }
+        } else {
+          // Regular contacts: orange/yellow
+          const glow = Math.floor(60 + strength * 180);
+          for (let dx = -1; dx <= 1; dx++){
+            const xi = Math.max(0, Math.min(W-1, x + dx));
+            const base = xi * 4;
+            data[base+0] = glow; data[base+1] = Math.floor(glow * 0.85); data[base+2] = Math.floor(glow * 0.4); data[base+3] = 255;
+          }
         }
       });
       // Active ping dots: brighter by strength
@@ -353,10 +366,19 @@
           list.innerHTML = '';
           (m.data.contacts || []).forEach(c => {
             const li = document.createElement('li');
-            li.title = 'Passive contact; bearing-only with noisy measurement.';
             const bearingText = (c.bearingKnown ? `${c.bearing.toFixed(0)}°` : 'unknown');
             const det = (c.detectability != null ? c.detectability : c.strength);
-            li.textContent = `ID ${c.id} brg ${bearingText} det ${det.toFixed(2)} conf ${c.confidence.toFixed(2)}`;
+            
+            // Different styling for enemy active sonar contacts
+            if (c.classifiedAs === "ENEMY_ACTIVE_SONAR") {
+              li.title = 'Enemy active sonar ping detected; bearing and signal strength only.';
+              li.style.color = '#FF00FF'; // Magenta color
+              li.style.fontWeight = 'bold';
+              li.textContent = `ENEMY PING brg ${bearingText} str ${det.toFixed(2)} conf ${c.confidence.toFixed(2)}`;
+            } else {
+              li.title = 'Passive contact; bearing-only with noisy measurement.';
+              li.textContent = `ID ${c.id} brg ${bearingText} det ${det.toFixed(2)} conf ${c.confidence.toFixed(2)}`;
+            }
             list.appendChild(li);
           });
           prList.innerHTML = '';

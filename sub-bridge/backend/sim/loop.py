@@ -1466,7 +1466,6 @@ class Simulation:
         if topic == "weapons.test_fire":
             # Test torpedo launch - bypasses all interlocks and tube preparation
             # Create a torpedo directly without going through tube state machine
-            import time
             torp = {
                 "id": f"torpedo_test_{int(time.time() * 1000)}",  # Unique ID for sonar tracking
                 "x": own.kin.x,

@@ -694,6 +694,7 @@ class Simulation:
                                         self._enemy_ping_contacts.append({
                                             "contact": enemy_ping_contact,
                                             "timestamp": now_iso,
+                                            "timestamp_epoch": time.time(),
                                             "source": tgt.id
                                         })
                                     
@@ -1174,7 +1175,8 @@ class Simulation:
             enemy_ping_contacts = [epc["contact"] for epc in self._enemy_ping_contacts]
         
         # Note: all_ai_ping_responses removed from pingResponses - enemy pings should appear as contacts, not ping responses
-        tel_sonar = {**base, "contacts": [c.dict() for c in (contacts + proj_contacts + enemy_ping_contacts)], "pingCooldown": max(0.0, self.active_ping_state.timer), "pingResponses": list(self._last_ping_responses), "lastPingAt": getattr(self, "_last_ping_at", None), "explosions": list(self._sonar_explosions), "tasks": [t.__dict__ for t in self._active_tasks['sonar']]}
+        all_contacts = contacts + proj_contacts + enemy_ping_contacts
+        tel_sonar = {**base, "contacts": [c.dict() for c in all_contacts], "pingCooldown": max(0.0, self.active_ping_state.timer), "pingResponses": list(self._last_ping_responses), "lastPingAt": getattr(self, "_last_ping_at", None), "explosions": list(self._sonar_explosions), "tasks": [t.__dict__ for t in self._active_tasks['sonar']]}
         tel_weapons = {**base, "tubes": [t.dict() for t in own.weapons.tubes], "consentRequired": CONFIG.require_captain_consent, "captainConsent": self._captain_consent, "tasks": [t.__dict__ for t in self._active_tasks['weapons']]}
         tel_engineering = {**base, "reactor": own.reactor.dict(), "pumps": {"fwd": self._pump_fwd, "aft": self._pump_aft}, "damage": own.damage.dict(), "power": own.power.dict(), "systems": own.systems.dict(), "maintenance": own.maintenance.levels, "tasks": [t.__dict__ for t in self._active_tasks['engineering']]}
 
@@ -1302,9 +1304,13 @@ class Simulation:
         # Clear transient events after publishing
         self._transient_events.clear()
         
-        # Clear enemy ping contacts after publishing (they're transient)
+        # Clear old enemy ping contacts (keep them for 5 seconds)
         if hasattr(self, "_enemy_ping_contacts"):
-            self._enemy_ping_contacts.clear()
+            current_time = time.time()
+            self._enemy_ping_contacts = [
+                epc for epc in self._enemy_ping_contacts 
+                if current_time - epc.get("timestamp_epoch", 0) < 5.0
+            ]
 
         self._last_snapshot += dt
         if self._last_snapshot >= CONFIG.snapshot_s:

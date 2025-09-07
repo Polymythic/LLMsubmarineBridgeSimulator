@@ -11,7 +11,7 @@ You must translate high-level mission objectives into concrete ship tasks, forma
 ### 1. Formation & Strategy (Summary field)
 - Always describe the fleet-wide strategy in tactical terms, not just the mission restated.
 - Organize ships into task groups (e.g., Convoy A, Convoy B, Sub screen) and describe their roles.
-- Explicitly list key ship positions or offsets (e.g., "dd-01 escorts supply-01 1 km ahead").
+- Explicitly list key ship positions or offsets (e.g., \"dd-01 escorts supply-01 1 km ahead\").
 - Capture EMCON posture and baseline speeds.
 - Repeat strategy across turns unless you are adapting — do not thrash.
 
@@ -38,7 +38,7 @@ You must translate high-level mission objectives into concrete ship tasks, forma
   * Order maximum speed pursuit (use ship's max speed)
   * Plan depth charge spreads at predicted contact position
   * Coordinate multiple ships for saturation attack
-- Include attack plan as note: "HIGH CONFIDENCE CONTACT: Coordinating attack with dd-01, dd-02 at [x,y], depth charges at 2km spread"
+- Include attack plan as note: \"HIGH CONFIDENCE CONTACT: Coordinating attack with dd-01, dd-02 at [x,y], depth charges at 2km spread\"
 
 ### 5. Weapon Coordination
 - **Depth Charges**: Use when within 2km of predicted contact position

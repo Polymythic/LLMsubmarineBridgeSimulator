@@ -975,12 +975,12 @@ class Simulation:
                 
                 setattr(self._ai_orch, "_visual_detection_map", visual_detection_map)
                 
-                # Clean up old visual contacts (older than 60 seconds)
+                # Clean up old visual contacts (older than 2 minutes)
                 current_time = time.time()
                 for observer_id in list(self._visual_contacts.keys()):
                     for target_id in list(self._visual_contacts[observer_id].keys()):
                         contact = self._visual_contacts[observer_id][target_id]
-                        if current_time - contact.get("last_seen", 0.0) > 60.0:  # 60 seconds
+                        if current_time - contact.get("last_seen", 0.0) > 120.0:  # 2 minutes
                             del self._visual_contacts[observer_id][target_id]
                     # Remove empty observer entries
                     if not self._visual_contacts[observer_id]:
@@ -1132,8 +1132,8 @@ class Simulation:
                             
                             # Include contact if:
                             # 1. We detected it this cycle, OR
-                            # 2. We saw it recently (within 30 seconds) and it's still in range
-                            if detected_this_cycle or (detection_count > 0 and time_since_last_seen <= 30.0 and rng <= 15000.0):
+                            # 2. We saw it recently (within 2 minutes) and it's still in range
+                            if detected_this_cycle or (detection_count > 0 and time_since_last_seen <= 120.0 and rng <= 15000.0):
                                 # Update contact history if we detected it this cycle
                                 if detected_this_cycle:
                                     self._visual_contacts["ownship"][s.id] = {
@@ -1146,6 +1146,10 @@ class Simulation:
                                 current_confidence = detection_prob if detected_this_cycle else last_confidence
                                 
                                 brg_true = (math.degrees(math.atan2(dx, dy)) % 360.0)
+                                
+                                # Calculate time since last seen for UI display
+                                time_since_last_seen = current_time - (last_seen if not detected_this_cycle else current_time)
+                                
                                 periscope_contacts.append({
                                     "id": s.id, 
                                     "bearing": brg_true, 
@@ -1155,7 +1159,9 @@ class Simulation:
                                     "confidence": current_confidence,
                                     "last_seen": last_seen if not detected_this_cycle else current_time,
                                     "detection_count": detection_count + (1 if detected_this_cycle else 0),
-                                    "detected_this_cycle": detected_this_cycle
+                                    "detected_this_cycle": detected_this_cycle,
+                                    "time_since_last_seen": time_since_last_seen,
+                                    "status": "visible" if detected_this_cycle else "last_seen"
                                 })
         tel_captain = {**base, "periscopeRaised": self._periscope_raised, "radioRaised": self._radio_raised, "mission": {"title": self.mission_brief["title"], "objective": self.mission_brief["objective"], "roe": self.mission_brief["roe"]}, "comms": getattr(self, "_captain_comms", []), "stationStatus": station_statuses, "periscopeContacts": periscope_contacts}
         tel_helm = {**base, "cavitationSpeedWarn": speed > 25.0, "thermocline": own.acoustics.thermocline_on, "tasks": [t.__dict__ for t in self._active_tasks['helm']]}

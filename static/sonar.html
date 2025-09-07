@@ -156,7 +156,7 @@
         const x = xForBearing(bearing, W);
         const strength = Math.max(0, Math.min(1, (c.detectability != null ? c.detectability : c.strength) || 0));
         
-        // Different colors for enemy active sonar contacts
+        // Different colors for different contact types
         if (c.classifiedAs === "ENEMY_ACTIVE_SONAR") {
           // Enemy ping: bright magenta
           const glow = Math.floor(100 + strength * 155);
@@ -164,6 +164,14 @@
             const xi = Math.max(0, Math.min(W-1, x + dx));
             const base = xi * 4;
             data[base+0] = glow; data[base+1] = Math.floor(glow * 0.2); data[base+2] = Math.floor(glow * 0.8); data[base+3] = 255;
+          }
+        } else if (c.classifiedAs === "Explosion") {
+          // Explosion: bright red/orange
+          const glow = Math.floor(120 + strength * 135);
+          for (let dx = -2; dx <= 2; dx++){
+            const xi = Math.max(0, Math.min(W-1, x + dx));
+            const base = xi * 4;
+            data[base+0] = glow; data[base+1] = Math.floor(glow * 0.3); data[base+2] = Math.floor(glow * 0.1); data[base+3] = 255;
           }
         } else {
           // Regular contacts: orange/yellow
@@ -369,12 +377,17 @@
             const bearingText = (c.bearingKnown ? `${c.bearing.toFixed(0)}°` : 'unknown');
             const det = (c.detectability != null ? c.detectability : c.strength);
             
-            // Different styling for enemy active sonar contacts
+            // Different styling for different contact types
             if (c.classifiedAs === "ENEMY_ACTIVE_SONAR") {
               li.title = 'Enemy active sonar ping detected; bearing and signal strength only.';
               li.style.color = '#FF00FF'; // Magenta color
               li.style.fontWeight = 'bold';
               li.textContent = `ENEMY PING brg ${bearingText} str ${det.toFixed(2)} conf ${c.confidence.toFixed(2)}`;
+            } else if (c.classifiedAs === "Explosion") {
+              li.title = 'Explosion detected; very loud acoustic event.';
+              li.style.color = '#FF4444'; // Bright red color
+              li.style.fontWeight = 'bold';
+              li.textContent = `EXPLOSION brg ${bearingText} str ${det.toFixed(2)} conf ${c.confidence.toFixed(2)}`;
             } else {
               li.title = 'Passive contact; bearing-only with noisy measurement.';
               li.textContent = `ID ${c.id} brg ${bearingText} det ${det.toFixed(2)} conf ${c.confidence.toFixed(2)}`;

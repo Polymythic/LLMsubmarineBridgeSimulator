@@ -79,7 +79,9 @@ def try_fire(ship: Ship, tube_idx: int, bearing_deg: float, run_depth: float, en
     tube = _get_tube(ship, tube_idx)
     if tube is None or tube.state != "DoorsOpen" or tube.weapon is None:
         return None
+    import time
     torp = {
+        "id": f"torpedo_{ship.id}_{tube_idx}_{int(time.time() * 1000)}",  # Unique ID for sonar tracking
         "x": ship.kin.x,
         "y": ship.kin.y,
         "depth": ship.kin.depth,
@@ -360,7 +362,9 @@ def try_launch_torpedo_quick(
     if getattr(ws, "torpedo_quick_cooldown_timer_s", 0.0) > 0.0:
         return {"ok": False, "error": "Torpedo system cooling down"}
     td = TorpedoDef()
+    import time
     torp = {
+        "id": f"torpedo_{ship.id}_quick_{int(time.time() * 1000)}",  # Unique ID for sonar tracking
         "x": ship.kin.x,
         "y": ship.kin.y,
         "depth": ship.kin.depth,

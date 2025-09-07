@@ -87,17 +87,19 @@ def passive_contacts(self_ship: Ship, others: List[Ship]) -> List[TelemetryConta
 
 
 def passive_projectiles(self_ship: Ship, torpedoes: List[dict] | None, depth_charges: List[dict] | None) -> List[TelemetryContact]:
-    """Render torpedoes and depth charges as passive contacts for sonar UI.
+    """Render torpedoes as passive contacts for sonar UI.
 
-    - Uses a simplified source level model for moving torpedoes and sinking depth charges
+    - Uses a simplified source level model for moving torpedoes
     - Applies same baffles and transmission loss as ships
-    - Classifies as "Torpedo?" or "DepthCharge?" with confidence scaled by detectability
+    - Classifies as "Torpedo?" with confidence scaled by detectability
+    - Note: Depth charges are silent while sinking and only create explosion contacts when they detonate
     """
     if getattr(self_ship, "systems", None) is not None and not self_ship.systems.sonar_ok:
         return []
     contacts: List[TelemetryContact] = []
     torps = torpedoes or []
-    dcs = depth_charges or []
+    # Note: depth_charges parameter kept for compatibility but not used
+    # Depth charges are silent while sinking and only create explosion contacts when they detonate
     # Common environment terms
     ambient = 60.0
     layer_atten = 4.0 if self_ship.acoustics.thermocline_on else 0.0
@@ -111,23 +113,32 @@ def passive_projectiles(self_ship: Ship, torpedoes: List[dict] | None, depth_cha
             if abs(rel) > 180 - BAFFLES_DEG / 2:
                 continue
             speed = float(t.get("speed", 35.0))
-            src_lvl = 145.0 + 0.2 * speed  # loud propulsors
+            # Torpedoes are very loud - much louder than ships at similar speeds
+            # Mk48 torpedo has ~150-160 dB source level at 35 knots
+            src_lvl = 150.0 + 0.3 * speed  # Very loud propulsors
             tl_geo = 20.0 * math.log10(max(1.0, rng))
             tl = tl_geo + layer_atten
             penalty = getattr(self_ship.acoustics, "passive_snr_penalty_db", 0.0)
             snr_db = max(0.0, src_lvl - tl - ambient - penalty)
-            detect = max(0.0, min(1.0, snr_db / 30.0))
-            if detect < 0.12:
+            detect = max(0.0, min(1.0, snr_db / 25.0))  # Lower threshold for torpedoes
+            if detect < 0.08:  # Lower detection threshold for torpedoes
                 continue
             sigma = max(0.8, 6.0 - 0.05 * speed)
             noisy_bearing = normalize_angle_deg(brg + random.gauss(0, sigma))
             confidence = min(1.0, detect * 1.3)
-            tid = t.get("id") or f"torpedo_{int(tx)}_{int(ty)}"
+            tid = t.get("id", f"torpedo_{int(tx)}_{int(ty)}")
+            # Classify torpedoes based on side and signal strength
+            side = t.get("side", "unknown")
+            if side == self_ship.side:
+                classified_as = "Own Torpedo" if detect > 0.6 else "Own Torpedo?"
+            else:
+                classified_as = "Enemy Torpedo" if detect > 0.6 else "Enemy Torpedo?"
+            
             contacts.append(TelemetryContact(
                 id=str(tid),
                 bearing=noisy_bearing,
                 strength=detect,
-                classifiedAs="Torpedo?",
+                classifiedAs=classified_as,
                 confidence=confidence,
                 bearingKnown=True,
                 rangeKnown=False,
@@ -137,34 +148,67 @@ def passive_projectiles(self_ship: Ship, torpedoes: List[dict] | None, depth_cha
             ))
         except Exception:
             continue
-    for dc in dcs:
+    # Depth charges are silent while sinking and only create explosion contacts when they detonate
+    # The existing explosion overlay system handles visual representation of explosions
+    return contacts
+
+
+def explosion_contacts(self_ship: Ship, explosions: List[dict] | None) -> List[TelemetryContact]:
+    """Create sonar contacts for explosions (depth charge detonations).
+    
+    - Explosions are very loud and detectable from long range
+    - Short duration contacts (5-10 seconds)
+    - Classified as "Explosion" with high confidence
+    """
+    if getattr(self_ship, "systems", None) is not None and not self_ship.systems.sonar_ok:
+        return []
+    contacts: List[TelemetryContact] = []
+    explosions_list = explosions or []
+    
+    # Common environment terms
+    ambient = 60.0
+    layer_atten = 4.0 if self_ship.acoustics.thermocline_on else 0.0
+    
+    for exp in explosions_list:
         try:
-            dx = float(dc.get("x", 0.0)) - self_ship.kin.x
-            dy = float(dc.get("y", 0.0)) - self_ship.kin.y
-            rng = math.hypot(dx, dy)
-            brg = normalize_angle_deg(math.degrees(math.atan2(dx, dy)))
-            rel = angle_diff(brg, self_ship.kin.heading)
-            if abs(rel) > 180 - BAFFLES_DEG / 2:
-                continue
-            # Depth charges are moderately loud while sinking; louder initially
-            sink_rate = float(dc.get("sink_rate_mps", 5.0))
-            src_lvl = 125.0 + 2.0 * min(5.0, sink_rate)
-            tl_geo = 20.0 * math.log10(max(1.0, rng))
+            # Explosion data structure: {"bearing": float, "at": timestamp}
+            bearing = float(exp.get("bearing", 0.0))
+            explosion_time = exp.get("at", "")
+            
+            # Check if explosion is recent (within last 8 seconds)
+            import time
+            try:
+                exp_timestamp = time.mktime(time.strptime(explosion_time, "%Y-%m-%dT%H:%M:%SZ"))
+                current_time = time.time()
+                if current_time - exp_timestamp > 8.0:  # Explosion older than 8 seconds
+                    continue
+            except:
+                continue  # Skip if timestamp parsing fails
+            
+            # Explosions are very loud - detectable from long range
+            # Assume explosion is at a reasonable range for detection calculation
+            estimated_range = 2000.0  # 2km - explosions are loud enough to be detected from this range
+            src_lvl = 180.0  # Very loud explosion (depth charge ~180 dB)
+            tl_geo = 20.0 * math.log10(max(1.0, estimated_range))
             tl = tl_geo + layer_atten
             penalty = getattr(self_ship.acoustics, "passive_snr_penalty_db", 0.0)
             snr_db = max(0.0, src_lvl - tl - ambient - penalty)
-            detect = max(0.0, min(1.0, snr_db / 30.0))
-            if detect < 0.1:
+            detect = max(0.0, min(1.0, snr_db / 20.0))  # Very high detectability
+            
+            if detect < 0.3:  # Even weak explosions should be detectable
                 continue
-            sigma = 8.0
-            noisy_bearing = normalize_angle_deg(brg + random.gauss(0, sigma))
-            confidence = min(1.0, detect * 1.1)
-            dcid = dc.get("id") or f"depth_charge_{int(dc.get('x',0))}_{int(dc.get('y',0))}"
+                
+            # Explosions have very low bearing noise (they're loud and clear)
+            sigma = 1.0
+            noisy_bearing = normalize_angle_deg(bearing + random.gauss(0, sigma))
+            confidence = 0.95  # High confidence for explosions
+            
+            exp_id = f"explosion_{int(exp_timestamp)}"
             contacts.append(TelemetryContact(
-                id=str(dcid),
+                id=exp_id,
                 bearing=noisy_bearing,
                 strength=detect,
-                classifiedAs="DepthCharge?",
+                classifiedAs="Explosion",
                 confidence=confidence,
                 bearingKnown=True,
                 rangeKnown=False,
@@ -174,7 +218,9 @@ def passive_projectiles(self_ship: Ship, torpedoes: List[dict] | None, depth_cha
             ))
         except Exception:
             continue
+    
     return contacts
+
 
 class ActivePingState:
     def __init__(self, cooldown_s: float = 12.0) -> None:

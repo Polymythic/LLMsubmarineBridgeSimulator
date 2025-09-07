@@ -1,11 +1,29 @@
 # Sonar and Visual System Enhancements
 
+## ✅ COMPLETED FIXES (2025-01-27)
+
+### 1. Torpedo Visibility - FIXED ✅
+- **Issue**: Torpedoes (both friendly and enemy) were not appearing in sonar contacts
+- **Solution**: 
+  - Added unique IDs to all torpedoes when created
+  - Improved torpedo detection with higher source levels (150-160 dB)
+  - Lowered detection threshold for torpedoes (0.08 vs 0.12)
+  - Enhanced classification: "Own Torpedo", "Enemy Torpedo", etc.
+  - Torpedoes now appear clearly in sonar contacts and waterfall
+
+### 2. Depth Charge Sonar Behavior - FIXED ✅
+- **Issue**: Depth charges were showing as passive contacts while sinking (unrealistic)
+- **Solution**:
+  - Removed depth charges from passive contacts while sinking (they're silent)
+  - Created explosion contact system for when depth charges detonate
+  - Explosions appear as loud, high-confidence "Explosion" contacts for 8 seconds
+  - Enhanced UI with bright red explosion indicators on waterfall and contact list
+
 ## Current Issues Identified
 
 ### 1. Sonar System Problems
 - **Enemy Active Pings Not Visible**: Enemy ships are not frequently using active sonar, or their pings are not being properly displayed
 - **Enemy Torpedoes Infrequent**: Enemy ships are not firing torpedoes often enough during combat
-- **Own Torpedoes Not Showing**: When the player fires torpedoes, they don't appear in the sonar contacts list
 
 ### 2. Visual Detection System Limitations
 - **No Weather Effects**: Visual detection is not affected by weather conditions (fog, rain, storms)
@@ -36,11 +54,12 @@
 - **Contact Classification**: Improve torpedo contact classification and display
 
 ### Implementation Priority
-1. **High Priority**: Fix torpedo visibility in sonar
-2. **High Priority**: Increase enemy active sonar frequency
-3. **Medium Priority**: Implement weather system
-4. **Medium Priority**: Implement day/night cycle
-5. **Low Priority**: Advanced weather effects (wind, sea state)
+1. **✅ COMPLETED**: Fix torpedo visibility in sonar
+2. **✅ COMPLETED**: Fix depth charge sonar behavior
+3. **High Priority**: Increase enemy active sonar frequency
+4. **Medium Priority**: Implement weather system
+5. **Medium Priority**: Implement day/night cycle
+6. **Low Priority**: Advanced weather effects (wind, sea state)
 
 ## Technical Implementation Notes
 
@@ -63,7 +82,14 @@
 - Improve torpedo tracking and display
 
 ## Testing Requirements
-- Verify torpedoes appear in sonar when fired
+
+### ✅ COMPLETED TESTS
+- ✅ Verify torpedoes appear in sonar when fired
+- ✅ Verify depth charges are silent while sinking
+- ✅ Verify explosions create loud sonar contacts
+- ✅ Verify torpedo classification (Own/Enemy)
+
+### PENDING TESTS
 - Test enemy active sonar frequency during combat scenarios
 - Validate weather effects on visual detection
 - Confirm day/night cycle affects detection ranges

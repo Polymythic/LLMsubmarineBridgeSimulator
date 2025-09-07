@@ -13,7 +13,7 @@ from ..assets import load_ship_catalog, load_mission_by_id, apply_mission_to_wor
 from ..storage import init_engine, create_run, insert_snapshot, insert_event
 from .ecs import World
 from .physics import integrate_kinematics
-from .sonar import passive_contacts, ActivePingState, active_ping, passive_projectiles, normalize_angle_deg
+from .sonar import passive_contacts, ActivePingState, active_ping, passive_projectiles, explosion_contacts, normalize_angle_deg
 from .weapons import try_load_tube, try_flood_tube, try_set_doors, try_fire, step_torpedo, step_tubes, try_drop_depth_charges, step_depth_charge, try_launch_torpedo_quick
 from .ai_tools import LocalAIStub
 from .ai_orchestrator import AgentsOrchestrator
@@ -1163,11 +1163,13 @@ class Simulation:
         # For now, only generate on demand when 'sonar.ping' happens; UI will render as DEMON dots
         if not hasattr(self, "_last_ping_responses"):
             self._last_ping_responses = []
-        # Include passive projectiles (torpedoes and depth charges) in sonar contacts
+        # Include passive projectiles (torpedoes only - depth charges are silent while sinking)
         proj_contacts = passive_projectiles(own, self.world.torpedoes, getattr(self.world, "depth_charges", []))
         # Initialize explosion overlays list if absent
         if not hasattr(self, "_sonar_explosions"):
             self._sonar_explosions = []
+        # Create explosion contacts from recent explosions
+        explosion_contacts_list = explosion_contacts(own, getattr(self, "_sonar_explosions", []))
         # Collect all AI ping responses
         # Include enemy ping contacts in the contacts list
         enemy_ping_contacts = []
@@ -1175,7 +1177,7 @@ class Simulation:
             enemy_ping_contacts = [epc["contact"] for epc in self._enemy_ping_contacts]
         
         # Note: all_ai_ping_responses removed from pingResponses - enemy pings should appear as contacts, not ping responses
-        all_contacts = contacts + proj_contacts + enemy_ping_contacts
+        all_contacts = contacts + proj_contacts + explosion_contacts_list + enemy_ping_contacts
         tel_sonar = {**base, "contacts": [c.dict() for c in all_contacts], "pingCooldown": max(0.0, self.active_ping_state.timer), "pingResponses": list(self._last_ping_responses), "lastPingAt": getattr(self, "_last_ping_at", None), "explosions": list(self._sonar_explosions), "tasks": [t.__dict__ for t in self._active_tasks['sonar']]}
         tel_weapons = {**base, "tubes": [t.dict() for t in own.weapons.tubes], "consentRequired": CONFIG.require_captain_consent, "captainConsent": self._captain_consent, "tasks": [t.__dict__ for t in self._active_tasks['weapons']]}
         tel_engineering = {**base, "reactor": own.reactor.dict(), "pumps": {"fwd": self._pump_fwd, "aft": self._pump_aft}, "damage": own.damage.dict(), "power": own.power.dict(), "systems": own.systems.dict(), "maintenance": own.maintenance.levels, "tasks": [t.__dict__ for t in self._active_tasks['engineering']]}
@@ -1448,7 +1450,9 @@ class Simulation:
         if topic == "weapons.test_fire":
             # Test torpedo launch - bypasses all interlocks and tube preparation
             # Create a torpedo directly without going through tube state machine
+            import time
             torp = {
+                "id": f"torpedo_test_{int(time.time() * 1000)}",  # Unique ID for sonar tracking
                 "x": own.kin.x,
                 "y": own.kin.y,
                 "depth": own.kin.depth,

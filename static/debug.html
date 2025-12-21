@@ -39,6 +39,32 @@
         <button id="toggleEnemyVisual" style="margin-left:8px;">Toggle</button>
       </div>
     </div>
+    <div class="row" style="align-items:center; margin-top: 8px;">
+      <div class="pill" style="display: flex; align-items: center; gap: 8px;">
+        <span>Zoom:</span>
+        <button id="zoomOut" title="Zoom out (or scroll down)">−</button>
+        <span id="zoomLevel" style="min-width: 50px; text-align: center;">1.00x</span>
+        <button id="zoomIn" title="Zoom in (or scroll up)">+</button>
+        <button id="zoomReset" title="Reset to auto-fit">Auto</button>
+      </div>
+      <div class="pill" style="display: flex; align-items: center; gap: 8px; margin-left: 8px;">
+        <span>Fixed Range:</span>
+        <select id="rangeSelect" title="Set fixed display range">
+          <option value="auto">Auto</option>
+          <option value="500">500m</option>
+          <option value="1000">1km</option>
+          <option value="2000">2km</option>
+          <option value="5000">5km</option>
+          <option value="10000">10km</option>
+          <option value="20000">20km</option>
+          <option value="50000">50km</option>
+        </select>
+      </div>
+      <div class="pill" style="margin-left: 8px;">
+        <button id="resetPan" title="Re-center view on ownship">Center</button>
+        <span style="margin-left: 8px; font-size: 11px; color: #6B7280;">Drag to pan | Scroll to zoom</span>
+      </div>
+    </div>
     <div class="row">
       <div class="col">
         <canvas id="map" width="720" height="420" title="Ownship-centered truth positions"></canvas>
@@ -91,6 +117,23 @@
     const W = map.width, H = map.height;
     const ownEl = document.getElementById('own');
     const list = document.getElementById('list');
+
+    // Zoom state
+    let zoomLevel = 1.0;  // 1.0 = auto-fit, higher = zoomed in
+    const ZOOM_MIN = 0.25;
+    const ZOOM_MAX = 10.0;
+    const ZOOM_STEP = 1.25;
+
+    // Fixed range mode (in meters) - when set, overrides auto-fit
+    let fixedRange = null;
+    const RANGE_PRESETS = [500, 1000, 2000, 5000, 10000, 20000, 50000];
+
+    // Pan offset (in world meters)
+    let panOffsetX = 0;
+    let panOffsetY = 0;
+    let isPanning = false;
+    let lastMouseX = 0;
+    let lastMouseY = 0;
 
     function addTorpedoEvent(event) {
       const eventsDiv = document.getElementById('torpedoEvents');
@@ -159,25 +202,169 @@
       ctx.fillText(label, x+8, y-8);
     }
 
+    // Choose a nice grid spacing based on display range
+    function getGridSpacing(displayRange) {
+      // Target roughly 4-6 grid lines across the view
+      const targetLines = 5;
+      const rawSpacing = displayRange / targetLines;
+
+      // Round to a "nice" number (100, 200, 500, 1000, 2000, 5000, etc.)
+      const niceNumbers = [100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000];
+      let spacing = niceNumbers[0];
+      for (const n of niceNumbers) {
+        if (n >= rawSpacing * 0.8) {
+          spacing = n;
+          break;
+        }
+        spacing = n;
+      }
+      return spacing;
+    }
+
+    // Format distance for display
+    function formatDistance(meters) {
+      if (meters >= 1000) {
+        return (meters / 1000).toFixed(meters >= 10000 ? 0 : 1) + 'km';
+      }
+      return meters + 'm';
+    }
+
+    // Draw distance-scaled grid with labels
+    function drawScaledGrid(cx, cy, spanX, spanY, displayRange, worldToScreen) {
+      const gridSpacing = getGridSpacing(displayRange);
+
+      // Calculate grid line positions (centered on view center)
+      const minX = cx - spanX / 2;
+      const maxX = cx + spanX / 2;
+      const minY = cy - spanY / 2;
+      const maxY = cy + spanY / 2;
+
+      // Find first grid line >= minX
+      const startX = Math.ceil(minX / gridSpacing) * gridSpacing;
+      const startY = Math.ceil(minY / gridSpacing) * gridSpacing;
+
+      ctx.strokeStyle = '#1B2440';
+      ctx.lineWidth = 1;
+      ctx.font = '10px ui-sans-serif, system-ui';
+      ctx.fillStyle = '#4A5568';
+
+      // Draw vertical grid lines (X direction)
+      for (let x = startX; x <= maxX; x += gridSpacing) {
+        const [sx, sy] = worldToScreen(x, cy);
+        ctx.beginPath();
+        ctx.moveTo(sx, 0);
+        ctx.lineTo(sx, H);
+        ctx.stroke();
+      }
+
+      // Draw horizontal grid lines (Y direction)
+      for (let y = startY; y <= maxY; y += gridSpacing) {
+        const [sx, sy] = worldToScreen(cx, y);
+        ctx.beginPath();
+        ctx.moveTo(0, sy);
+        ctx.lineTo(W, sy);
+        ctx.stroke();
+      }
+
+      // Draw range rings from ownship center
+      // Use ellipses to account for non-square canvas aspect ratio
+      const [centerX, centerY] = worldToScreen(cx - panOffsetX, cy - panOffsetY);
+      ctx.strokeStyle = '#2A3A5A';
+      ctx.setLineDash([4, 4]);
+
+      for (let r = gridSpacing; r <= displayRange * 1.5; r += gridSpacing) {
+        // Calculate separate X and Y radii to match the aspect ratio of the view
+        const radiusPxX = r / spanX * (W * 0.8);
+        const radiusPxY = r / spanY * (H * 0.8);
+        if (radiusPxX > 10 && radiusPxX < W) {
+          ctx.beginPath();
+          ctx.ellipse(centerX, centerY, radiusPxX, radiusPxY, 0, 0, Math.PI * 2);
+          ctx.stroke();
+
+          // Label the ring (to the right of center)
+          ctx.fillStyle = '#6B7280';
+          ctx.fillText(formatDistance(r), centerX + radiusPxX + 4, centerY - 2);
+        }
+      }
+      ctx.setLineDash([]);
+
+      // Draw scale bar in bottom-left corner
+      const scaleBarLength = gridSpacing;
+      const scaleBarPx = scaleBarLength / spanX * (W * 0.8);
+      const barX = 20;
+      const barY = H - 20;
+
+      ctx.strokeStyle = '#60A5FA';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(barX, barY);
+      ctx.lineTo(barX + scaleBarPx, barY);
+      ctx.stroke();
+
+      // End caps
+      ctx.beginPath();
+      ctx.moveTo(barX, barY - 5);
+      ctx.lineTo(barX, barY + 5);
+      ctx.moveTo(barX + scaleBarPx, barY - 5);
+      ctx.lineTo(barX + scaleBarPx, barY + 5);
+      ctx.stroke();
+      ctx.lineWidth = 1;
+
+      // Scale label
+      ctx.fillStyle = '#60A5FA';
+      ctx.font = '11px ui-sans-serif, system-ui';
+      ctx.fillText(formatDistance(scaleBarLength), barX + scaleBarPx / 2 - 15, barY - 8);
+
+      // Show current range in top-left
+      ctx.fillStyle = '#9CA3AF';
+      ctx.font = '11px ui-sans-serif, system-ui';
+      const rangeText = `Range: ${formatDistance(Math.round(displayRange))}`;
+      const zoomText = fixedRange ? `Fixed` : `Zoom: ${zoomLevel.toFixed(2)}x`;
+      ctx.fillText(rangeText + ' | ' + zoomText, 10, 15);
+    }
+
     function render(data){
-      // Center on ownship, scale to include all ships with padding
-      const cx = data.ownship.x, cy = data.ownship.y;
-      const pad = 200;
-      let maxDx = 100, maxDy = 100;
-      data.ships.forEach(s => { maxDx = Math.max(maxDx, Math.abs(s.x - cx)); maxDy = Math.max(maxDy, Math.abs(s.y - cy)); });
-      const spanX = maxDx * 2 + pad;
-      const spanY = maxDy * 2 + pad;
+      // Center on ownship (with pan offset)
+      const cx = data.ownship.x + panOffsetX;
+      const cy = data.ownship.y + panOffsetY;
+
+      // Calculate span based on zoom mode
+      let spanX, spanY, displayRange;
+
+      if (fixedRange !== null) {
+        // Fixed range mode
+        spanX = fixedRange * 2;
+        spanY = fixedRange * 2;
+        displayRange = fixedRange;
+      } else {
+        // Auto-fit mode with zoom
+        const pad = 200;
+        let maxDx = 100, maxDy = 100;
+        data.ships.forEach(s => {
+          maxDx = Math.max(maxDx, Math.abs(s.x - data.ownship.x));
+          maxDy = Math.max(maxDy, Math.abs(s.y - data.ownship.y));
+        });
+        const baseSpan = Math.max(maxDx, maxDy) * 2 + pad;
+        spanX = baseSpan / zoomLevel;
+        spanY = baseSpan / zoomLevel;
+        displayRange = spanX / 2;
+      }
+
+      // Pixels per meter
+      const pxPerMeter = (W * 0.8) / spanX;
+
       function worldToScreen(wx, wy){
         const sx = (wx - cx) / spanX * (W*0.8) + W/2;
         // Invert Y so that positive world Y (north) appears upward on screen
         const sy = H/2 - (wy - cy) / spanY * (H*0.8);
         return [sx, sy];
       }
+
       ctx.clearRect(0,0,W,H);
       ctx.fillStyle = '#050814'; ctx.fillRect(0,0,W,H);
-      ctx.strokeStyle = '#1B2440'; ctx.lineWidth = 1;
-      for(let i=0;i<8;i++){ ctx.beginPath(); ctx.moveTo(0, i*H/8); ctx.lineTo(W, i*H/8); ctx.stroke(); }
-      for(let i=0;i<12;i++){ ctx.beginPath(); ctx.moveTo(i*W/12, 0); ctx.lineTo(i*W/12, H); ctx.stroke(); }
+
+      // Draw distance-scaled grid
+      drawScaledGrid(cx, cy, spanX, spanY, displayRange, worldToScreen);
 
       // Ownship fixed at center
       const [ox, oy] = worldToScreen(data.ownship.x, data.ownship.y);
@@ -399,6 +586,109 @@
       const next = !isOn;
       ws.send(JSON.stringify({topic:'debug.visual.enemy_100', data:{enabled: next}}));
     };
+
+    // Zoom controls
+    function updateZoomDisplay() {
+      const zoomDisplay = document.getElementById('zoomLevel');
+      if (fixedRange) {
+        zoomDisplay.textContent = 'Fixed';
+      } else {
+        zoomDisplay.textContent = zoomLevel.toFixed(2) + 'x';
+      }
+    }
+
+    document.getElementById('zoomIn').onclick = () => {
+      fixedRange = null;
+      document.getElementById('rangeSelect').value = 'auto';
+      zoomLevel = Math.min(ZOOM_MAX, zoomLevel * ZOOM_STEP);
+      updateZoomDisplay();
+    };
+
+    document.getElementById('zoomOut').onclick = () => {
+      fixedRange = null;
+      document.getElementById('rangeSelect').value = 'auto';
+      zoomLevel = Math.max(ZOOM_MIN, zoomLevel / ZOOM_STEP);
+      updateZoomDisplay();
+    };
+
+    document.getElementById('zoomReset').onclick = () => {
+      fixedRange = null;
+      document.getElementById('rangeSelect').value = 'auto';
+      zoomLevel = 1.0;
+      panOffsetX = 0;
+      panOffsetY = 0;
+      updateZoomDisplay();
+    };
+
+    document.getElementById('rangeSelect').onchange = (e) => {
+      const val = e.target.value;
+      if (val === 'auto') {
+        fixedRange = null;
+        zoomLevel = 1.0;
+      } else {
+        fixedRange = parseInt(val, 10);
+      }
+      updateZoomDisplay();
+    };
+
+    document.getElementById('resetPan').onclick = () => {
+      panOffsetX = 0;
+      panOffsetY = 0;
+    };
+
+    // Mouse wheel zoom on canvas
+    map.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -1 : 1;
+      fixedRange = null;
+      document.getElementById('rangeSelect').value = 'auto';
+      if (delta > 0) {
+        zoomLevel = Math.min(ZOOM_MAX, zoomLevel * ZOOM_STEP);
+      } else {
+        zoomLevel = Math.max(ZOOM_MIN, zoomLevel / ZOOM_STEP);
+      }
+      updateZoomDisplay();
+    }, { passive: false });
+
+    // Mouse drag to pan
+    map.addEventListener('mousedown', (e) => {
+      isPanning = true;
+      lastMouseX = e.clientX;
+      lastMouseY = e.clientY;
+      map.style.cursor = 'grabbing';
+    });
+
+    map.addEventListener('mousemove', (e) => {
+      if (!isPanning) return;
+      const dx = e.clientX - lastMouseX;
+      const dy = e.clientY - lastMouseY;
+      lastMouseX = e.clientX;
+      lastMouseY = e.clientY;
+
+      // Convert pixel movement to world meters
+      // We need current span to calculate this - approximate with a stored value
+      const approxSpan = fixedRange ? fixedRange * 2 : 10000 / zoomLevel;
+      const metersPerPixel = approxSpan / (W * 0.8);
+
+      panOffsetX -= dx * metersPerPixel;
+      panOffsetY += dy * metersPerPixel; // Inverted because screen Y is opposite to world Y
+    });
+
+    map.addEventListener('mouseup', () => {
+      isPanning = false;
+      map.style.cursor = 'default';
+    });
+
+    map.addEventListener('mouseleave', () => {
+      isPanning = false;
+      map.style.cursor = 'default';
+    });
+
+    // Set initial cursor style
+    map.style.cursor = 'grab';
+    map.addEventListener('mouseenter', () => {
+      if (!isPanning) map.style.cursor = 'grab';
+    });
   </script>
 </body>
 </html>

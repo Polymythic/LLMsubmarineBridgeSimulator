@@ -130,18 +130,16 @@
         if (a%90===0){ const t = document.createElementNS(NS,'text'); t.setAttribute('x', cx + Math.cos(ang)*(r-34)); t.setAttribute('y', cy + Math.sin(ang)*(r-34)); t.setAttribute('fill','#89B4FA'); t.setAttribute('font-size','12'); t.setAttribute('text-anchor','middle'); t.setAttribute('dominant-baseline','middle'); t.textContent = String(a); svg.appendChild(t);}      }
       // Actual heading bug - triangle pointing outward
       const bugA = (hdg-90)*Math.PI/180;
-      const bugR = r - 24;
-      const bugX = cx + Math.cos(bugA)*bugR;
-      const bugY = cy + Math.sin(bugA)*bugR;
+      const bugR = r - 20;
       // Triangle points: tip toward edge, base toward center
-      const tipX = cx + Math.cos(bugA)*(bugR+10);
-      const tipY = cy + Math.sin(bugA)*(bugR+10);
+      const tipX = cx + Math.cos(bugA)*(bugR+14);
+      const tipY = cy + Math.sin(bugA)*(bugR+14);
       const baseL = bugA + Math.PI/2;
       const baseR = bugA - Math.PI/2;
-      const b1X = cx + Math.cos(bugA)*(bugR-6) + Math.cos(baseL)*5;
-      const b1Y = cy + Math.sin(bugA)*(bugR-6) + Math.sin(baseL)*5;
-      const b2X = cx + Math.cos(bugA)*(bugR-6) + Math.cos(baseR)*5;
-      const b2Y = cy + Math.sin(bugA)*(bugR-6) + Math.sin(baseR)*5;
+      const b1X = cx + Math.cos(bugA)*(bugR-8) + Math.cos(baseL)*8;
+      const b1Y = cy + Math.sin(bugA)*(bugR-8) + Math.sin(baseL)*8;
+      const b2X = cx + Math.cos(bugA)*(bugR-8) + Math.cos(baseR)*8;
+      const b2Y = cy + Math.sin(bugA)*(bugR-8) + Math.sin(baseR)*8;
       const tri = document.createElementNS(NS,'polygon');
       tri.setAttribute('points', `${tipX},${tipY} ${b1X},${b1Y} ${b2X},${b2Y}`);
       tri.setAttribute('fill','#6EE7A7');
@@ -163,7 +161,7 @@
       // Actual marker - triangle pointing right
       const ay = h - depth*scale;
       const tri = document.createElementNS(NS,'polygon');
-      tri.setAttribute('points', `2,${ay-6} 2,${ay+6} 14,${ay}`);
+      tri.setAttribute('points', `0,${ay-10} 0,${ay+10} 18,${ay}`);
       tri.setAttribute('fill','#6EE7A7');
       svg.appendChild(tri);
       // Ordered marker - small dot
@@ -182,7 +180,7 @@
       // Actual marker - triangle pointing right
       const ay = h - speed*scale;
       const tri = document.createElementNS(NS,'polygon');
-      tri.setAttribute('points', `2,${ay-6} 2,${ay+6} 14,${ay}`);
+      tri.setAttribute('points', `0,${ay-10} 0,${ay+10} 18,${ay}`);
       tri.setAttribute('fill','#6EE7A7');
       svg.appendChild(tri);
       // Ordered marker - small dot

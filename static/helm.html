@@ -128,12 +128,27 @@
         line.setAttribute('x1',x1); line.setAttribute('y1',y1); line.setAttribute('x2',x2); line.setAttribute('y2',y2);
         line.setAttribute('stroke', col); svg.appendChild(line);
         if (a%90===0){ const t = document.createElementNS(NS,'text'); t.setAttribute('x', cx + Math.cos(ang)*(r-34)); t.setAttribute('y', cy + Math.sin(ang)*(r-34)); t.setAttribute('fill','#89B4FA'); t.setAttribute('font-size','12'); t.setAttribute('text-anchor','middle'); t.setAttribute('dominant-baseline','middle'); t.textContent = String(a); svg.appendChild(t);}      }
-      // Actual heading bug
-      const bugA = (hdg-90)*Math.PI/180; const bugX = cx + Math.cos(bugA)*(r-28); const bugY = cy + Math.sin(bugA)*(r-28);
-      const bug = document.createElementNS(NS,'circle'); bug.setAttribute('cx',bugX); bug.setAttribute('cy',bugY); bug.setAttribute('r','6'); bug.setAttribute('fill','#6EE7A7'); svg.appendChild(bug);
-      // Ordered heading bug
-      const obA = (ordered-90)*Math.PI/180; const obX = cx + Math.cos(obA)*(r-16); const obY = cy + Math.sin(obA)*(r-16);
-      const ob = document.createElementNS(NS,'circle'); ob.setAttribute('cx',obX); ob.setAttribute('cy',obY); ob.setAttribute('r','5'); ob.setAttribute('fill','#EAB308'); svg.appendChild(ob);
+      // Actual heading bug - triangle pointing outward
+      const bugA = (hdg-90)*Math.PI/180;
+      const bugR = r - 24;
+      const bugX = cx + Math.cos(bugA)*bugR;
+      const bugY = cy + Math.sin(bugA)*bugR;
+      // Triangle points: tip toward edge, base toward center
+      const tipX = cx + Math.cos(bugA)*(bugR+10);
+      const tipY = cy + Math.sin(bugA)*(bugR+10);
+      const baseL = bugA + Math.PI/2;
+      const baseR = bugA - Math.PI/2;
+      const b1X = cx + Math.cos(bugA)*(bugR-6) + Math.cos(baseL)*5;
+      const b1Y = cy + Math.sin(bugA)*(bugR-6) + Math.sin(baseL)*5;
+      const b2X = cx + Math.cos(bugA)*(bugR-6) + Math.cos(baseR)*5;
+      const b2Y = cy + Math.sin(bugA)*(bugR-6) + Math.sin(baseR)*5;
+      const tri = document.createElementNS(NS,'polygon');
+      tri.setAttribute('points', `${tipX},${tipY} ${b1X},${b1Y} ${b2X},${b2Y}`);
+      tri.setAttribute('fill','#6EE7A7');
+      svg.appendChild(tri);
+      // Ordered heading bug - small dot
+      const obA = (ordered-90)*Math.PI/180; const obX = cx + Math.cos(obA)*(r-12); const obY = cy + Math.sin(obA)*(r-12);
+      const ob = document.createElementNS(NS,'circle'); ob.setAttribute('cx',obX); ob.setAttribute('cy',obY); ob.setAttribute('r','4'); ob.setAttribute('fill','#EAB308'); svg.appendChild(ob);
     }
 
     function drawLadder(svg, depth, ordered){
@@ -145,17 +160,37 @@
         const y = h - d*scale; const major = (d%100===0);
         const line = document.createElementNS(NS,'line'); line.setAttribute('x1',10); line.setAttribute('x2', major?90:60); line.setAttribute('y1',y); line.setAttribute('y2',y); line.setAttribute('stroke', major?'#6E84C8':'#3A4674'); svg.appendChild(line);
         if (major){ const t=document.createElementNS(NS,'text'); t.setAttribute('x', 100); t.setAttribute('y', y); t.setAttribute('fill','#89B4FA'); t.setAttribute('font-size','12'); t.textContent=String(d); svg.appendChild(t);}      }
-      // Actual marker
-      const ay = h - depth*scale; const a = document.createElementNS(NS,'rect'); a.setAttribute('x',4); a.setAttribute('y', ay-2); a.setAttribute('width', 8); a.setAttribute('height',4); a.setAttribute('fill','#6EE7A7'); svg.appendChild(a);
-      // Ordered marker
-      const oy = h - ordered*scale; const o = document.createElementNS(NS,'rect'); o.setAttribute('x',4); o.setAttribute('y', oy-2); o.setAttribute('width', 8); o.setAttribute('height',4); o.setAttribute('fill','#EAB308'); svg.appendChild(o);
+      // Actual marker - triangle pointing right
+      const ay = h - depth*scale;
+      const tri = document.createElementNS(NS,'polygon');
+      tri.setAttribute('points', `2,${ay-6} 2,${ay+6} 14,${ay}`);
+      tri.setAttribute('fill','#6EE7A7');
+      svg.appendChild(tri);
+      // Ordered marker - small dot
+      const oy = h - ordered*scale;
+      const dot = document.createElementNS(NS,'circle');
+      dot.setAttribute('cx', 8); dot.setAttribute('cy', oy); dot.setAttribute('r', 4);
+      dot.setAttribute('fill','#EAB308');
+      svg.appendChild(dot);
     }
 
     function drawTele(svg, speed, ordered){
       svg.innerHTML='';
       const NS='http://www.w3.org/2000/svg'; const w=120,h=300; const max=30; const scale = h/max;
       const bg = document.createElementNS(NS,'rect'); bg.setAttribute('x',0); bg.setAttribute('y',0); bg.setAttribute('width',w); bg.setAttribute('height',h); bg.setAttribute('fill','#0F162A'); bg.setAttribute('stroke','#1B2440'); svg.appendChild(bg);
-      for (let s=0; s<=max; s+=5){ const y=h - s*scale; const line=document.createElementNS(NS,'line'); line.setAttribute('x1',10); line.setAttribute('x2',80); line.setAttribute('y1',y); line.setAttribute('y2',y); line.setAttribute('stroke','#3A4674'); svg.appendChild(line); const t=document.createElementNS(NS,'text'); t.setAttribute('x',90); t.setAttribute('y',y); t.setAttribute('fill','#89B4FA'); t.setAttribute('font-size','12'); t.textContent=String(s); svg.appendChild(t);}      const ay=h - speed*scale; const a=document.createElementNS(NS,'rect'); a.setAttribute('x',4); a.setAttribute('y', ay-2); a.setAttribute('width', 8); a.setAttribute('height',4); a.setAttribute('fill','#6EE7A7'); svg.appendChild(a); const oy=h - ordered*scale; const o=document.createElementNS(NS,'rect'); o.setAttribute('x',4); o.setAttribute('y', oy-2); o.setAttribute('width', 8); o.setAttribute('height',4); o.setAttribute('fill','#EAB308'); svg.appendChild(o);
+      for (let s=0; s<=max; s+=5){ const y=h - s*scale; const line=document.createElementNS(NS,'line'); line.setAttribute('x1',10); line.setAttribute('x2',80); line.setAttribute('y1',y); line.setAttribute('y2',y); line.setAttribute('stroke','#3A4674'); svg.appendChild(line); const t=document.createElementNS(NS,'text'); t.setAttribute('x',90); t.setAttribute('y',y); t.setAttribute('fill','#89B4FA'); t.setAttribute('font-size','12'); t.textContent=String(s); svg.appendChild(t);}
+      // Actual marker - triangle pointing right
+      const ay = h - speed*scale;
+      const tri = document.createElementNS(NS,'polygon');
+      tri.setAttribute('points', `2,${ay-6} 2,${ay+6} 14,${ay}`);
+      tri.setAttribute('fill','#6EE7A7');
+      svg.appendChild(tri);
+      // Ordered marker - small dot
+      const oy = h - ordered*scale;
+      const dot = document.createElementNS(NS,'circle');
+      dot.setAttribute('cx', 8); dot.setAttribute('cy', oy); dot.setAttribute('r', 4);
+      dot.setAttribute('fill','#EAB308');
+      svg.appendChild(dot);
     }
 
     function stageColor(stage){ return stage === 'task' ? '#FACC15' : (stage === 'failing' ? '#F59E0B' : '#EF4444'); }

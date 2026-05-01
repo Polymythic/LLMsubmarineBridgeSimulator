@@ -1,16 +1,27 @@
 {
   "id": "interdict_dual_convoys",
-  "title": "Interdict Dual Convoys",
+  "title": "Double Strike",
+  "subtitle": "Dual Convoy Interdiction",
+  "difficulty": "Expert",
+  "duration_estimate": "30-45 minutes",
+  "tags": ["combat", "convoy", "destroyers", "multi-target"],
+  "briefing": {
+    "situation": "Intelligence reports two parallel RED convoys transiting south through sector DELTA-9, separated by approximately 4 kilometers. Each convoy consists of two cargo vessels under destroyer escort. The convoys are maintaining 8 knots on a southbound heading toward their destination 25km away.",
+    "mission": "Interdict and sink all four cargo vessels before they reach their destination. You are operating alone, 15km from the convoy track. Time is critical - the convoys will reach safety if you do not act decisively.",
+    "execution": "You start at quiet speed with the element of surprise. Close the distance using the thermocline layer at 50m for acoustic masking. The convoys are 4km apart - you will need to engage both groups. Consider which convoy to strike first. After your initial attack, expect aggressive counter-attack from the destroyer escorts.",
+    "threats": "Two destroyers with full ASW capability including active sonar, depth charges, and torpedoes. The destroyers have orders to maintain EMCON discipline initially, but will become aggressive once you reveal yourself. Once alerted, they will hunt you relentlessly. Four torpedoes, two destroyers, limited time - choose your shots carefully.",
+    "notes": "This is an expert-level engagement requiring tactical planning and precise execution. You cannot destroy all targets with a single attack run. Manage your weapons carefully. Survival and mission success both matter. Good luck, Captain."
+  },
   "red_mission_summary": "Two RED convoys are transiting south under destroyer escort; maintain formation, minimize detectability, and reach the destination while denying BLUE interdiction.",
   "blue_mission_summary": "Two RED convoys (each 1x Destroyer + 2x Convoy) are moving in parallel ~4 km apart to a far-south waypoint. You start 15 km away from the convoy path. Interdict and sink all Convoy ships without losing our submarine.",
-  "objective": "BLUE must sink all RED Convoy ships before they reach the destination. Avoid ownship loss.",
+  "objective": "Sink all enemy convoy vessels before they escape to safety.",
   "side_objectives": { "RED": "escort_convoys_to_destination", "BLUE": "interdict_and_sink_convoys" },
   "blue_captain_summary": "Intel reports two parallel RED convoys moving south, separated by ~4 km, each with a destroyer escort and two cargo ships. You start 15 km away from the convoy path at quiet speed. Your task is to close the distance, interdict and sink the cargo ships. Avoid detection and survive counter-attack.",
   "roe": [
     "Weapons release authorized."
   ],
   "target_wp": [0, -25000],
-  "environment": { "timeOfDay": "day", "weather": "calm" },
+  "environment": { "timeOfDay": "day", "weather": "calm", "thermocline_on": true, "thermocline_depth_m": 50.0 },
   "ship_behaviors": {
     "red-a-dd-01": "You are an escorting destroyer protecting a convoy. Intelligence suggests enemy submarines may be operating in these waters. Your tactics: 1) Maintain EMCON discipline - avoid active sonar unless you have a strong passive contact. 2) If you detect a possible submarine contact, first try to localize it passively by maneuvering to get better bearings. 3) Only use active sonar if you have a high-confidence contact and need precise targeting. 4) Only drop depth charges when you have a solid target solution within 800m. 5) Remember: active sonar and depth charges reveal your position to the enemy. 6) Coordinate with red-b-dd-01 but maintain tactical discipline. Your primary mission is convoy protection, not submarine hunting.",
     "red-b-dd-01": "You are an escorting destroyer protecting a convoy. Intelligence suggests enemy submarines may be operating in these waters. Your tactics: 1) Maintain EMCON discipline - avoid active sonar unless you have a strong passive contact. 2) If you detect a possible submarine contact, first try to localize it passively by maneuvering to get better bearings. 3) Only use active sonar if you have a high-confidence contact and need precise targeting. 4) Only drop depth charges when you have a solid target solution within 800m. 5) Remember: active sonar and depth charges reveal your position to the enemy. 6) Coordinate with red-a-dd-01 but maintain tactical discipline. Your primary mission is convoy protection, not submarine hunting.",

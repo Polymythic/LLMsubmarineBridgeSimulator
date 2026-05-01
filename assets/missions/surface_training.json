@@ -1,9 +1,20 @@
 {
   "id": "surface_training",
-  "title": "Surface Vessel Intercept (Training)",
+  "title": "Shadow Convoy",
+  "subtitle": "Surface Vessel Intercept Training",
+  "difficulty": "Easy",
+  "duration_estimate": "10-20 minutes",
+  "tags": ["training", "convoy", "weapons", "intercept"],
+  "briefing": {
+    "situation": "A three-ship RED convoy is transiting through sector ECHO-4, heading east toward their destination waypoint. The convoy consists of unarmed cargo vessels maintaining close formation at approximately 5 knots.",
+    "mission": "Shadow the convoy and practice contact management procedures. When ready, execute an intercept to disable or destroy the convoy before they reach their destination.",
+    "execution": "Approach from the south using passive sonar to track the convoy. Maintain EMCON - avoid active sonar emissions that could alert the convoy. Position for a firing solution on the lead vessel. One well-placed torpedo should cause the convoy to scatter.",
+    "threats": "The convoy is unarmed and has no escort. However, maintaining stealth is essential for weapons training. Speed and noise discipline will determine mission success.",
+    "notes": "This is a training exercise focused on contact tracking and weapons employment. Take your time to establish a quality firing solution. Weapons release is authorized."
+  },
   "red_mission_summary": "RED convoy must reach the waypoint while maintaining formation and avoiding detection. No weapons available, so speed and evasion are critical.",
   "blue_mission_summary": "BLUE submarine will shadow the RED convoy and practice contact management and weapons procedures. Maintain EMCON and interdict the convoy.",
-  "objective": "BLUE interdicts RED convoy to destroy it; RED convoy racing to reach waypoint.",
+  "objective": "Track and intercept the enemy convoy before they reach their destination.",
   "blue_captain_summary": "Training mission. BLUE will shadow the RED convoy (red-01, red-02, red-03) and practice contact management and weapons procedures. Maintain EMCON. BLUE objective: interdict or delay convoy. RED objective: escort convoy to waypoint with minimal risk.",
   "roe": [
     "Weapons release authorized.",
@@ -31,7 +42,7 @@
     "RED": {"reach_wp_within_m": 200, "min_survivors": 2, "timeout_s": 900},
     "BLUE": {"disable_or_delay": {"convoy_speed_below_kn": 3, "duration_s": 120}}
   },
-  "environment": { "timeOfDay": "dawn", "weather": "calm" },
+  "environment": { "timeOfDay": "dawn", "weather": "calm", "thermocline_on": true, "thermocline_depth_m": 60.0 },
   "ship_behaviors": {
     "red-01": "You are red-01, a convoy cargo vessel with no weapons so speed and evasion is critical. Follow FleetIntent to reach waypoint X:5000, Y:0. You may override the FleetIntent if it is not safe. Hold column position and spacing; avoid high-risk areas.",
     "red-02": "You are red-02, a convoy cargo vessel with no weapons so speed and evasion is critical. Follow FleetIntent to reach waypoint X:5000, Y:0. You may override the FleetIntent if it is not safe. Hold column position and spacing; avoid high-risk areas.",

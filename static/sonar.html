@@ -12,18 +12,34 @@
     li { margin:4px 0; }
     .row { display:flex; gap:16px; }
     .col { flex:1; }
-    #legend { width:100%; height:24px; background:#0B1020; border:1px solid #1B2440; border-radius:6px; margin-bottom:6px; }
+    #legend { width:100%; height:32px; background:#0B1020; border:1px solid #1B2440; border-radius:6px; margin-bottom:6px; }
     #waterfall { width:100%; height:220px; background:#050814; border:1px solid #1B2440; border-radius:6px; }
     .label { font-size:12px; opacity:0.8; }
-    .damage-led { width:12px; height:12px; border-radius:50%; display:inline-block; margin-left:8px; border:2px solid #333; }
-    .damage-led.flashing { animation: flash 1s infinite; }
-    .damage-led.hull-damage { background:#FF6B6B; }
-    .damage-led.flooding { background:#4A90E2; }
-    .damage-led.normal { background:#8BE28B; }
-    @keyframes flash { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0.3; } }
+    /* Shared styles loaded from station-common.css */
   </style>
+  <link rel="stylesheet" href="/static/css/station-common.css">
+  <script src="/static/js/audio.js"></script>
+  <script src="/static/js/station-common.js"></script>
 </head>
 <body>
+  <!-- Mission state overlays -->
+  <div class="mission-overlay" id="missionOverlay">
+    <div class="mission-overlay-box">
+      <h2>Mission Changed</h2>
+      <p>A new mission has been loaded. Please refresh to sync.</p>
+      <button onclick="location.reload()">Refresh Station</button>
+    </div>
+  </div>
+  <div class="idle-banner" id="idleBanner">
+    Awaiting Mission - <a href="/missions">Select a Mission</a>
+  </div>
+  <div class="mission-overlay" id="missionEndedOverlay">
+    <div class="mission-overlay-box">
+      <h1 id="endedTitle">Mission Complete</h1>
+      <p id="endedReason"></p>
+      <button onclick="location.href='/missions'">Return to Mission Selection</button>
+    </div>
+  </div>
   <div class="panel">
     <h2>Sonar <span class="pill" id="wsStatus" title="WebSocket connection status" style="margin-left: 8px; font-size: 14px; font-weight: normal;">WebSocket: Connecting...</span></h2>
     <div class="row">
@@ -39,7 +55,7 @@
       </div>
       <div class="col">
         <div class="label" title="Bearing axis centered at 0°; time flows downward">Passive Waterfall</div>
-        <canvas id="legend" width="720" height="24" title="Bearing ticks (270 | 0 | 90)"></canvas>
+        <canvas id="legend" width="720" height="32" title="Sonar contact legend"></canvas>
         <canvas id="waterfall" width="720" height="220" title="Bearing-time-intensity display (0° centered)"></canvas>
         <div style="display:flex; align-items:flex-end; gap:8px; margin-top:8px;">
           <div class="label">Sonar Noise: <span id="sonarNoise">0</span> dB</div>
@@ -60,50 +76,13 @@
     <pre id="telemetry" title="Station telemetry and events"></pre>
   </div>
   <script>
-    const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/sonar');
-    
-    // WebSocket connection status
-    const wsStatus = document.getElementById('wsStatus');
-    
-    ws.onopen = () => {
-        wsStatus.textContent = 'WebSocket: Connected';
-        wsStatus.style.color = '#8DEB8D';
-        wsStatus.style.borderColor = '#8DEB8D';
-    };
-    
-    ws.onclose = () => {
-        wsStatus.textContent = 'WebSocket: Disconnected';
-        wsStatus.style.color = '#FF6B6B';
-        wsStatus.style.borderColor = '#FF6B6B';
-    };
-    
-    ws.onerror = (error) => {
-        wsStatus.textContent = 'WebSocket: Error';
-        wsStatus.style.color = '#FF6B6B';
-        wsStatus.style.borderColor = '#FF6B6B';
-    };
-    
-
-    
-    
+    const station = new StationBase('sonar');
     const tel = document.getElementById('telemetry');
     const cd = document.getElementById('cd');
     const list = document.getElementById('contacts');
     const prList = document.getElementById('pingResponses');
     const emcon = document.getElementById('emcon');
     const sonarNoise = document.getElementById('sonarNoise');
-    const dbWrap = document.getElementById('dbWrap');
-    const dbFill = document.getElementById('dbFill');
-    const dbPeak = document.getElementById('dbPeak');
-    let peakHold = 0;
-    function setDbMeter(db){
-      const h = dbWrap.clientHeight || 120;
-      const clamped = Math.max(0, Math.min(100, db));
-      const px = Math.floor((clamped/100)*h);
-      dbFill.style.height = px + 'px';
-      peakHold = Math.max(peakHold - 1, px);
-      dbPeak.style.bottom = (peakHold-2) + 'px';
-    }
 
     const legend = document.getElementById('legend');
     const lctx = legend.getContext('2d');
@@ -127,18 +106,21 @@
       lctx.fillRect(0,0,lW,lH);
       lctx.strokeStyle = '#1B2440';
       lctx.beginPath(); lctx.moveTo(0, lH-0.5); lctx.lineTo(lW, lH-0.5); lctx.stroke();
+      lctx.fillStyle = '#8593B8'; lctx.font = '10px ui-sans-serif';
+      // Bearing ticks at the bottom
       const majors = [270, 0, 90];
-      const minors = [];
-      for (let b=0; b<360; b+=30){ if (!majors.includes(b)) minors.push(b); }
-      lctx.fillStyle = '#8593B8'; lctx.font = '12px ui-sans-serif';
-      lctx.strokeStyle = '#2A345C';
-      minors.forEach(b => { const x = xForBearing(b, lW); lctx.beginPath(); lctx.moveTo(x+0.5, lH-10); lctx.lineTo(x+0.5, lH-2); lctx.stroke(); });
       lctx.strokeStyle = '#4C5E9A';
-      majors.forEach(b => { const x = xForBearing(b, lW); lctx.beginPath(); lctx.moveTo(x+0.5, lH-16); lctx.lineTo(x+0.5, lH-2); lctx.stroke(); lctx.textAlign='center'; lctx.fillText(String(b), x, 12); });
-      // Legend keys
-      lctx.fillStyle = '#00E5FF'; lctx.fillRect(6, 6, 18, 3); lctx.fillStyle = '#D7E3FF'; lctx.fillText('Own Ping', 28, 12);
-      lctx.strokeStyle = '#FF4DFF'; lctx.setLineDash([4,3]); lctx.beginPath(); lctx.moveTo(110, 7.5); lctx.lineTo(128, 7.5); lctx.stroke(); lctx.setLineDash([]); lctx.fillStyle = '#D7E3FF'; lctx.fillText('Enemy Ping', 134, 12);
-      lctx.fillStyle = '#FF7A00'; lctx.fillRect(240, 6, 18, 5); lctx.fillStyle = '#D7E3FF'; lctx.fillText('Explosion', 264, 12);
+      majors.forEach(b => { const x = xForBearing(b, lW); lctx.beginPath(); lctx.moveTo(x+0.5, lH-8); lctx.lineTo(x+0.5, lH-2); lctx.stroke(); lctx.textAlign='center'; lctx.fillText(String(b)+'°', x, lH-10); });
+      // Legend keys - Row 1 (top)
+      lctx.textAlign='left';
+      lctx.fillStyle = '#00E5FF'; lctx.fillRect(6, 4, 14, 3); lctx.fillStyle = '#D7E3FF'; lctx.fillText('Ping', 24, 10);
+      lctx.strokeStyle = '#FF4DFF'; lctx.setLineDash([3,2]); lctx.beginPath(); lctx.moveTo(60, 5.5); lctx.lineTo(74, 5.5); lctx.stroke(); lctx.setLineDash([]); lctx.fillStyle = '#D7E3FF'; lctx.fillText('Enemy', 78, 10);
+      lctx.fillStyle = '#FF7A00'; lctx.fillRect(120, 4, 14, 4); lctx.fillStyle = '#D7E3FF'; lctx.fillText('Explsn', 138, 10);
+      lctx.fillStyle = '#55FF55'; lctx.fillRect(185, 4, 14, 3); lctx.fillStyle = '#D7E3FF'; lctx.fillText('Own Torp', 203, 10);
+      lctx.fillStyle = '#FF4444'; lctx.fillRect(270, 4, 14, 3); lctx.fillStyle = '#D7E3FF'; lctx.fillText('Enem Torp', 288, 10);
+      lctx.fillStyle = '#55FFFF'; lctx.fillRect(365, 4, 14, 3); lctx.fillStyle = '#D7E3FF'; lctx.fillText('Own CM', 383, 10);
+      lctx.fillStyle = '#BB77FF'; lctx.fillRect(440, 4, 14, 3); lctx.fillStyle = '#D7E3FF'; lctx.fillText('Enem CM', 458, 10);
+      lctx.fillStyle = '#FFAA44'; lctx.fillRect(525, 4, 14, 3); lctx.fillStyle = '#D7E3FF'; lctx.fillText('Ship', 543, 10);
     }
 
     drawLegend();
@@ -155,9 +137,10 @@
         const bearing = ((c.bearing % 360) + 360) % 360;
         const x = xForBearing(bearing, W);
         const strength = Math.max(0, Math.min(1, (c.detectability != null ? c.detectability : c.strength) || 0));
-        
+        const cls = c.classifiedAs || '';
+
         // Different colors for different contact types
-        if (c.classifiedAs === "ENEMY_ACTIVE_SONAR") {
+        if (cls === "ENEMY_ACTIVE_SONAR") {
           // Enemy ping: bright magenta
           const glow = Math.floor(100 + strength * 155);
           for (let dx = -1; dx <= 1; dx++){
@@ -165,16 +148,46 @@
             const base = xi * 4;
             data[base+0] = glow; data[base+1] = Math.floor(glow * 0.2); data[base+2] = Math.floor(glow * 0.8); data[base+3] = 255;
           }
-        } else if (c.classifiedAs === "Explosion") {
-          // Explosion: bright red/orange
+        } else if (cls === "Explosion") {
+          // Explosion: bright red/orange, wider spread
           const glow = Math.floor(120 + strength * 135);
           for (let dx = -2; dx <= 2; dx++){
             const xi = Math.max(0, Math.min(W-1, x + dx));
             const base = xi * 4;
             data[base+0] = glow; data[base+1] = Math.floor(glow * 0.3); data[base+2] = Math.floor(glow * 0.1); data[base+3] = 255;
           }
+        } else if (cls.includes('Torpedo')) {
+          // Torpedoes: green for own, red for enemy
+          const glow = Math.floor(80 + strength * 175);
+          const isOwn = cls.includes('Own');
+          for (let dx = -1; dx <= 1; dx++){
+            const xi = Math.max(0, Math.min(W-1, x + dx));
+            const base = xi * 4;
+            if (isOwn) {
+              // Own torpedo: green
+              data[base+0] = Math.floor(glow * 0.3); data[base+1] = glow; data[base+2] = Math.floor(glow * 0.3); data[base+3] = 255;
+            } else {
+              // Enemy torpedo: bright red
+              data[base+0] = glow; data[base+1] = Math.floor(glow * 0.2); data[base+2] = Math.floor(glow * 0.2); data[base+3] = 255;
+            }
+          }
+        } else if (cls.includes('Noisemaker') || cls.includes('Decoy')) {
+          // Countermeasures: cyan for own, purple for enemy
+          const glow = Math.floor(70 + strength * 160);
+          const isOwn = cls.includes('Own');
+          for (let dx = -1; dx <= 1; dx++){
+            const xi = Math.max(0, Math.min(W-1, x + dx));
+            const base = xi * 4;
+            if (isOwn) {
+              // Own countermeasure: cyan
+              data[base+0] = Math.floor(glow * 0.3); data[base+1] = glow; data[base+2] = glow; data[base+3] = 255;
+            } else {
+              // Enemy countermeasure: purple
+              data[base+0] = Math.floor(glow * 0.7); data[base+1] = Math.floor(glow * 0.3); data[base+2] = glow; data[base+3] = 255;
+            }
+          }
         } else {
-          // Regular contacts: orange/yellow
+          // Regular ship contacts: orange/yellow
           const glow = Math.floor(60 + strength * 180);
           for (let dx = -1; dx <= 1; dx++){
             const xi = Math.max(0, Math.min(W-1, x + dx));
@@ -212,196 +225,59 @@
       row = (row + 1) % H;
     }
 
-    // Track existing task elements by ID to avoid recreation
-    let existingTaskElements = new Map();
-    
-    function updateDamageLEDs(damage) {
-      const hullLed = document.getElementById('hullDamage');
-      const floodLed = document.getElementById('flooding');
-      
-      // Hull damage LED
-      if (damage.hull > 0.1) {
-        hullLed.className = 'damage-led hull-damage flashing';
-        hullLed.title = `Hull Damage: ${(damage.hull * 100).toFixed(0)}%`;
-      } else {
-        hullLed.className = 'damage-led normal';
-        hullLed.title = 'Hull Damage: OK';
-      }
-      
-      // Flooding LED
-      if (damage.flooding_rate > 0.5) {
-        floodLed.className = 'damage-led flooding flashing';
-        floodLed.title = `Flooding Rate: ${damage.flooding_rate.toFixed(1)}`;
-      } else {
-        floodLed.className = 'damage-led normal';
-        floodLed.title = 'Flooding: OK';
-      }
-    }
-    
-    ws.onmessage = (ev) => {
-      try {
-        const m = JSON.parse(ev.data);
-        if (m.topic === 'telemetry') {
-          tel.textContent = JSON.stringify(m.data, null, 2);
-          cd.textContent = (m.data.pingCooldown || 0).toFixed(1);
-          if (m.data.acoustics) { emcon.textContent = (m.data.acoustics.emconRisk || 'low'); }
-          if (m.data.ownship && m.data.ownship.damage) { updateDamageLEDs(m.data.ownship.damage); }
-          const nz = (m.data.noise && m.data.noise.sonar_dB) || 0; sonarNoise.textContent = nz.toFixed(0); setDbMeter(nz);
-          
-          const tasks = m.data.tasks || [];
-          console.log('🔧 Processing tasks:', tasks);
-          console.log('🔍 Tasks array length:', tasks.length);
-          console.log('🔍 Tasks array type:', typeof tasks);
-          console.log('🔍 Tasks array content:', JSON.stringify(tasks, null, 2));
-          
-          // Smart task update: only create new elements for new tasks
-          const row = document.getElementById('tasksRow');
-          
-          if (tasks.length === 0) {
-            console.log('📝 No tasks found, showing default message');
-            // Clear all existing tasks
-            existingTaskElements.clear();
-            row.innerHTML = '';
-            const el = document.createElement('div');
-            el.className = 'label';
-            el.id = 'task';
-            el.textContent = 'No Active Tasks';
-            el.style.color = '#D7E3FF';
-            row.appendChild(el);
-          } else {
-            console.log('📝 Found', tasks.length, 'tasks, processing them...');
-            // Process each task
-            // Remove placeholder if present
-            const placeholder = document.getElementById('task');
-            if (placeholder) {
-              placeholder.parentElement && placeholder.parentElement.removeChild(placeholder);
-            }
-            // Remove any tasks that no longer exist
-            const currentIds = new Set(tasks.map(t => t.id));
-            for (const [tid, el] of Array.from(existingTaskElements.entries())) {
-              if (!currentIds.has(tid)) {
-                if (el && el.parentElement) el.parentElement.removeChild(el);
-                existingTaskElements.delete(tid);
-              }
-            }
-            tasks.forEach((task, index) => {
-              console.log('🔍 Processing task', index + 1, 'of', tasks.length, ':', task);
-              console.log('🔍 Task ID:', task.id);
-              console.log('🔍 Task title:', task.title);
-              const taskId = task.id;
-              
-              console.log('🔍 Checking if task exists in existingTaskElements:', taskId);
-              console.log('🔍 existingTaskElements size:', existingTaskElements.size);
-              console.log('🔍 existingTaskElements keys:', Array.from(existingTaskElements.keys()));
-              
-              console.log('🔍 existingTaskElements.has(taskId) result:', existingTaskElements.has(taskId));
-              console.log('🔍 taskId value:', taskId);
-              console.log('🔍 taskId type:', typeof taskId);
-              
-              if (existingTaskElements.has(taskId)) {
-                // Update existing task element
-                console.log('🔄 Updating existing task:', taskId);
-                const existingEl = existingTaskElements.get(taskId);
-                const label = task.stage === 'task' ? 'MAINTENANCE' : (task.stage === 'failing' ? 'FAILING' : 'FAILED');
-                
-                // Update only the text content, preserve the button
-                const textSpan = existingEl.querySelector('.task-text');
-                if (textSpan) {
-                  textSpan.textContent = `🔧 ${task.title} — ${label} ${(task.progress*100).toFixed(0)}% — time to complete ${Math.max(0, task.time_remaining_s).toFixed(0)}s${task.started ? ' (REPAIRING)' : ''}`;
-                }
-              } else {
-                // Create new task element
-                console.log('🆕 Creating new task element:', taskId);
-                console.log('🆕 About to create DOM elements...');
-                
-                const el = document.createElement('div');
-                el.className = 'label';
-                const color = task.stage === 'task' ? '#FACC15' : (task.stage === 'failing' ? '#F59E0B' : '#EF4444');
-                const bg = task.stage === 'task' ? 'rgba(250, 204, 21, 0.1)' : (task.stage === 'failing' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)');
-                el.style.color = color;
-                el.style.backgroundColor = bg;
-                
-                const label = task.stage === 'task' ? 'MAINTENANCE' : (task.stage === 'failing' ? 'FAILING' : 'FAILED');
-                
-                // Create repair button for this specific task
-                const btn = document.createElement('button');
-                btn.textContent = 'Repair';
-                btn.style.marginLeft = '8px';
-                
-                // Capture the task ID directly to avoid closure issues
-                
-                // Add basic click logging to diagnose the issue
-                console.log('🔧 Creating repair button for task:', taskId);
-                
-                btn.onclick = () => {
-                  console.log('🖱️ BUTTON CLICKED! Sonar task repair button clicked for task:', taskId);
-                  console.log('🔍 Button element:', btn);
-                  console.log('🔍 Button onclick property:', btn.onclick);
-                  
-                  const cmd = {topic: 'station.task.start', data: {station: 'sonar', task_id: taskId}};
-                  console.log('📤 Sending sonar task repair command:', cmd);
-                  try {
-                    ws.send(JSON.stringify(cmd));
-                    console.log('📤 Sonar task repair command sent successfully');
-                  } catch (error) {
-                    console.error('❌ Error sending sonar task repair command:', error);
-                  }
-                };
-                
-                // Verify the handler was attached
-                console.log('🔍 Button onclick after setup:', btn.onclick);
-                
-                // Create a span for the text content
-                const textSpan = document.createElement('span');
-                textSpan.className = 'task-text';
-                textSpan.textContent = `🔧 ${task.title} — ${label} ${(task.progress*100).toFixed(0)}% — time to complete ${Math.max(0, task.time_remaining_s).toFixed(0)}s${task.started ? ' (REPAIRING)' : ''}`;
-                
-                console.log('🆕 Appending text span and button to element...');
-                el.appendChild(textSpan);
-                el.appendChild(btn);
-                console.log('🆕 Appending element to row...');
-                row.appendChild(el);
-                console.log('🆕 Element appended successfully');
-                
-                // Store the element for future updates
-                console.log('🆕 Storing element in existingTaskElements for task:', taskId);
-                existingTaskElements.set(taskId, el);
-                console.log('🆕 Element stored successfully');
-              }
-            });
-          }
-          
-          list.innerHTML = '';
-          (m.data.contacts || []).forEach(c => {
-            const li = document.createElement('li');
-            const bearingText = (c.bearingKnown ? `${c.bearing.toFixed(0)}°` : 'unknown');
-            const det = (c.detectability != null ? c.detectability : c.strength);
-            
-            // Different styling for different contact types
-            if (c.classifiedAs === "ENEMY_ACTIVE_SONAR") {
-              li.title = 'Enemy active sonar ping detected; bearing and signal strength only.';
-              li.style.color = '#FF00FF'; // Magenta color
-              li.style.fontWeight = 'bold';
-              li.textContent = `ENEMY PING brg ${bearingText} str ${det.toFixed(2)} conf ${c.confidence.toFixed(2)}`;
-            } else if (c.classifiedAs === "Explosion") {
-              li.title = 'Explosion detected; very loud acoustic event.';
-              li.style.color = '#FF4444'; // Bright red color
-              li.style.fontWeight = 'bold';
-              li.textContent = `EXPLOSION brg ${bearingText} str ${det.toFixed(2)} conf ${c.confidence.toFixed(2)}`;
-            } else {
-              li.title = 'Passive contact; bearing-only with noisy measurement.';
-              li.textContent = `ID ${c.id} brg ${bearingText} det ${det.toFixed(2)} conf ${c.confidence.toFixed(2)}`;
-            }
-            list.appendChild(li);
-          });
-          prList.innerHTML = '';
-          (m.data.pingResponses || []).forEach(p => { const li = document.createElement('li'); li.title = 'Active ping response'; const km = (p.range_est/1000).toFixed(1); li.textContent = `ID ${p.id} brg ${p.bearing.toFixed(0)}° range ~${km} km str ${(+p.strength).toFixed(2)} at ${p.at}`; prList.appendChild(li); });
-          drawWaterfall(m.data.contacts || [], m.data.pingResponses || [], m.data.explosions || []);
-        }
-      } catch(e){}
-    };
+    station.onTelemetry = function(d) {
+      tel.textContent = JSON.stringify(d, null, 2);
+      cd.textContent = (d.pingCooldown || 0).toFixed(1);
+      if (d.acoustics) { emcon.textContent = (d.acoustics.emconRisk || 'low'); }
+      if (d.ownship && d.ownship.damage) { station.updateDamageLEDs(d.ownship.damage); }
+      const nz = (d.noise && d.noise.sonar_dB) || 0; sonarNoise.textContent = nz.toFixed(0); station.setDbMeter(nz);
+      station.updateTasks(d.tasks || []);
 
-    document.getElementById('ping').onclick = () => { ws.send(JSON.stringify({topic:'sonar.ping', data:{array:'bow'}})); };
+      list.innerHTML = '';
+      (d.contacts || []).forEach(c => {
+        const li = document.createElement('li');
+        const bearingText = (c.bearingKnown ? `${c.bearing.toFixed(0)}°` : 'unknown');
+        const det = (c.detectability != null ? c.detectability : c.strength);
+        const cls = c.classifiedAs || '';
+        if (cls === "ENEMY_ACTIVE_SONAR") {
+          li.title = 'Enemy active sonar ping detected; bearing and signal strength only.';
+          li.style.color = '#FF00FF'; li.style.fontWeight = 'bold';
+          li.textContent = `ENEMY PING brg ${bearingText} str ${det.toFixed(2)} conf ${c.confidence.toFixed(2)}`;
+        } else if (cls === "Explosion") {
+          li.title = 'Explosion detected; very loud acoustic event.';
+          li.style.color = '#FF4444'; li.style.fontWeight = 'bold';
+          li.textContent = `EXPLOSION brg ${bearingText} str ${det.toFixed(2)} conf ${c.confidence.toFixed(2)}`;
+        } else if (cls.includes('Torpedo')) {
+          const isOwn = cls.includes('Own');
+          li.title = isOwn ? 'Own torpedo in the water.' : 'DANGER: Enemy torpedo detected!';
+          li.style.color = isOwn ? '#55FF55' : '#FF4444'; li.style.fontWeight = 'bold';
+          li.textContent = `${cls.toUpperCase()} brg ${bearingText} det ${det.toFixed(2)} conf ${c.confidence.toFixed(2)}`;
+        } else if (cls.includes('Noisemaker') || cls.includes('Decoy')) {
+          const isOwn = cls.includes('Own');
+          li.title = isOwn ? 'Own countermeasure active.' : 'Enemy countermeasure detected.';
+          li.style.color = isOwn ? '#55FFFF' : '#BB77FF';
+          li.textContent = `${cls} brg ${bearingText} det ${det.toFixed(2)} conf ${c.confidence.toFixed(2)}`;
+        } else {
+          const isIdentified = cls && !cls.includes('Contact') && !cls.includes('Unknown');
+          if (isIdentified) {
+            li.style.color = '#8DEB8D'; li.title = `Contact identified as ${cls}`;
+            li.textContent = `${c.id} [${cls}] brg ${bearingText} det ${det.toFixed(2)} conf ${c.confidence.toFixed(2)}`;
+          } else {
+            li.style.color = '#FACC15'; li.title = 'Unidentified contact; use periscope to identify.';
+            li.textContent = `${c.id} [${cls || 'Unknown'}] brg ${bearingText} det ${det.toFixed(2)} conf ${c.confidence.toFixed(2)}`;
+          }
+        }
+        list.appendChild(li);
+      });
+      prList.innerHTML = '';
+      (d.pingResponses || []).forEach(p => { const li = document.createElement('li'); li.title = 'Active ping response'; const km = (p.range_est/1000).toFixed(1); li.textContent = `ID ${p.id} brg ${p.bearing.toFixed(0)}° range ~${km} km str ${(+p.strength).toFixed(2)} at ${p.at}`; prList.appendChild(li); });
+      drawWaterfall(d.contacts || [], d.pingResponses || [], d.explosions || []);
+      if (station.audio) station.audio.processTelemetry(d);
+    };
+    station.connect();
+
+    document.getElementById('ping').onclick = () => { station.sendCommand('sonar.ping', {array:'bow'}); };
+    station.initAudio();
   </script>
 </body>
 </html>

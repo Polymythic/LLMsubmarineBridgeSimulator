@@ -43,6 +43,25 @@ class MissionConfig(BaseModel):
     # Legacy prompt fields (no longer used by orchestrator)
     ai_fleet_prompt: Optional[str] = None
     ai_ship_prompts: Dict[str, str] = Field(default_factory=dict)
+    # ========== Enhanced Scenario System ==========
+    # Waypoint routes per ship (fleet commander navigates, game rules verify)
+    waypoint_routes: Dict[str, List[Dict[str, Any]]] = Field(default_factory=dict)
+    # Condition-based triggers (extends legacy time-based triggers)
+    scenario_triggers: List[Dict[str, Any]] = Field(default_factory=list)
+    # Interceptable communications schedule
+    intercept_schedule: List[Dict[str, Any]] = Field(default_factory=list)
+    # ========== Scenario Selector / Immersive Briefing ==========
+    # Subtitle for mission selector display
+    subtitle: Optional[str] = None
+    # Structured briefing for immersive scenario presentation
+    briefing: Dict[str, str] = Field(default_factory=dict)
+    # e.g., {"situation": "...", "mission": "...", "execution": "...", "threats": "...", "notes": "..."}
+    # Difficulty rating for UI display
+    difficulty: Optional[str] = None
+    # Estimated duration for UI display
+    duration_estimate: Optional[str] = None
+    # Tags for filtering/categorization
+    tags: List[str] = Field(default_factory=list)
 
 
 def _read_json(path: Path) -> Any:
@@ -108,6 +127,37 @@ def load_mission_by_id(mission_id: str) -> Optional[MissionConfig]:
         return None
 
 
+def list_available_missions() -> List[str]:
+    """Return list of available mission IDs."""
+    if not MISSIONS_DIR.exists():
+        return []
+    return [
+        p.stem for p in MISSIONS_DIR.glob("*.json")
+        if p.is_file()
+    ]
+
+
+def get_all_mission_summaries() -> List[Dict[str, Any]]:
+    """Return summary info for all available missions (for selector UI)."""
+    summaries = []
+    for mission_id in list_available_missions():
+        mission = load_mission_by_id(mission_id)
+        if mission:
+            summaries.append({
+                "id": mission.id,
+                "title": mission.title,
+                "subtitle": mission.subtitle,
+                "objective": mission.objective,
+                "difficulty": mission.difficulty,
+                "duration_estimate": mission.duration_estimate,
+                "tags": mission.tags,
+                "briefing": mission.briefing,
+                "blue_captain_summary": mission.blue_captain_summary,
+                "environment": mission.environment,
+            })
+    return summaries
+
+
 def apply_mission_to_world(mission: MissionConfig, world_getter, set_mission_brief) -> None:
     """Configure world state per mission. Overwrites world and sets mission brief.
 
@@ -130,17 +180,33 @@ def apply_mission_to_world(mission: MissionConfig, world_getter, set_mission_bri
             heading=float(s.spawn.get("heading", 0.0)),
             speed=float(s.spawn.get("speed", 0.0)),
         )
+        # Copy acoustics and apply environment settings from mission
+        ship_acoustics = cat.default_acoustics.model_copy(deep=True)
+        env = mission.environment
+        if "thermocline_on" in env:
+            ship_acoustics.thermocline_on = bool(env.get("thermocline_on", True))
+        if "thermocline_depth_m" in env:
+            ship_acoustics.thermocline_depth_m = float(env.get("thermocline_depth_m", 50.0))
+
+        # Build waypoint route if defined for this ship
+        ship_route = None
+        if s.id in mission.waypoint_routes:
+            waypoint_dicts = mission.waypoint_routes[s.id]
+            waypoints = [models.Waypoint(**wp) for wp in waypoint_dicts]
+            ship_route = models.WaypointRoute(waypoints=waypoints)
+
         ship = models.Ship(
             id=s.id,
             side=str(s.side).upper(),
             kin=kin,
             hull=cat.default_hull.model_copy(deep=True),
-            acoustics=cat.default_acoustics.model_copy(deep=True),
+            acoustics=ship_acoustics,
             weapons=cat.default_weapons.model_copy(deep=True),
             reactor=models.Reactor(output_mw=50.0, max_mw=100.0),
             damage=models.DamageState(),
             ship_class=cat.ship_class,
             capabilities=cat.capabilities.model_copy(deep=True),
+            route=ship_route,
         )
         world.add_ship(ship)
     # Mission brief for UI/AI
@@ -163,6 +229,13 @@ def apply_mission_to_world(mission: MissionConfig, world_getter, set_mission_bri
             {"at_s": float(t.get("at_s", 0.0)), "msg": t.get("comms")}
             for t in mission.triggers if "comms" in t
         ],
+        # ========== Enhanced Scenario System ==========
+        # Waypoint routes for fleet commander planning
+        "waypoint_routes": mission.waypoint_routes,
+        # Condition-based triggers for game rules
+        "scenario_triggers": mission.scenario_triggers,
+        # Interceptable communications schedule
+        "intercept_schedule": mission.intercept_schedule,
     }
     set_mission_brief(brief)
 

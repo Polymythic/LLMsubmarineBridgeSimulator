@@ -1,0 +1,77 @@
+{
+  "id": "torpedo_training",
+  "title": "Torpedo Training",
+  "subtitle": "Weapons Systems Validation",
+  "difficulty": "Easy",
+  "duration_estimate": "5-10 minutes",
+  "tags": ["training", "weapons", "torpedo"],
+  "briefing": {
+    "situation": "Three unarmed cargo vessels are transiting the area at slow speed. No escorts are present.",
+    "mission": "Test torpedo systems against live targets. Practice firing solutions, torpedo guidance, and reload procedures.",
+    "execution": "Targets are slow and undefended. Use this opportunity to test different attack profiles - passive homing, active homing, and various run depths.",
+    "threats": "None. This is an uncontested training environment.",
+    "notes": "Weapons free. All torpedo expenditure is authorized for training purposes."
+  },
+  "red_mission_summary": "RED convoy vessels are transiting. No combat capability.",
+  "blue_mission_summary": "BLUE submarine will conduct torpedo firing exercises against unarmed targets.",
+  "objective": "Destroy all convoy vessels using torpedoes.",
+  "blue_captain_summary": "Torpedo training exercise. Destroy the three convoy targets (convoy-01, convoy-02, convoy-03). Weapons free.",
+  "roe": [
+    "Weapons release authorized.",
+    "All targets are valid.",
+    "Active sonar permitted."
+  ],
+  "target_wp": [10000, 0],
+  "side_objectives": {
+    "RED": "survive",
+    "BLUE": "destroy_all_targets"
+  },
+  "protected_assets": [],
+  "emcon": {
+    "RED": {"active_ping_allowed": false, "radio_discipline": "none"},
+    "BLUE": {"active_ping_allowed": true, "radio_discipline": "none"}
+  },
+  "formations": {},
+  "speed_limits": {},
+  "navigation_constraints": {"no_go_zones": [], "transit_lanes": []},
+  "threat_hints": [],
+  "success_criteria": {
+    "RED": {"min_survivors": 1, "timeout_s": 600},
+    "BLUE": {"destroy_targets": ["convoy-01", "convoy-02", "convoy-03"]}
+  },
+  "environment": { "timeOfDay": "day", "weather": "calm", "thermocline_on": false },
+  "ship_behaviors": {
+    "convoy-01": "You are an unarmed cargo vessel. Maintain course and speed. You have no weapons or sensors.",
+    "convoy-02": "You are an unarmed cargo vessel. Maintain course and speed. You have no weapons or sensors.",
+    "convoy-03": "You are an unarmed cargo vessel. Maintain course and speed. You have no weapons or sensors."
+  },
+  "ships": [
+    {
+      "id": "ownship",
+      "side": "BLUE",
+      "class": "SSN",
+      "spawn": { "x": 0, "y": 0, "depth": 50, "heading": 0, "speed": 5 }
+    },
+    {
+      "id": "convoy-01",
+      "side": "RED",
+      "class": "Convoy",
+      "spawn": { "x": 2000, "y": 500, "depth": 3, "heading": 90, "speed": 5 }
+    },
+    {
+      "id": "convoy-02",
+      "side": "RED",
+      "class": "Convoy",
+      "spawn": { "x": 3000, "y": 0, "depth": 3, "heading": 90, "speed": 5 }
+    },
+    {
+      "id": "convoy-03",
+      "side": "RED",
+      "class": "Convoy",
+      "spawn": { "x": 2500, "y": -600, "depth": 3, "heading": 90, "speed": 5 }
+    }
+  ],
+  "triggers": [
+    { "at_s": 5.0, "comms": "WEAPONS OFFICER: All tubes loaded and ready. Targets bearing north." }
+  ]
+}

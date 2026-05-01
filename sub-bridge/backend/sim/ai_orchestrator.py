@@ -81,7 +81,7 @@ class AgentsOrchestrator:
     - Does NOT mutate sim state directly; caller chooses when/how to apply
     """
 
-    def __init__(self, world_getter, storage_engine, run_id: str) -> None:
+    def __init__(self, world_getter, storage_engine, run_id: int) -> None:
         # world_getter: callable returning the authoritative world object with ships
         self._world_getter = world_getter
         self._storage_engine = storage_engine
@@ -96,6 +96,17 @@ class AgentsOrchestrator:
         self._ship_engine: BaseEngine = StubEngine()
         # Optional JSONL log file path for /fleet API call history
         self._log_file_path: Optional[str] = None
+
+    # ---------- State management ----------
+    def reset_state(self) -> None:
+        """Reset all mutable orchestrator state for mission transitions."""
+        self._fleet_contact_history = []  # type: ignore[attr-defined]
+        self._recent_runs = []  # type: ignore[attr-defined]
+        self._last_fleet_intent = {}  # type: ignore[attr-defined]
+        self._fleet_intent_history = []  # type: ignore[attr-defined]
+        self._orders_last_by_ship = {}  # type: ignore[attr-defined]
+        self._ship_alert_map = {}  # type: ignore[attr-defined]
+        self._visual_detection_map = {}  # type: ignore[attr-defined]
 
     # ---------- Public configuration ----------
     def set_fleet_engine(self, kind: Literal["stub", "ollama", "openai"], model: str) -> None:
@@ -129,6 +140,23 @@ class AgentsOrchestrator:
         for ship in world.all_ships():
             if ship.side != "RED":
                 continue
+            # Build waypoint progress for this ship
+            waypoint_info = None
+            if ship.route and ship.route.waypoints:
+                current_wp = None
+                if ship.route.current_idx < len(ship.route.waypoints):
+                    wp = ship.route.waypoints[ship.route.current_idx]
+                    current_wp = {"x": wp.x, "y": wp.y, "name": wp.name}
+                waypoint_info = {
+                    "current_idx": ship.route.current_idx,
+                    "total": len(ship.route.waypoints),
+                    "current_waypoint": current_wp,
+                    "completed": ship.route.current_idx >= len(ship.route.waypoints),
+                    "waypoints": [
+                        {"x": wp.x, "y": wp.y, "name": wp.name, "speed_kn": wp.speed_kn}
+                        for wp in ship.route.waypoints
+                    ],
+                }
             own_fleet.append({
                 "id": ship.id,
                 "class": getattr(ship, "ship_class", None),
@@ -143,6 +171,8 @@ class AgentsOrchestrator:
                 "sensors": {"passive_ok": getattr(ship.systems, 'sonar_ok', True), "has_active": getattr(getattr(ship, 'capabilities', None), 'has_active_sonar', False)},
                 "capabilities": (getattr(ship, 'capabilities', None).dict() if getattr(ship, 'capabilities', None) else None),
                 "constraints": {"maxSpeed": ship.hull.max_speed, "maxDepth": ship.hull.max_depth, "turnRate": ship.hull.turn_rate_max},
+                # Waypoint navigation progress (fleet commander uses this to navigate ships)
+                "waypoint_progress": waypoint_info,
             })
         # Aggregated enemy belief: merge passive + visual contacts from RED ships against BLUE ships
         enemy_belief: List[Dict[str, Any]] = []
@@ -275,6 +305,8 @@ class AgentsOrchestrator:
                 "navigation_constraints": mission_brief.get("navigation_constraints"),
                 "threat_hints": mission_brief.get("threat_hints"),
                 "success_criteria": mission_brief.get("success_criteria"),
+                # Waypoint routes for navigation planning
+                "waypoint_routes": mission_brief.get("waypoint_routes"),
             }
         else:
             mission = {}
@@ -544,8 +576,17 @@ class AgentsOrchestrator:
             intent_raw = await asyncio.wait_for(self._fleet_decide(summary_for_engine), timeout=max(1.0, getattr(CONFIG, "ai_http_timeout_s", 15.0)))
             # Normalize/augment intent to ensure objectives/guidance present
             intent = self._normalize_intent(summary, intent_raw)
+            # Extract journal entry before removing it from intent (it's not part of fleet schema)
+            journal_entry = None
+            if isinstance(intent, dict) and "journal_entry" in intent:
+                journal_text = intent.pop("journal_entry", None)
+                if isinstance(journal_text, str) and journal_text.strip():
+                    journal_entry = journal_text.strip()
             # Start with intent as primary tool call
             tool_calls = [{"tool": "set_fleet_intent", "arguments": intent}]
+            # Add journal tool call if commander provided an entry
+            if journal_entry:
+                tool_calls.append({"tool": "write_journal", "arguments": {"text": journal_entry}})
             result["tool_calls"] = tool_calls
             # Add concise human summary
             fleet_thought = intent.get("summary") or self._summarize_fleet_intent(intent)
@@ -835,12 +876,35 @@ class AgentsOrchestrator:
             mission_brief = getattr(world, 'mission_brief', {})
             ship_behaviors = mission_brief.get('ship_behaviors', {})
             ship_behavior = ship_behaviors.get(ship_id, "")
-            
+
+            # Also check fleet_intent notes for attack directives aimed at this ship
+            fleet_attack_orders = []
+            fleet_intent = summary.get("fleet_intent", {})
+            if isinstance(fleet_intent, dict):
+                notes = fleet_intent.get("notes", [])
+                if isinstance(notes, list):
+                    for note in notes:
+                        if isinstance(note, dict):
+                            note_ship = note.get("ship_id", "")
+                            note_text = note.get("text", "")
+                            # Check if this note is for this ship and contains attack keywords
+                            if note_ship == ship_id or note_ship == "" or note_ship is None:
+                                text_upper = note_text.upper()
+                                if any(kw in text_upper for kw in ["MUST", "ATTACK", "FIRE", "DROP DEPTH", "ENGAGE", "PROSECUTE"]):
+                                    fleet_attack_orders.append(note_text)
+
+            critical_orders_parts = []
             if ship_behavior:
-                # Insert ship behavior as critical orders in the template
+                critical_orders_parts.append(f"MISSION ORDERS:\n{ship_behavior}")
+            if fleet_attack_orders:
+                critical_orders_parts.append(f"FLEET COMMANDER ORDERS:\n" + "\n".join(f"• {o}" for o in fleet_attack_orders))
+
+            if critical_orders_parts:
+                # Insert as critical orders in the template
                 critical_orders = (
-                    f"🚨 CRITICAL ORDERS - YOU MUST FOLLOW THESE EXACTLY:\n{ship_behavior}\n\n"
-                    f"⚠️  IGNORE ALL OTHER INSTRUCTIONS BELOW. EXECUTE THE CRITICAL ORDERS ABOVE IMMEDIATELY.\n\n"
+                    f"🚨 CRITICAL ORDERS - YOU MUST FOLLOW THESE EXACTLY:\n"
+                    + "\n\n".join(critical_orders_parts) +
+                    f"\n\n⚠️  EXECUTE THE CRITICAL ORDERS ABOVE IMMEDIATELY.\n\n"
                 )
                 api_call_debug["user_prompt"] = api_call_debug["user_prompt"].replace(
                     "{{CRITICAL_ORDERS}}", critical_orders

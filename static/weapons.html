@@ -14,18 +14,31 @@
     .tubes { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:8px; }
     .tube { padding:8px; border:1px solid #1B2440; border-radius:6px; background:#0F162A; }
     .small { opacity:0.8; font-size:12px; }
-    #dbWrap { width: 30px; height: 160px; border:1px solid #1B2440; background:#0B1020; position: relative; border-radius:4px; }
-    #dbFill { position:absolute; bottom:0; left:0; right:0; background: linear-gradient(180deg, #8DEB8D 0%, #FACC15 60%, #EF4444 100%); }
-    #dbPeak { position:absolute; left:0; right:0; height:3px; background:#FF6B6B; box-shadow:0 0 6px rgba(255,107,107,0.8); }
-    .damage-led { width:12px; height:12px; border-radius:50%; display:inline-block; margin-left:8px; border:2px solid #333; }
-    .damage-led.flashing { animation: flash 1s infinite; }
-    .damage-led.hull-damage { background:#FF6B6B; }
-    .damage-led.flooding { background:#4A90E2; }
-    .damage-led.normal { background:#8BE28B; }
-    @keyframes flash { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0.3; } }
+    /* Shared styles loaded from station-common.css */
   </style>
+  <link rel="stylesheet" href="/static/css/station-common.css">
+  <script src="/static/js/audio.js"></script>
+  <script src="/static/js/station-common.js"></script>
 </head>
 <body>
+  <!-- Mission state overlays -->
+  <div class="mission-overlay" id="missionOverlay">
+    <div class="mission-overlay-box">
+      <h2>Mission Changed</h2>
+      <p>A new mission has been loaded. Please refresh to sync.</p>
+      <button onclick="location.reload()">Refresh Station</button>
+    </div>
+  </div>
+  <div class="idle-banner" id="idleBanner">
+    Awaiting Mission - <a href="/missions">Select a Mission</a>
+  </div>
+  <div class="mission-overlay" id="missionEndedOverlay">
+    <div class="mission-overlay-box">
+      <h1 id="endedTitle">Mission Complete</h1>
+      <p id="endedReason"></p>
+      <button onclick="location.href='/missions'">Return to Mission Selection</button>
+    </div>
+  </div>
   <div class="panel">
     <h2>Weapons <span class="pill" id="wsStatus" title="WebSocket connection status" style="margin-left: 8px; font-size: 14px; font-weight: normal;">WebSocket: Connecting...</span></h2>
     <div id="consent" title="Captain consent requirement before firing"></div>
@@ -69,254 +82,112 @@
       </div>
       <button id="testFire" title="Launch test torpedo (bypasses all interlocks)" style="background: #FF4444; color: white; font-weight: bold;">🚀 LAUNCH TEST TORPEDO</button>
     </div>
-    
+
+    <div class="panel" style="margin-top: 20px; border: 2px solid #4A90E2;">
+      <h3 style="color: #4A90E2; margin: 0 0 12px 0;">COUNTERMEASURES</h3>
+      <div style="font-size: 12px; color: #8899AA; margin-bottom: 12px;">
+        Deploy noisemakers or decoys to evade incoming torpedoes
+      </div>
+      <div class="row" style="gap: 20px;">
+        <div>
+          <div style="font-size: 14px;">Noisemakers: <span id="nmCount" style="color: #8DEB8D; font-weight: bold;">0</span></div>
+          <button id="deployNoisemaker" title="Deploy noisemaker - stationary, very loud, attracts torpedoes" style="background: #2E7D32; margin-top: 8px;">
+            Deploy Noisemaker
+          </button>
+        </div>
+        <div>
+          <div style="font-size: 14px;">Decoys: <span id="decoyCount" style="color: #8DEB8D; font-weight: bold;">0</span></div>
+          <button id="deployDecoy" title="Deploy decoy - mobile, leads torpedoes away" style="background: #1565C0; margin-top: 8px;">
+            Deploy Decoy
+          </button>
+        </div>
+      </div>
+      <div id="deployedCMs" style="margin-top: 12px; font-size: 12px; color: #8899AA;"></div>
+    </div>
+
     <pre id="telemetry" title="Weapons telemetry and events"></pre>
   </div>
   <script>
-    const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/weapons');
-    
-    // WebSocket connection status
-    const wsStatus = document.getElementById('wsStatus');
-    
-    ws.onopen = () => {
-        wsStatus.textContent = 'WebSocket: Connected';
-        wsStatus.style.color = '#8DEB8D';
-        wsStatus.style.borderColor = '#8DEB8D';
-    };
-    
-    ws.onclose = () => {
-        wsStatus.textContent = 'WebSocket: Disconnected';
-        wsStatus.style.color = '#FF6B6B';
-        wsStatus.style.borderColor = '#FF6B6B';
-    };
-    
-    ws.onerror = (error) => {
-        wsStatus.textContent = 'WebSocket: Error';
-        wsStatus.style.color = '#FF6B6B';
-        wsStatus.style.borderColor = '#FF6B6B';
-    };
+    const station = new StationBase('weapons');
     const tel = document.getElementById('telemetry');
-    const tubes = document.getElementById('tubes');
-    const consent = document.getElementById('consent');
+    const tubesEl = document.getElementById('tubes');
+    const consentEl = document.getElementById('consent');
     const weapNoise = document.getElementById('weapNoise');
-    const dbWrap = document.getElementById('dbWrap');
-    const dbFill = document.getElementById('dbFill');
-    const dbPeak = document.getElementById('dbPeak');
-    let peakHold = 0;
-    function setDbMeter(db){
-      const h = dbWrap.clientHeight || 160;
-      const clamped = Math.max(0, Math.min(100, db));
-      const px = Math.floor((clamped/100)*h);
-      dbFill.style.height = px + 'px';
-      peakHold = Math.max(peakHold - 1, px);
-      dbPeak.style.bottom = (peakHold-2) + 'px';
-    }
-    // Track existing task elements by ID to avoid recreation
-    let existingTaskElements = new Map();
-    
-    function updateDamageLEDs(damage) {
-      const hullLed = document.getElementById('hullDamage');
-      const floodLed = document.getElementById('flooding');
-      
-      // Hull damage LED
-      if (damage.hull > 0.1) {
-        hullLed.className = 'damage-led hull-damage flashing';
-        hullLed.title = `Hull Damage: ${(damage.hull * 100).toFixed(0)}%`;
-      } else {
-        hullLed.className = 'damage-led normal';
-        hullLed.title = 'Hull Damage: OK';
-      }
-      
-      // Flooding LED
-      if (damage.flooding_rate > 0.5) {
-        floodLed.className = 'damage-led flooding flashing';
-        floodLed.title = `Flooding Rate: ${damage.flooding_rate.toFixed(1)}`;
-      } else {
-        floodLed.className = 'damage-led normal';
-        floodLed.title = 'Flooding: OK';
-      }
-    }
-    
-    ws.onmessage = (ev) => {
-      try {
-        const m = JSON.parse(ev.data);
-        if (m.topic === 'telemetry') {
-          tel.textContent = JSON.stringify(m.data, null, 2);
-          consent.textContent = m.data.consentRequired ? `Captain consent ${m.data.captainConsent ? 'GRANTED' : 'REQUIRED'}` : 'Consent not required';
-          tubes.innerHTML = '';
-          (m.data.tubes || []).forEach(t => {
-            const div = document.createElement('div');
-            div.className = 'tube';
-            const timer = t.timer_s && t.timer_s > 0 ? ` [${t.timer_s.toFixed(1)}s]` : '';
-            const canFlood = t.state === 'Loaded' && (!t.timer_s || t.timer_s <= 0);
-            const canDoors = t.state === 'Flooded' && (!t.timer_s || t.timer_s <= 0);
-            const canFire = t.state === 'DoorsOpen' && (!t.timer_s || t.timer_s <= 0);
-            div.innerHTML = `<div title='Tube state and weapon type'>Tube ${t.idx}: ${t.state} ${t.weapon ? '('+t.weapon.name+')' : ''}</div><div class='small' title='Time remaining on current transition'>Timer${timer}</div><div class='small'>Flood:${canFlood?'YES':'NO'} Doors:${canDoors?'YES':'NO'} Fire:${canFire?'YES':'NO'}</div>`;
-            tubes.appendChild(div);
-          });
-          const nz = (m.data.noise && m.data.noise.weapons_dB) || 0; weapNoise.textContent = nz.toFixed(0); setDbMeter(nz);
-          if (m.data.ownship && m.data.ownship.damage) { updateDamageLEDs(m.data.ownship.damage); }
-          const tasks = m.data.tasks || [];
-          console.log('🔧 Processing tasks:', tasks);
-          console.log('🔍 Tasks array length:', tasks.length);
-          console.log('🔍 Tasks array type:', typeof tasks);
-          console.log('🔍 Tasks array content:', JSON.stringify(tasks, null, 2));
-          
-          // Smart task update: only create new elements for new tasks
-          const row = document.getElementById('tasksRow');
-          
-          if (tasks.length === 0) {
-            console.log('📝 No tasks found, showing default message');
-            // Clear all existing tasks
-            existingTaskElements.clear();
-            row.innerHTML = '';
-            const el = document.createElement('div');
-            el.className = 'small';
-            el.id = 'task';
-            el.textContent = 'No Active Tasks';
-            el.style.color = '#D7E3FF';
-            el.style.borderColor = '#1B2440';
-            el.style.backgroundColor = '#0F162A';
-            row.appendChild(el);
-          } else {
-            console.log('📝 Found', tasks.length, 'tasks, processing them...');
-            // Process each task
-            // Clear placeholder if present
-            const placeholder = document.getElementById('task');
-            if (placeholder) {
-              placeholder.parentElement && placeholder.parentElement.removeChild(placeholder);
-            }
-            // Remove any tasks that no longer exist
-            const currentIds = new Set(tasks.map(t => t.id));
-            for (const [tid, el] of Array.from(existingTaskElements.entries())) {
-              if (!currentIds.has(tid)) {
-                if (el && el.parentElement) el.parentElement.removeChild(el);
-                existingTaskElements.delete(tid);
-              }
-            }
-            tasks.forEach((task, index) => {
-              console.log('🔍 Processing task', index + 1, 'of', tasks.length, ':', task);
-              const taskId = task.id;
-              
-              if (existingTaskElements.has(taskId)) {
-                // Update existing task element
-                console.log('🔄 Updating existing task:', taskId);
-                const existingEl = existingTaskElements.get(taskId);
-                 const label = task.stage === 'task' ? 'MAINTENANCE' : (task.stage === 'failing' ? 'FAILING' : 'FAILED');
-                
-                // Update only the text content, preserve the button
-                const textSpan = existingEl.querySelector('.task-text');
-                if (textSpan) {
-                  textSpan.textContent = `🔧 ${task.title} — ${label} ${(task.progress*100).toFixed(0)}% — time to complete ${Math.max(0, task.time_remaining_s).toFixed(0)}s${task.started ? ' (REPAIRING)' : ''}`;
-                }
-              } else {
-                // Create new task element
-                console.log('🆕 Creating new task element:', taskId);
-                
-                const el = document.createElement('div');
-                el.className = 'small';
-                 const color = task.stage === 'task' ? '#FACC15' : (task.stage === 'failing' ? '#F59E0B' : '#EF4444');
-                 const bg = task.stage === 'task' ? 'rgba(250, 204, 21, 0.1)' : (task.stage === 'failing' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)');
-                el.style.color = color;
-                el.style.borderColor = color;
-                el.style.backgroundColor = bg;
-                
-                 const label = task.stage === 'task' ? 'MAINTENANCE' : (task.stage === 'failing' ? 'FAILING' : 'FAILED');
-                
-                // Create repair button for this specific task
-                const btn = document.createElement('button');
-                btn.textContent = 'Repair';
-                btn.style.marginLeft = '8px';
-                
-                // Capture the task ID directly to avoid closure issues
-                
-                // Add basic click logging to diagnose the issue
-                console.log('🔧 Creating weapons repair button for task:', taskId);
-                
-                btn.onclick = () => {
-                  console.log('🖱️ BUTTON CLICKED! Weapons task repair button clicked for task:', taskId);
-                  console.log('🔍 Button element:', btn);
-                  console.log('🔍 Button onclick property:', btn.onclick);
-                  
-                  const cmd = {topic: 'station.task.start', data: {station: 'weapons', task_id: taskId}};
-                  console.log('📤 Sending weapons task repair command:', cmd);
-                  try {
-                    ws.send(JSON.stringify(cmd));
-                    console.log('📤 Weapons task repair command sent successfully');
-                  } catch (error) {
-                    console.error('❌ Error sending weapons task repair command:', error);
-                  }
-                };
-                
-                // Verify the handler was attached
-                console.log('🔍 Button onclick after setup:', btn.onclick);
-                
-                // Create a span for the text content
-                const textSpan = document.createElement('span');
-                textSpan.className = 'task-text';
-                textSpan.textContent = `🔧 ${task.title} — ${label} ${(task.progress*100).toFixed(0)}% — time to complete ${Math.max(0, task.time_remaining_s).toFixed(0)}s${task.started ? ' (REPAIRING)' : ''}`;
-                
-                el.appendChild(textSpan);
-                el.appendChild(btn);
-                row.appendChild(el);
-                console.log('🆕 Appended weapons task element to row');
-                
-                // Store the element for future updates
-                existingTaskElements.set(taskId, el);
-              }
-            });
-          }
+
+    station.onTelemetry = function(d) {
+      tel.textContent = JSON.stringify(d, null, 2);
+      consentEl.textContent = d.consentRequired ? `Captain consent ${d.captainConsent ? 'GRANTED' : 'REQUIRED'}` : 'Consent not required';
+      tubesEl.innerHTML = '';
+      (d.tubes || []).forEach(t => {
+        const div = document.createElement('div');
+        div.className = 'tube';
+        const timer = t.timer_s && t.timer_s > 0 ? ` [${t.timer_s.toFixed(1)}s]` : '';
+        const canFlood = t.state === 'Loaded' && (!t.timer_s || t.timer_s <= 0);
+        const canDoors = t.state === 'Flooded' && (!t.timer_s || t.timer_s <= 0);
+        const canFire = t.state === 'DoorsOpen' && (!t.timer_s || t.timer_s <= 0);
+        div.innerHTML = `<div title='Tube state and weapon type'>Tube ${t.idx}: ${t.state} ${t.weapon ? '('+t.weapon.name+')' : ''}</div><div class='small' title='Time remaining on current transition'>Timer${timer}</div><div class='small'>Flood:${canFlood?'YES':'NO'} Doors:${canDoors?'YES':'NO'} Fire:${canFire?'YES':'NO'}</div>`;
+        tubesEl.appendChild(div);
+      });
+      const nz = (d.noise && d.noise.weapons_dB) || 0; weapNoise.textContent = nz.toFixed(0); station.setDbMeter(nz);
+      if (d.ownship && d.ownship.damage) { station.updateDamageLEDs(d.ownship.damage); }
+
+      if (d.countermeasures) {
+        document.getElementById('nmCount').textContent = d.countermeasures.noisemakers || 0;
+        document.getElementById('decoyCount').textContent = d.countermeasures.decoys || 0;
+        const deployedDiv = document.getElementById('deployedCMs');
+        const deployed = d.countermeasures.deployed || [];
+        if (deployed.length > 0) {
+          deployedDiv.innerHTML = 'Active: ' + deployed.map(cm =>
+            `<span style="color: ${cm.type === 'noisemaker' ? '#66BB6A' : '#42A5F5'};">${cm.type} (${cm.age_s.toFixed(0)}s)</span>`
+          ).join(', ');
+        } else {
+          deployedDiv.textContent = 'No active countermeasures';
         }
-      } catch(e){}
+      }
+      station.updateTasks(d.tasks || []);
+      if (station.audio) station.audio.processTelemetry(d);
     };
+    station.connect();
+
     const tube = () => parseInt(document.getElementById('tube').value, 10);
-    document.getElementById('load').onclick = () => ws.send(JSON.stringify({topic:'weapons.tube.load', data:{tube: tube(), weapon:'Mk48'}}));
-    document.getElementById('flood').onclick = () => ws.send(JSON.stringify({topic:'weapons.tube.flood', data:{tube: tube()}}));
-    document.getElementById('doors').onclick = () => ws.send(JSON.stringify({topic:'weapons.tube.doors', data:{tube: tube(), open:true}}));
+    document.getElementById('load').onclick = () => station.sendCommand('weapons.tube.load', {tube: tube(), weapon:'Mk48'});
+    document.getElementById('flood').onclick = () => station.sendCommand('weapons.tube.flood', {tube: tube()});
+    document.getElementById('doors').onclick = () => station.sendCommand('weapons.tube.doors', {tube: tube(), open:true});
     document.getElementById('fire').onclick = () => {
       const bearing = parseFloat(document.getElementById('bearing').value);
       const run_depth = parseFloat(document.getElementById('rdepth').value);
       const enable_range = parseFloat(document.getElementById('enable').value);
       const doctrine = document.getElementById('doctrine').value;
-      ws.send(JSON.stringify({topic:'weapons.fire', data:{tube: tube(), bearing, run_depth, enable_range, doctrine}}));
+      station.sendCommand('weapons.fire', {tube: tube(), bearing, run_depth, enable_range, doctrine});
     };
 
-    // Test torpedo launch - bypasses all interlocks
+    document.getElementById('deployNoisemaker').onclick = () => {
+      station.sendCommand('weapons.countermeasure.deploy', {type: 'noisemaker'});
+      const btn = document.getElementById('deployNoisemaker');
+      btn.textContent = 'DEPLOYING...'; btn.style.background = '#66BB6A';
+      setTimeout(() => { btn.textContent = 'Deploy Noisemaker'; btn.style.background = '#2E7D32'; }, 500);
+    };
+
+    document.getElementById('deployDecoy').onclick = () => {
+      station.sendCommand('weapons.countermeasure.deploy', {type: 'decoy'});
+      const btn = document.getElementById('deployDecoy');
+      btn.textContent = 'DEPLOYING...'; btn.style.background = '#42A5F5';
+      setTimeout(() => { btn.textContent = 'Deploy Decoy'; btn.style.background = '#1565C0'; }, 500);
+    };
+
     document.getElementById('testFire').onclick = () => {
       const bearing = parseFloat(document.getElementById('bearing').value);
       const run_depth = parseFloat(document.getElementById('rdepth').value);
       const enable_range = parseFloat(document.getElementById('enable').value);
       const doctrine = document.getElementById('doctrine').value;
-      
-      // Visual feedback
       const testBtn = document.getElementById('testFire');
       const originalText = testBtn.textContent;
-      testBtn.textContent = '🚀 LAUNCHING...';
-      testBtn.style.background = '#FF8800';
-      
-      // Send test torpedo command that bypasses all checks
-      ws.send(JSON.stringify({
-        topic: 'weapons.test_fire', 
-        data: {
-          tube: tube(), 
-          bearing, 
-          run_depth, 
-          enable_range, 
-          doctrine
-        }
-      }));
-      
-      console.log('🧪 Test torpedo launched:', {bearing, run_depth, enable_range, doctrine});
-      
-      // Reset button after 1 second
-      setTimeout(() => {
-        testBtn.textContent = originalText;
-        testBtn.style.background = '#FF4444';
-      }, 1000);
+      testBtn.textContent = '🚀 LAUNCHING...'; testBtn.style.background = '#FF8800';
+      station.sendCommand('weapons.test_fire', {tube: tube(), bearing, run_depth, enable_range, doctrine});
+      setTimeout(() => { testBtn.textContent = originalText; testBtn.style.background = '#FF4444'; }, 1000);
     };
 
-    
-    
+    station.initAudio();
   </script>
 </body>
 </html>

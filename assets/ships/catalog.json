@@ -4,7 +4,7 @@
     "ship_class": "SSN",
     "capabilities": {"can_set_nav": true, "has_active_sonar": true, "has_torpedoes": true, "has_guns": false, "has_depth_charges": false, "countermeasures": ["noisemaker", "decoy"]},
     "hull": {"max_depth": 300.0, "max_speed": 30.0, "quiet_speed": 5.0, "turn_rate_max": 7.0},
-    "weapons": {"tube_count": 6, "torpedoes_stored": 6},
+    "weapons": {"tube_count": 6, "torpedoes_stored": 6, "noisemakers_stored": 6, "decoys_stored": 4},
     "acoustics": {"thermocline_on": true, "source_level_by_speed": {"5": 110.0, "10": 118.0, "15": 130.0}}
   },
   "Convoy": {

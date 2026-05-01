@@ -8,12 +8,13 @@ class World:
         self.ships: Dict[str, Ship] = {}
         self.torpedoes: List[dict] = []  # simple dicts for MVP
         self.depth_charges: List[dict] = []
+        self.countermeasures: List[dict] = []  # noisemakers and decoys
 
     def add_ship(self, ship: Ship) -> None:
         self.ships[ship.id] = ship
 
     def get_ship(self, ship_id: str) -> Ship:
-        return self.ships[ship_id]
+        return self.ships.get(ship_id)
 
     def all_ships(self) -> List[Ship]:
         return list(self.ships.values())

@@ -11,8 +11,9 @@ def test_captain_comms_delivered_at_radio_depth():
     import asyncio
     # Add project sub-bridge to import path (consistent with other tests)
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'sub-bridge')))
-    from backend.sim.loop import Simulation
-    sim = Simulation()
+    from backend.sim.loop import Simulation  # noqa: F401  (kept for test parity)
+    from conftest import make_test_simulation
+    sim = make_test_simulation()
     own = sim.world.get_ship("ownship")
     # Go to radio depth and raise radio
     own.kin.depth = 10.0

@@ -12,19 +12,46 @@
     .col { flex:1; }
     .pill { padding:4px 8px; border-radius:12px; background:#0F162A; border:1px solid #1B2440; margin:4px 0; }
     .pill[id="wsStatus"] { display: inline-block; }
+    /* Mission state overlays */
+    .mission-overlay { display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.85); z-index:9999; justify-content:center; align-items:center; }
+    .mission-overlay.active { display:flex; }
+    .mission-overlay-box { background:#1B2440; border:2px solid #89B4FA; border-radius:12px; padding:40px; text-align:center; max-width:500px; }
+    .mission-overlay-box h2 { color:#89B4FA; margin:0 0 16px; }
+    .mission-overlay-box p { color:#D7E3FF; margin:0 0 24px; }
+    .mission-overlay-box button { background:#2563EB; color:white; border:none; padding:12px 32px; font-size:1rem; border-radius:6px; cursor:pointer; }
+    .mission-overlay-box button:hover { background:#1D4ED8; }
+    .idle-banner { display:none; position:fixed; top:0; left:0; right:0; background:#1B3D2F; color:#4ADE80; text-align:center; padding:12px; z-index:9998; font-weight:600; }
+    .idle-banner.active { display:block; }
+    .idle-banner a { color:#89B4FA; }
+    .victory-title { color:#4ADE80 !important; }
+    .defeat-title { color:#F87171 !important; }
   </style>
 </head>
 <body>
+  <!-- Mission state overlays -->
+  <div class="mission-overlay" id="missionOverlay">
+    <div class="mission-overlay-box">
+      <h2>Mission Changed</h2>
+      <p>A new mission has been loaded. Please refresh to sync.</p>
+      <button onclick="location.reload()">Refresh Station</button>
+    </div>
+  </div>
+  <div class="idle-banner" id="idleBanner">
+    Awaiting Mission - <a href="/missions">Select a Mission</a>
+  </div>
+  <div class="mission-overlay" id="missionEndedOverlay">
+    <div class="mission-overlay-box">
+      <h1 id="endedTitle">Mission Complete</h1>
+      <p id="endedReason"></p>
+      <button onclick="location.href='/missions'">Return to Mission Selection</button>
+    </div>
+  </div>
   <div class="panel">
     <h2>Debug <span class="pill" id="wsStatus" title="WebSocket connection status" style="margin-left: 8px; font-size: 14px; font-weight: normal;">WebSocket: Connecting...</span></h2>
     <div class="row" style="align-items:center">
       <button id="restart" title="Reset mission state to defaults">Restart Mission</button>
-      <div>
-        <label for="mission">Mission:</label>
-        <select id="mission" title="Select mission scenario">
-          <option value="patrol">Patrol - Blue vs Single Red</option>
-          <option value="surface_training">Surface Training (assets)</option>
-        </select>
+      <div class="pill" style="margin-left: 8px;">
+        Scenario: <span id="currentMission" style="color: #60A5FA;">Loading...</span>
       </div>
       <div class="pill" style="margin-left: 8px;">
         Maint Spawns: <span id="maintState">ON</span>
@@ -37,6 +64,9 @@
       <div class="pill" style="margin-left: 8px;">
         Enemy Visual 100%: <span id="enemyVisualState">OFF</span>
         <button id="toggleEnemyVisual" style="margin-left:8px;">Toggle</button>
+      </div>
+      <div class="pill" style="margin-left: 8px; border-color: #4ADE80;">
+        <button id="repairAll" style="background: #166534; color: #4ADE80;">🔧 Repair All Damage</button>
       </div>
     </div>
     <div class="row" style="align-items:center; margin-top: 8px;">
@@ -91,7 +121,36 @@
   </div>
   <script>
     const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/debug');
-    
+
+    // Simple mission state - show idle banner until telemetry arrives
+    let receivedTelemetry = false;
+
+    function handleStatusMessage(d) {
+      const idleBanner = document.getElementById('idleBanner');
+      const endedOverlay = document.getElementById('missionEndedOverlay');
+
+      if (d.status === 'idle') {
+        idleBanner.classList.add('active');
+        endedOverlay.classList.remove('active');
+      } else if (d.status === 'ended') {
+        const title = document.getElementById('endedTitle');
+        const reason = document.getElementById('endedReason');
+        const outcome = d.outcome || {};
+        title.className = outcome.status === 'victory' ? 'victory-title' : outcome.status === 'defeat' ? 'defeat-title' : '';
+        title.textContent = outcome.status === 'victory' ? 'VICTORY' : outcome.status === 'defeat' ? 'DEFEAT' : 'MISSION ENDED';
+        reason.textContent = outcome.reason || '';
+        endedOverlay.classList.add('active');
+        idleBanner.classList.remove('active');
+      }
+    }
+
+    function onTelemetryReceived() {
+      if (!receivedTelemetry) {
+        receivedTelemetry = true;
+        document.getElementById('idleBanner').classList.remove('active');
+      }
+    }
+
     // WebSocket connection status
     const wsStatus = document.getElementById('wsStatus');
     
@@ -457,10 +516,12 @@
       });
     }
 
-    ws.onmessage = (ev) => { 
-      try { 
-        const m = JSON.parse(ev.data); 
-        if (m.topic === 'telemetry') { 
+    ws.onmessage = (ev) => {
+      try {
+        const m = JSON.parse(ev.data);
+        if (m.topic === 'status') { handleStatusMessage(m.data); return; }
+        if (m.topic === 'telemetry') {
+          onTelemetryReceived();
           ownEl.textContent = `hdg ${m.data.ownship.heading.toFixed(0)} spd ${m.data.ownship.speed.toFixed(1)} dpt ${m.data.ownship.depth.toFixed(0)}`; 
           
           // Update noise information display
@@ -527,10 +588,16 @@
             }
           }
           
-          const maint = (m.data.maintenance && typeof m.data.maintenance.spawnsEnabled === 'boolean') ? m.data.maintenance.spawnsEnabled : true; 
-          const maintState = document.getElementById('maintState'); 
-          maintState.textContent = maint ? 'ON' : 'OFF'; 
+          const maint = (m.data.maintenance && typeof m.data.maintenance.spawnsEnabled === 'boolean') ? m.data.maintenance.spawnsEnabled : true;
+          const maintState = document.getElementById('maintState');
+          maintState.textContent = maint ? 'ON' : 'OFF';
           maintState.style.color = maint ? '#8DEB8D' : '#FF6B6B';
+
+          // Update current mission display
+          const missionEl = document.getElementById('currentMission');
+          if (missionEl && m.data.missionId) {
+            missionEl.textContent = m.data.missionId;
+          }
           
           // Update visual detection toggle states
           const debugToggles = m.data.debugToggles || {};
@@ -548,27 +615,8 @@
       } catch(e){} 
     };
     document.getElementById('restart').onclick = () => {
-      const sel = document.getElementById('mission');
-      const mission = sel && sel.value ? sel.value : 'patrol';
-      if (mission === 'patrol') {
-        ws.send(JSON.stringify({topic:'debug.restart', data:{}}));
-      } else if (mission === 'surface_training') {
-        ws.send(JSON.stringify({topic:'debug.restart', data:{}}));
-      } else {
-        ws.send(JSON.stringify({topic:'debug.restart', data:{}}));
-      }
+      ws.send(JSON.stringify({topic:'debug.restart', data:{}}));
     };
-    // Populate mission dropdown from server assets
-    fetch('/api/missions').then(r=>r.json()).then(j=>{
-      const sel = document.getElementById('mission');
-      if (!sel || !j || !Array.isArray(j.missions)) return;
-      j.missions.forEach(id => {
-        if (id === 'surface_training') return; // already present by default
-        const opt = document.createElement('option');
-        opt.value = id; opt.textContent = `${id} (assets)`;
-        sel.appendChild(opt);
-      });
-    }).catch(()=>{});
     document.getElementById('toggleMaint').onclick = () => {
       const isOn = (document.getElementById('maintState').textContent || 'ON') === 'ON';
       const next = !isOn;
@@ -585,6 +633,9 @@
       const isOn = (document.getElementById('enemyVisualState').textContent || 'OFF') === 'ON';
       const next = !isOn;
       ws.send(JSON.stringify({topic:'debug.visual.enemy_100', data:{enabled: next}}));
+    };
+    document.getElementById('repairAll').onclick = () => {
+      ws.send(JSON.stringify({topic:'debug.repair_all', data:{}}));
     };
 
     // Zoom controls

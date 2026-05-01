@@ -1,15 +1,26 @@
 {
   "id": "evade_destroyers",
-  "title": "Evade Destroyers (Training)",
+  "title": "Silent Passage",
+  "subtitle": "Evasion Training Exercise",
   "blue_mission_summary": "BLUE submarine must reach the escape waypoint undetected, or survive until timeout if detected.",
-  "objective": "BLUE submarine must reach the escape waypoint undetected or survive while evading RED destroyers' depth charges and torpedoes.",
+  "objective": "Transit through hostile waters to the extraction point while avoiding detection by enemy ASW forces.",
+  "difficulty": "Hard",
+  "duration_estimate": "15-30 minutes",
+  "tags": ["evasion", "stealth", "training", "solo"],
+  "briefing": {
+    "situation": "Three RED destroyers are conducting aggressive anti-submarine warfare exercises in sector KILO-7. Intelligence reports they are operating with full active sonar capability and practicing coordinated search patterns. Each destroyer carries a full complement of depth charges and anti-submarine torpedoes.",
+    "mission": "Transit through the patrol zone and reach the extraction waypoint at grid reference (4000, -2000). Priority is survival - avoid detection if possible, evade and survive if detected.",
+    "execution": "A strong thermocline layer exists at 75 meters depth. Recommend using this layer for acoustic masking during transit. Maintain ultra-quiet status: no active sonar emissions, minimize speed changes, avoid cavitation at all costs. The destroyers are spaced approximately 3-5km apart - look for gaps in their search pattern.",
+    "threats": "Each destroyer carries 30+ depth charges and 10 torpedoes. If they achieve contact, expect depth charge patterns of 5-8 charges per run with 50m spread. They will attempt to box you in using coordinated movements. Do not underestimate their persistence.",
+    "notes": "This is a training exercise. Weapons release is authorized for self-defense only. The thermocline is your friend - use it wisely. Good hunting, Captain."
+  },
   "side_objectives": { "RED": "deny_escape_and_destroy_sub", "BLUE": "reach_escape_wp_undetected_or_survive" },
   "blue_captain_summary": "Three RED destroyers are patrolling the sector. Proceed to the escape waypoint while minimizing detectability. Expect depth-charge attacks if counter-detected.",
   "roe": [
     "Weapons release authorized."
   ],
   "target_wp": [4000, -2000],
-  "environment": { "timeOfDay": "night", "weather": "calm" },
+  "environment": { "timeOfDay": "night", "weather": "calm", "thermocline_on": true, "thermocline_depth_m": 75.0 },
   "emcon": {
     "RED": {"active_ping_allowed": true, "radio_discipline": "normal"},
     "BLUE": {"active_ping_allowed": false, "radio_discipline": "strict"}

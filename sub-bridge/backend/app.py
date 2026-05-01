@@ -7,12 +7,13 @@ from typing import Dict, Set
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 
 from .config import CONFIG
 from .bus import BUS
 from .sim.loop import Simulation
-from .assets import MISSIONS_DIR
+from .assets import MISSIONS_DIR, load_mission_by_id, get_all_mission_summaries
 
 
 app = FastAPI(title="Submarine Bridge Simulator")
@@ -43,6 +44,11 @@ async def _shutdown() -> None:
 
 
 STATIC_DIR = Path(__file__).resolve().parents[2] / "static"
+ASSETS_DIR = Path(__file__).resolve().parents[2] / "assets"
+
+# Mount static files for JS, CSS, sounds, etc.
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
 
 
 def station_file(station: str) -> Path:
@@ -90,7 +96,17 @@ async def fleet() -> FileResponse:
     return FileResponse(station_file("fleet"))
 
 
-_station_clients: Dict[str, Set[WebSocket]] = {s: set() for s in ["captain", "helm", "sonar", "weapons", "engineering", "debug", "fleet"]}
+@app.get("/missions")
+async def missions_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "missions.html")
+
+
+@app.get("/logs")
+async def logs() -> FileResponse:
+    return FileResponse(station_file("logs"))
+
+
+_station_clients: Dict[str, Set[WebSocket]] = {s: set() for s in ["captain", "helm", "sonar", "weapons", "engineering", "debug", "fleet", "logs"]}
 
 
 @app.websocket("/ws/{station}")
@@ -101,6 +117,13 @@ async def ws_station(ws: WebSocket, station: str) -> None:
         return
     _station_clients[station].add(ws)
 
+    # Send initial status so client knows current state immediately
+    try:
+        initial_status = sim.get_current_status()
+        await ws.send_text(json.dumps(initial_status))
+    except Exception:
+        pass
+
     topic_map = {
         "captain": "tick:captain",
         "helm": "tick:helm",
@@ -109,6 +132,7 @@ async def ws_station(ws: WebSocket, station: str) -> None:
         "engineering": "tick:engineering",
         "debug": "tick:debug",
         "fleet": "tick:fleet",
+        "logs": "tick:logs",
     }
     forward_topic = topic_map.get(station, "tick:all")
 
@@ -124,12 +148,14 @@ async def ws_station(ws: WebSocket, station: str) -> None:
     try:
         while True:
             raw = await ws.receive_text()
+            print(f"DEBUG WS RECV [{station}]: {raw[:200]}")  # Debug: log all incoming commands
             try:
                 parsed = json.loads(raw)
             except Exception:
                 continue
             topic = parsed.get("topic")
             data = parsed.get("data", {})
+            print(f"DEBUG CMD: topic={topic}, data={data}")  # Debug: log parsed command
             err = await sim.handle_command(topic, data)
             if err:
                 await ws.send_text(json.dumps({"topic": "error", "error": err}))
@@ -161,3 +187,38 @@ async def api_missions() -> JSONResponse:
         return JSONResponse({"missions": sorted(ids)})
     except Exception as e:
         return JSONResponse({"missions": [], "error": str(e)})
+
+
+@app.get("/api/missions/all")
+async def api_missions_all() -> JSONResponse:
+    """Return all mission summaries for the selector UI."""
+    try:
+        summaries = get_all_mission_summaries()
+        return JSONResponse(summaries)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/missions/{mission_id}")
+async def api_mission_details(mission_id: str) -> JSONResponse:
+    """Return full mission details."""
+    try:
+        mission = load_mission_by_id(mission_id)
+        if not mission:
+            return JSONResponse({"error": "Mission not found"}, status_code=404)
+        return JSONResponse(mission.dict())
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.post("/api/missions/{mission_id}/start")
+async def api_start_mission(mission_id: str) -> JSONResponse:
+    """Load a mission and restart the simulation."""
+    try:
+        success = await sim.load_mission(mission_id)
+        if success:
+            return JSONResponse({"ok": True, "mission_id": mission_id})
+        else:
+            return JSONResponse({"ok": False, "error": "Mission not found"}, status_code=404)
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)

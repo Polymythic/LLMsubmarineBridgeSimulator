@@ -30,6 +30,7 @@ class Acoustics(BaseModel):
     )
     broadband_sig: float = 0.0
     thermocline_on: bool = True
+    thermocline_depth_m: float = 50.0  # Depth of thermocline layer (configurable per mission)
     # Additional noise injected into bearing measurement sigma (degradation effects)
     bearing_noise_extra: float = 0.0
     # Task-driven modifiers
@@ -106,6 +107,9 @@ class WeaponsSuite(BaseModel):
     # AI quick torpedo launch (bypasses tubes for NPCs)
     torpedo_quick_cooldown_s: float = 5.0
     torpedo_quick_cooldown_timer_s: float = 0.0
+    # Countermeasure inventory
+    noisemakers_stored: int = 6
+    decoys_stored: int = 4
 
 
 class ShipCapabilities(BaseModel):
@@ -157,11 +161,46 @@ class Reactor(BaseModel):
     battery_pct: float = 100.0
 
 
+# Compartment names for the 6 submarine sections
+COMPARTMENT_NAMES = [
+    "Fore (Torpedo Room)",
+    "Forward (Crew)",
+    "Control Room",
+    "Aft (Reactor)",
+    "Engine Room",
+    "Stern (Steering)",
+]
+
+
+class CompartmentState(BaseModel):
+    """State of a single submarine compartment"""
+    flooding_level: float = 0.0      # 0.0-1.0 (0%=dry, 100%=flooded)
+    hull_integrity: float = 1.0      # 0.0-1.0 (structural integrity)
+    pump_active: bool = False        # Is pump assigned to this compartment?
+    breach_rate: float = 0.0         # Water ingress rate per second
+
+
 class DamageState(BaseModel):
-    hull: float = 0.0
+    """Ship-wide damage state with compartments"""
+    hull: float = 0.0                # Overall hull damage (average of compartment damage)
     sensors: float = 0.0
     propulsion: float = 0.0
-    flooding_rate: float = 0.0
+    compartments: List[CompartmentState] = Field(
+        default_factory=lambda: [CompartmentState() for _ in range(6)]
+    )
+
+    @property
+    def flooding_rate(self) -> float:
+        """Legacy field for backwards compatibility - average flooding across compartments"""
+        if not self.compartments:
+            return 0.0
+        return sum(c.flooding_level for c in self.compartments) / len(self.compartments)
+
+    def dict(self, **kwargs):
+        """Override dict to include computed flooding_rate property"""
+        d = super().dict(**kwargs)
+        d["flooding_rate"] = self.flooding_rate
+        return d
 
 
 class AIProfile(BaseModel):
@@ -191,6 +230,8 @@ class Ship(BaseModel):
     contact_tracks: List[ContactTrack] = Field(default_factory=list)
     # Active sonar cooldown for AI ships
     active_sonar_cooldown: float = 0.0
+    # Waypoint route for game rules tracking (fleet commander navigates, game rules verify)
+    route: Optional["WaypointRoute"] = None
 
 
 class TelemetryOwnship(BaseModel):
@@ -225,6 +266,81 @@ class ContactTrack(BaseModel):
     last_known_speed: float
     last_seen_time: float
     track_confidence: float = 0.0
+
+
+# ============================================================================
+# Scenario and Game Rules Models
+# ============================================================================
+
+
+class Waypoint(BaseModel):
+    """Single waypoint in a route"""
+    x: float
+    y: float
+    speed_kn: Optional[float] = None      # Override speed for this leg
+    hold_s: Optional[float] = None        # Time to hold at waypoint
+    name: Optional[str] = None            # e.g., "Alpha", "Rally Point 1"
+
+
+class WaypointRoute(BaseModel):
+    """Multi-waypoint route for a ship - used by game rules to track progress"""
+    waypoints: List[Waypoint] = Field(default_factory=list)
+    current_idx: int = 0                  # Index of next waypoint to reach
+    loop: bool = False                    # Patrol loop back to start
+    arrival_threshold_m: float = 100.0    # Distance to consider waypoint reached
+
+
+class ScenarioCondition(BaseModel):
+    """A condition that can trigger scenario events"""
+    type: Literal[
+        "waypoint_reached",   # Ship reached a waypoint
+        "ship_destroyed",     # Ship hull damage >= threshold
+        "contact_detected",   # Observer detected target with confidence
+        "damage_threshold",   # Ship damage exceeds value
+        "time_elapsed",       # Simulation time >= value
+        "distance_to",        # Distance between entities
+        "all_of",             # All sub-conditions true
+        "any_of"              # Any sub-condition true
+    ]
+    params: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ScenarioAction(BaseModel):
+    """Action to take when a trigger condition is met"""
+    type: Literal[
+        "send_comms",         # Send message to captain comms
+        "broadcast_intercept", # Broadcast interceptable enemy message
+        "change_behavior",    # Update ship_behaviors for a ship
+        "end_scenario",       # End the mission with outcome
+        "set_ai_mode"         # Change AI behavior mode
+    ]
+    params: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ScenarioTrigger(BaseModel):
+    """A trigger combines conditions with actions"""
+    id: str
+    condition: ScenarioCondition
+    actions: List[ScenarioAction] = Field(default_factory=list)
+    once: bool = True                     # Fire only once
+    fired: bool = False                   # Has this trigger fired?
+
+
+class InterceptedComm(BaseModel):
+    """An intercepted enemy communication"""
+    source: Literal["scripted", "fleet_commander"]
+    original_text: str
+    intercepted_text: str                 # Possibly partial/degraded
+    bearing: Optional[float] = None       # Direction finding bearing
+    timestamp: str
+    confidence: float = 1.0               # Interception quality
+
+
+class MissionOutcome(BaseModel):
+    """Tracks mission victory/defeat state"""
+    status: Literal["ongoing", "victory", "defeat", "draw"] = "ongoing"
+    reason: Optional[str] = None
+    ended_at: Optional[str] = None
 
 
 class TelemetryMessage(BaseModel):

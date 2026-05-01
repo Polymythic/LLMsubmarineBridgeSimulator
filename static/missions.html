@@ -1,0 +1,433 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sub Bridge - Mission Selection</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      background: #0B1020;
+      color: #D7E3FF;
+      font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+    }
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    header {
+      text-align: center;
+      padding: 20px 0 30px;
+      border-bottom: 1px solid #1B2440;
+      margin-bottom: 30px;
+    }
+    h1 {
+      font-family: ui-monospace, Menlo, monospace;
+      font-size: 2rem;
+      margin: 0 0 8px;
+      color: #89B4FA;
+    }
+    .subtitle {
+      color: #6B7A99;
+      font-size: 1rem;
+    }
+    .main-grid {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 24px;
+    }
+    @media (max-width: 900px) {
+      .main-grid { grid-template-columns: 1fr; }
+    }
+
+    /* Mission List */
+    .mission-list {
+      background: #11172B;
+      border: 1px solid #1B2440;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .mission-list-header {
+      background: #1B2440;
+      padding: 12px 16px;
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 0.85rem;
+      letter-spacing: 0.05em;
+    }
+    .mission-item {
+      padding: 14px 16px;
+      border-bottom: 1px solid #1B2440;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .mission-item:last-child { border-bottom: none; }
+    .mission-item:hover { background: #1A2238; }
+    .mission-item.selected {
+      background: #1E3A5F;
+      border-left: 3px solid #89B4FA;
+    }
+    .mission-item-title {
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .mission-item-subtitle {
+      font-size: 0.85rem;
+      color: #6B7A99;
+    }
+    .mission-meta {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .tag {
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: #1B2440;
+      color: #89B4FA;
+      text-transform: uppercase;
+    }
+    .tag.difficulty-easy { background: #1B3D2F; color: #4ADE80; }
+    .tag.difficulty-medium { background: #3D3B1B; color: #FACC15; }
+    .tag.difficulty-hard { background: #3D1B1B; color: #F87171; }
+    .tag.difficulty-expert { background: #3D1B3D; color: #E879F9; }
+
+    /* Briefing Panel */
+    .briefing-panel {
+      background: #11172B;
+      border: 1px solid #1B2440;
+      border-radius: 8px;
+      padding: 24px;
+    }
+    .briefing-header {
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid #1B2440;
+    }
+    .briefing-title {
+      font-size: 1.8rem;
+      font-weight: 700;
+      margin: 0 0 4px;
+      color: #fff;
+    }
+    .briefing-subtitle {
+      color: #6B7A99;
+      font-size: 1rem;
+    }
+    .briefing-objective {
+      background: #1B2440;
+      padding: 16px;
+      border-radius: 6px;
+      margin-bottom: 24px;
+      border-left: 3px solid #89B4FA;
+    }
+    .briefing-objective-label {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      color: #6B7A99;
+      margin-bottom: 6px;
+    }
+    .briefing-section {
+      margin-bottom: 20px;
+    }
+    .briefing-section-title {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      color: #89B4FA;
+      font-weight: 600;
+      margin-bottom: 8px;
+      letter-spacing: 0.05em;
+    }
+    .briefing-section-text {
+      color: #B8C5E0;
+      line-height: 1.6;
+    }
+    .briefing-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 1px solid #1B2440;
+    }
+    .mission-stats {
+      display: flex;
+      gap: 20px;
+    }
+    .mission-stat {
+      text-align: center;
+    }
+    .mission-stat-value {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #fff;
+    }
+    .mission-stat-label {
+      font-size: 0.75rem;
+      color: #6B7A99;
+      text-transform: uppercase;
+    }
+    .start-button {
+      background: linear-gradient(135deg, #2563EB, #1D4ED8);
+      color: #fff;
+      border: none;
+      padding: 14px 40px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+    .start-button:hover {
+      background: linear-gradient(135deg, #3B82F6, #2563EB);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
+    }
+    .start-button:active {
+      transform: translateY(0);
+    }
+    .start-button:disabled {
+      background: #374151;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: #6B7A99;
+    }
+    .empty-state h3 {
+      color: #B8C5E0;
+      margin-bottom: 8px;
+    }
+
+    /* Loading state */
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #6B7A99;
+    }
+
+    /* Back link */
+    .back-link {
+      display: inline-block;
+      color: #6B7A99;
+      text-decoration: none;
+      margin-bottom: 20px;
+      font-size: 0.9rem;
+    }
+    .back-link:hover { color: #89B4FA; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <a href="/" class="back-link">&larr; Back to Home</a>
+
+    <header>
+      <h1>Mission Selection</h1>
+      <div class="subtitle">Select a mission and review the briefing before deployment</div>
+    </header>
+
+    <div class="main-grid">
+      <!-- Mission List -->
+      <div class="mission-list">
+        <div class="mission-list-header">Available Missions</div>
+        <div id="mission-list-items">
+          <div class="loading">Loading missions...</div>
+        </div>
+      </div>
+
+      <!-- Briefing Panel -->
+      <div class="briefing-panel" id="briefing-panel">
+        <div class="empty-state">
+          <h3>Select a Mission</h3>
+          <p>Choose a mission from the list to view its briefing</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let missions = [];
+    let selectedMission = null;
+
+    async function loadMissions() {
+      try {
+        const response = await fetch('/api/missions/all');
+        missions = await response.json();
+        renderMissionList();
+
+        // Auto-select first mission
+        if (missions.length > 0) {
+          selectMission(missions[0].id);
+        }
+      } catch (err) {
+        document.getElementById('mission-list-items').innerHTML =
+          '<div class="empty-state"><p>Failed to load missions</p></div>';
+      }
+    }
+
+    function renderMissionList() {
+      const container = document.getElementById('mission-list-items');
+      if (missions.length === 0) {
+        container.innerHTML = '<div class="empty-state"><p>No missions available</p></div>';
+        return;
+      }
+
+      container.innerHTML = missions.map(m => `
+        <div class="mission-item ${selectedMission?.id === m.id ? 'selected' : ''}"
+             onclick="selectMission('${m.id}')">
+          <div class="mission-item-title">${escapeHtml(m.title)}</div>
+          <div class="mission-item-subtitle">${escapeHtml(m.subtitle || m.objective || '')}</div>
+          <div class="mission-meta">
+            ${m.difficulty ? `<span class="tag difficulty-${m.difficulty.toLowerCase()}">${m.difficulty}</span>` : ''}
+            ${(m.tags || []).slice(0, 2).map(t => `<span class="tag">${t}</span>`).join('')}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function selectMission(missionId) {
+      selectedMission = missions.find(m => m.id === missionId);
+      renderMissionList();
+      renderBriefing();
+    }
+
+    function renderBriefing() {
+      const panel = document.getElementById('briefing-panel');
+      if (!selectedMission) {
+        panel.innerHTML = `
+          <div class="empty-state">
+            <h3>Select a Mission</h3>
+            <p>Choose a mission from the list to view its briefing</p>
+          </div>
+        `;
+        return;
+      }
+
+      const m = selectedMission;
+      const briefing = m.briefing || {};
+
+      panel.innerHTML = `
+        <div class="briefing-header">
+          <h2 class="briefing-title">${escapeHtml(m.title)}</h2>
+          <div class="briefing-subtitle">${escapeHtml(m.subtitle || '')}</div>
+        </div>
+
+        <div class="briefing-objective">
+          <div class="briefing-objective-label">Primary Objective</div>
+          <div>${escapeHtml(m.objective || 'Complete the mission')}</div>
+        </div>
+
+        ${briefing.situation ? `
+          <div class="briefing-section">
+            <div class="briefing-section-title">Situation</div>
+            <div class="briefing-section-text">${escapeHtml(briefing.situation)}</div>
+          </div>
+        ` : ''}
+
+        ${briefing.mission ? `
+          <div class="briefing-section">
+            <div class="briefing-section-title">Mission</div>
+            <div class="briefing-section-text">${escapeHtml(briefing.mission)}</div>
+          </div>
+        ` : ''}
+
+        ${briefing.execution ? `
+          <div class="briefing-section">
+            <div class="briefing-section-title">Execution</div>
+            <div class="briefing-section-text">${escapeHtml(briefing.execution)}</div>
+          </div>
+        ` : ''}
+
+        ${briefing.threats ? `
+          <div class="briefing-section">
+            <div class="briefing-section-title">Threats</div>
+            <div class="briefing-section-text">${escapeHtml(briefing.threats)}</div>
+          </div>
+        ` : ''}
+
+        ${briefing.notes ? `
+          <div class="briefing-section">
+            <div class="briefing-section-title">Commander's Notes</div>
+            <div class="briefing-section-text">${escapeHtml(briefing.notes)}</div>
+          </div>
+        ` : ''}
+
+        ${!briefing.situation && m.blue_captain_summary ? `
+          <div class="briefing-section">
+            <div class="briefing-section-title">Briefing</div>
+            <div class="briefing-section-text">${escapeHtml(m.blue_captain_summary)}</div>
+          </div>
+        ` : ''}
+
+        <div class="briefing-footer">
+          <div class="mission-stats">
+            ${m.difficulty ? `
+              <div class="mission-stat">
+                <div class="mission-stat-value">${m.difficulty}</div>
+                <div class="mission-stat-label">Difficulty</div>
+              </div>
+            ` : ''}
+            ${m.duration_estimate ? `
+              <div class="mission-stat">
+                <div class="mission-stat-value">${m.duration_estimate}</div>
+                <div class="mission-stat-label">Duration</div>
+              </div>
+            ` : ''}
+          </div>
+          <button class="start-button" onclick="startMission()">Start Mission</button>
+        </div>
+      `;
+    }
+
+    async function startMission() {
+      if (!selectedMission) return;
+
+      const button = document.querySelector('.start-button');
+      button.disabled = true;
+      button.textContent = 'Loading...';
+
+      try {
+        const response = await fetch(`/api/missions/${selectedMission.id}/start`, {
+          method: 'POST'
+        });
+
+        if (response.ok) {
+          // Redirect to captain station
+          window.location.href = '/captain';
+        } else {
+          const data = await response.json();
+          alert('Failed to start mission: ' + (data.error || 'Unknown error'));
+          button.disabled = false;
+          button.textContent = 'Start Mission';
+        }
+      } catch (err) {
+        alert('Failed to start mission: ' + err.message);
+        button.disabled = false;
+        button.textContent = 'Start Mission';
+      }
+    }
+
+    function escapeHtml(text) {
+      if (!text) return '';
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Load missions on page load
+    loadMissions();
+  </script>
+</body>
+</html>

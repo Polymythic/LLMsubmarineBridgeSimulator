@@ -7,9 +7,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..',
 from backend.sim.loop import Simulation
 from backend.models import MaintenanceTask
 
+from conftest import make_test_simulation
+
 
 def test_helm_degraded_and_failed_effects():
-    sim = Simulation()
+    sim = make_test_simulation()
     own = sim.world.get_ship("ownship")
 
     # Baseline
@@ -26,7 +28,7 @@ def test_helm_degraded_and_failed_effects():
 
 
 def test_sonar_degradation_penalties():
-    sim = Simulation()
+    sim = make_test_simulation()
     own = sim.world.get_ship("ownship")
 
     # Baseline acoustics modifiers
@@ -45,7 +47,7 @@ def test_sonar_degradation_penalties():
 
 
 def test_weapons_degradation_and_failure():
-    sim = Simulation()
+    sim = make_test_simulation()
     own = sim.world.get_ship("ownship")
 
     base_mult = own.weapons.time_penalty_multiplier
@@ -60,7 +62,7 @@ def test_weapons_degradation_and_failure():
 
 
 def test_task_escalation_applies_penalties():
-    sim = Simulation()
+    sim = make_test_simulation()
     own = sim.world.get_ship("ownship")
 
     # Seed a manual HELM task at expired deadline to force escalation
@@ -88,7 +90,7 @@ def test_task_escalation_applies_penalties():
 
 
 def test_aggregated_penalties_use_worst_stage():
-    sim = Simulation()
+    sim = make_test_simulation()
     own = sim.world.get_ship("ownship")
 
     # Prevent auto-spawn during this test
@@ -142,7 +144,7 @@ def test_aggregated_penalties_use_worst_stage():
 
 def test_clicking_repair_spawns_task_if_none_and_progresses_with_power():
     import asyncio
-    sim = Simulation()
+    sim = make_test_simulation()
     own = sim.world.get_ship("ownship")
 
     # Ensure no tasks for sonar
@@ -165,7 +167,7 @@ def test_clicking_repair_spawns_task_if_none_and_progresses_with_power():
 
 def test_per_task_repair_only_advances_selected_task():
     import asyncio
-    sim = Simulation()
+    sim = make_test_simulation()
     own = sim.world.get_ship("ownship")
     sim._task_spawn_timers = {k: 1e9 for k in sim._task_spawn_timers.keys()}
     # Seed two SONAR tasks

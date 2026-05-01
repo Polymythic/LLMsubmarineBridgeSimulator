@@ -6,6 +6,7 @@ import math
 from typing import Dict, Optional
 import os
 import random
+from pathlib import Path
 from ..bus import BUS
 from ..config import CONFIG, reload_from_env
 from ..models import Ship, Kinematics, Hull, Acoustics, WeaponsSuite, Reactor, DamageState, MaintenanceTask, SHIP_CATALOG, TelemetryContact
@@ -13,12 +14,38 @@ from ..assets import load_ship_catalog, load_mission_by_id, apply_mission_to_wor
 from ..storage import init_engine, create_run, insert_snapshot, insert_event
 from .ecs import World
 from .physics import integrate_kinematics
-from .sonar import passive_contacts, ActivePingState, active_ping, passive_projectiles, explosion_contacts, normalize_angle_deg
-from .weapons import try_load_tube, try_flood_tube, try_set_doors, try_fire, step_torpedo, step_tubes, try_drop_depth_charges, step_depth_charge, try_launch_torpedo_quick
+from .sonar import passive_contacts, ActivePingState, active_ping, passive_projectiles, explosion_contacts, countermeasure_contacts, normalize_angle_deg, clear_contact_memory
+from .contact_registry import ContactRegistry
+from .weapons import step_torpedo, step_tubes, try_drop_depth_charges, step_depth_charge, try_launch_torpedo_quick, step_countermeasure
 from .ai_tools import LocalAIStub
 from .ai_orchestrator import AgentsOrchestrator
 from .damage import step_damage, step_engineering
 from .noise import NoiseEngine
+from .waypoints import WaypointTracker
+from .conditions import ConditionEvaluator
+from .triggers import TriggerManager
+from .victory import VictoryEvaluator
+from .intercepts import InterceptSystem
+from .commands import CommandDispatcher
+from .control import (
+    ActivePingAction,
+    LLMShipController,
+    SetNavAction,
+    ShipController,
+    ShipControls,
+)
+from .core import SimulationCore
+from ..models import MissionOutcome
+
+
+def _unwrap_scalar(v):
+    """LLM tool calls occasionally wrap scalars in single-element lists.
+
+    Normalize list-of-one to its sole element; pass through everything else.
+    """
+    if isinstance(v, list):
+        return v[0] if v else None
+    return v
 
 
 class Simulation:
@@ -29,11 +56,13 @@ class Simulation:
         self.engine = init_engine(CONFIG.sqlite_path)
         self.run_id = create_run(self.engine)
         self.ai = LocalAIStub()
+        self._loading = False
         self._captain_consent = False
         self._periscope_raised = False
         self._radio_raised = False
-        self._pump_fwd = False
-        self._pump_aft = False
+        # Pump assignments: maps pump number (1 or 2) to compartment index (0-5)
+        # e.g., {1: 0, 2: 5} means pump 1 on fore (comp 0), pump 2 on stern (comp 5)
+        self._pump_assignments: Dict[int, int] = {}
         # Debug toggles for visual detection (disabled by default)
         self._debug_player_visual_100 = False
         self._debug_enemy_visual_100 = False
@@ -41,13 +70,20 @@ class Simulation:
         self._visual_contacts = {}  # {observer_id: {target_id: {"last_seen": timestamp, "detection_count": int, "last_confidence": float}}}
         # Periscope contacts list for UI display (persists between ticks)
         self._periscope_contacts = []
+        # Contact registry for anonymous sonar designations
+        self._contact_registry = ContactRegistry()
         # Lazily initialize asyncio.Event to avoid requiring an event loop during tests
         self._stop: Optional[asyncio.Event] = None
         self._last_snapshot = 0.0
         self._last_ai = 0.0
         self._transient_events = []  # cleared every tick
+        self._destroyed_ships = set()  # track ships already destroyed to avoid duplicate events
         self._last_ping_responses = []
         self._last_ping_at = None
+        # Mission state tracking for startup sequence
+        self._mission_active = False      # True when a mission is running
+        self._mission_version = 0         # Increments on each mission load (for client refresh detection)
+        self._mission_id: Optional[str] = None  # Current mission ID
         # Load external assets
         try:
             # Import models here to avoid circular import issues
@@ -130,81 +166,359 @@ class Simulation:
             self._ai_ship_timers: Dict[str, float] = {}
             self._ai_pending: set[asyncio.Task] = set()
 
-    def _init_default_world(self) -> None:
-        # Clear existing world and set to original game state
-        self.world = World()
-        # Try to load mission from assets unless a forced default reset is requested
-        mission = None
-        if not getattr(self, "_force_default_reset", False):
-            # During tests, ignore external mission selection to ensure deterministic defaults
-            if os.getenv("PYTEST_CURRENT_TEST"):
-                mission = None
-            else:
-                mid = getattr(CONFIG, "mission_id", "")
-                mission = load_mission_by_id(mid) if mid else None
-        if mission:
-            def _set_mission(brief: dict) -> None:
-                self.mission_brief = brief
-            apply_mission_to_world(mission, lambda: self.world, _set_mission)
-        else:
-            own = Ship(
-                id="ownship",
-                side="BLUE",
-                kin=Kinematics(depth=100.0, heading=270.0, speed=8.0),
-                hull=SHIP_CATALOG["SSN"].default_hull.model_copy(deep=True),
-                acoustics=SHIP_CATALOG["SSN"].default_acoustics.model_copy(deep=True),
-                weapons=SHIP_CATALOG["SSN"].default_weapons.model_copy(deep=True),
-                reactor=Reactor(output_mw=60.0, max_mw=100.0),
-                damage=DamageState(),
-                ship_class="SSN",
-                capabilities=SHIP_CATALOG["SSN"].capabilities.model_copy(deep=True),
-            )
-            red = Ship(
-                id="red-01",
-                side="RED",
-                kin=Kinematics(x=3000.0, y=0.0, depth=120.0, heading=90.0, speed=8.0),
-                hull=Hull(max_speed=28.0),
-                acoustics=Acoustics(),
-                weapons=WeaponsSuite(),
-                reactor=Reactor(output_mw=50.0, max_mw=100.0),
-                damage=DamageState(),
-                ai_profile=None,
-                ship_class="SSN",
-                capabilities=SHIP_CATALOG["SSN"].capabilities.model_copy(deep=True),
-            )
-            self.world.add_ship(own)
-            self.world.add_ship(red)
-        # Always clear one-shot forced reset flag
-        if getattr(self, "_force_default_reset", False):
-            self._force_default_reset = False
-        # Set ordered state from ownship (from mission or default spawn)
-        try:
-            own_ref = self.world.get_ship("ownship")
-        except Exception:
-            # Fallback: first BLUE ship or first ship
-            ships = self.world.all_ships()
-            own_ref = next((s for s in ships if getattr(s, "side", "") == "BLUE"), ships[0])
-        self.ordered = {"heading": own_ref.kin.heading, "speed": own_ref.kin.speed, "depth": own_ref.kin.depth}
-        # Reset toggles and ping state
-        self._pump_fwd = False
-        self._pump_aft = False
+        # ========== Scenario and Game Rules Subsystems ==========
+        # Simulation time counter
+        self._sim_time_s = 0.0
+        # Waypoint tracker (monitors ship positions, emits waypoint_reached events)
+        self._waypoint_tracker = WaypointTracker(lambda: self.world)
+        # Condition evaluator (checks trigger conditions)
+        self._condition_evaluator = ConditionEvaluator(
+            lambda: self.world,
+            lambda: self,
+            self._waypoint_tracker
+        )
+        # Trigger manager (fires actions when conditions are met)
+        self._trigger_manager = TriggerManager(
+            self._condition_evaluator,
+            lambda: self.world,
+            lambda: self
+        )
+        # Victory evaluator (checks success_criteria)
+        self._victory_evaluator = VictoryEvaluator(
+            lambda: self.world,
+            self._waypoint_tracker
+        )
+        # Intercept system (handles intercepted enemy communications)
+        self._intercept_system = InterceptSystem(lambda: self.world, lambda: self)
+        # Captain intercepts list (accumulated for UI)
+        self._captain_intercepts = []
+        # Mission outcome
+        self._mission_outcome = MissionOutcome()
+        # Command dispatcher (single chokepoint for WebSocket commands)
+        self._cmd_dispatcher = CommandDispatcher(self)
+        # Per-ship decision-maker. Default is LLM-driven; tests/scenarios may
+        # swap in `ScriptedShipController` or any other `ShipController`.
+        self._ship_controller: ShipController = LLMShipController(
+            lambda: getattr(self, "_ai_orch", None)
+        )
+
+    def _reset_all_state(self) -> None:
+        """Reset ALL mutable sim state consistently for mission transitions."""
+        # Deactivate mission while rebuilding
+        self._mission_active = False
+        self._mission_version += 1
+
+        # Simulation clock
+        self._sim_time_s = 0.0
+
+        # Captain / comms state
+        self._captain_comms = []
+        self._captain_intercepts = []
+        self._mission_outcome = MissionOutcome()
+        self._delivered_comms_idx = -1
+
+        # Equipment toggles
         self._periscope_raised = False
         self._radio_raised = False
         self._captain_consent = False
+        self._pump_assignments = {}
+
+        # Sonar / ping state
         self._last_ping_responses = []
         self._last_ping_at = None
         self.active_ping_state = ActivePingState(cooldown_s=12.0)
-        # Reset maintenance/task state and timers on restart
+
+        # Visual / periscope contact tracking
+        self._visual_contacts = {}
+        self._enemy_search_timers = {}
+        self._periscope_contacts = []
+        self._destroyed_ships = set()
+        self._transient_events = []
+
+        # Contact registry
+        if hasattr(self, "_contact_registry"):
+            self._contact_registry.reset()
+
+        # Clear module-level sonar contact memory
+        clear_contact_memory()
+
+        # Maintenance tasks and timers
         if hasattr(self, "_active_tasks"):
             self._active_tasks = {s: [] for s in ["helm", "sonar", "weapons", "engineering"]}
         if hasattr(self, "_task_spawn_timers"):
-            from ..config import CONFIG as _C
-            self._task_spawn_timers = {s: _C.first_task_delay_s for s in ["helm", "sonar", "weapons", "engineering"]}
-        # Reset storm/emcon timers
+            from ..config import CONFIG as _cfg
+            self._task_spawn_timers = {s: _cfg.first_task_delay_s for s in ["helm", "sonar", "weapons", "engineering"]}
+
+        # Storm / EMCON timers
         if hasattr(self, "_emcon_high_timer"):
             self._emcon_high_timer = 0.0
         if hasattr(self, "_storm_timer"):
             self._storm_timer = 0.0
+
+        # AI orchestrator state
+        if hasattr(self, "_ai_fleet_timer"):
+            self._ai_fleet_timer = getattr(CONFIG, "ai_fleet_cadence_s", 45.0)
+        if hasattr(self, "_ai_ship_timers"):
+            self._ai_ship_timers = {}
+        if hasattr(self, "_ai_orch") and self._ai_orch is not None:
+            try:
+                self._ai_orch.reset_state()
+            except Exception:
+                pass
+
+        # Scenario subsystems
+        if hasattr(self, "_condition_evaluator"):
+            try:
+                self._condition_evaluator.reset()
+            except Exception:
+                pass
+        if hasattr(self, "_waypoint_tracker"):
+            try:
+                self._waypoint_tracker.reset()
+            except Exception:
+                pass
+        if hasattr(self, "_trigger_manager"):
+            try:
+                self._trigger_manager.reset()
+            except Exception:
+                pass
+        if hasattr(self, "_victory_evaluator"):
+            try:
+                self._victory_evaluator.reset()
+            except Exception:
+                pass
+        if hasattr(self, "_intercept_system"):
+            try:
+                self._intercept_system.reset()
+            except Exception:
+                pass
+
+    def _init_default_world(self) -> None:
+        # Set loading flag to prevent tick() from seeing partial state
+        self._loading = True
+        try:
+            # Deactivate and reset all state while rebuilding
+            self._reset_all_state()
+
+            # Clear existing world and set to original game state
+            self.world = World()
+            # Try to load mission from assets unless a forced default reset is requested
+            mission = None
+            if not getattr(self, "_force_default_reset", False):
+                # During tests, ignore external mission selection to ensure deterministic defaults
+                if os.getenv("PYTEST_CURRENT_TEST"):
+                    mission = None
+                else:
+                    # Fresh import so reload_from_env() changes take effect
+                    from ..config import CONFIG as _cfg
+                    mid = getattr(_cfg, "mission_id", "")
+                    mission = load_mission_by_id(mid) if mid else None
+            if mission:
+                def _set_mission(brief: dict) -> None:
+                    self.mission_brief = brief
+                    # Initialize scenario subsystems with mission data
+                    self._init_scenario_subsystems(brief)
+                apply_mission_to_world(mission, lambda: self.world, _set_mission)
+                self._mission_active = True
+                self._mission_id = getattr(CONFIG, "mission_id", None)
+            else:
+                # No mission specified - stay in idle state (no ships spawned)
+                # Don't spawn default ships - wait for explicit mission selection
+                self._mission_active = False
+                self._mission_id = None
+            # Always clear one-shot forced reset flag
+            if getattr(self, "_force_default_reset", False):
+                self._force_default_reset = False
+            # Set ordered state from ownship (from mission) or defaults for idle state
+            ships = self.world.all_ships()
+            if ships:
+                try:
+                    own_ref = self.world.get_ship("ownship")
+                except Exception:
+                    # Fallback: first BLUE ship or first ship
+                    own_ref = next((s for s in ships if getattr(s, "side", "") == "BLUE"), ships[0])
+                self.ordered = {"heading": own_ref.kin.heading, "speed": own_ref.kin.speed, "depth": own_ref.kin.depth}
+            else:
+                # No ships in world (idle state) - use default ordered values
+                self.ordered = {"heading": 0.0, "speed": 0.0, "depth": 150.0}
+        finally:
+            self._loading = False
+
+    def _init_scenario_subsystems(self, mission_brief: dict) -> None:
+        """Initialize scenario subsystems with mission data."""
+        # Initialize waypoint tracker
+        if hasattr(self, "_waypoint_tracker"):
+            self._waypoint_tracker.initialize(mission_brief)
+        # Initialize trigger manager
+        if hasattr(self, "_trigger_manager"):
+            self._trigger_manager.initialize(mission_brief)
+        # Initialize victory evaluator
+        if hasattr(self, "_victory_evaluator"):
+            self._victory_evaluator.initialize(mission_brief)
+        # Initialize intercept system
+        if hasattr(self, "_intercept_system"):
+            self._intercept_system.initialize(mission_brief)
+        # Reset captain intercepts
+        self._captain_intercepts = []
+        # Reset mission outcome
+        self._mission_outcome = MissionOutcome()
+
+    def _handle_trigger_event(self, event: dict) -> None:
+        """Handle events from the trigger manager."""
+        event_type = event.get("type")
+
+        if event_type == "send_comms":
+            # Send message to captain comms
+            if not hasattr(self, "_captain_comms"):
+                self._captain_comms = []
+            self._captain_comms.append({
+                "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "text": event.get("text", "")
+            })
+            insert_event(self.engine, self.run_id, "comms.sent", json.dumps(event))
+
+        elif event_type == "broadcast_intercept":
+            # Queue an interceptable message
+            if hasattr(self, "_intercept_system"):
+                self._intercept_system.add_scripted_intercept(
+                    text=event.get("text", ""),
+                    partial=event.get("partial", False),
+                    source_ship=event.get("source_ship")
+                )
+
+        elif event_type == "change_behavior":
+            # Update ship behavior in mission brief
+            ship_id = event.get("ship_id")
+            behavior = event.get("behavior", "")
+            if ship_id and hasattr(self, "mission_brief"):
+                if "ship_behaviors" not in self.mission_brief:
+                    self.mission_brief["ship_behaviors"] = {}
+                self.mission_brief["ship_behaviors"][ship_id] = behavior
+
+        elif event_type == "end_scenario":
+            # Force end the mission
+            if hasattr(self, "_victory_evaluator"):
+                outcome = event.get("outcome", "draw")
+                reason = event.get("reason", "Scenario trigger")
+                self._mission_outcome = self._victory_evaluator.force_end(outcome, reason)
+
+        elif event_type == "set_ai_mode":
+            # Change AI behavior mode (for future use)
+            pass
+
+        # Log the trigger event
+        insert_event(self.engine, self.run_id, f"trigger.{event_type}", json.dumps(event))
+
+    def _log_action(self, station: str, message: str, raw_data: dict = None) -> None:
+        """Log an action to both the event system and the action log file.
+
+        Args:
+            station: Station name (HELM, SONAR, WEAPONS, ENGINEERING)
+            message: Human-readable action description
+            raw_data: Optional raw command data for debugging
+        """
+        from datetime import datetime, timezone
+
+        timestamp = time.strftime("%H:%M:%S", time.localtime())
+        iso_time = datetime.now(timezone.utc).isoformat()
+
+        # Add to transient events for real-time display
+        self._transient_events.append({
+            "type": "action.log",
+            "at": iso_time,
+            "station": station,
+            "message": message
+        })
+
+        # Write to database
+        insert_event(self.engine, self.run_id, "action.log", json.dumps({
+            "station": station, "message": message, "raw": raw_data
+        }))
+
+        # Append to action log file
+        try:
+            log_dir = Path(__file__).parent.parent.parent.parent / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            log_path = log_dir / f"action_log_{self.run_id}.md"
+
+            if not log_path.exists():
+                today = time.strftime("%Y-%m-%d", time.localtime())
+                log_path.write_text(f"# Action Log - Run {self.run_id} - {today}\n\n", encoding="utf-8")
+
+            with log_path.open("a", encoding="utf-8") as f:
+                f.write(f"{timestamp} {station}: {message}\n")
+        except Exception as e:
+            print(f"Warning: Failed to write action log: {e}")
+
+    async def _cancel_ai_tasks(self) -> None:
+        """Cancel all pending AI tasks before touching world state."""
+        if hasattr(self, '_ai_pending') and self._ai_pending:
+            for task in list(self._ai_pending):
+                task.cancel()
+            await asyncio.gather(*self._ai_pending, return_exceptions=True)
+            self._ai_pending.clear()
+
+    async def load_mission(self, mission_id: str) -> bool:
+        """Reset simulation and load a new mission.
+
+        Args:
+            mission_id: ID of the mission to load
+
+        Returns:
+            True if mission loaded successfully, False otherwise
+        """
+        mission = load_mission_by_id(mission_id)
+        if not mission:
+            print(f"ERROR: Mission '{mission_id}' not found")
+            return False
+
+        # Set loading flag to prevent tick() from seeing partial state
+        self._loading = True
+        try:
+            # Cancel all pending AI tasks before touching world
+            await self._cancel_ai_tasks()
+
+            # Reset all mutable state (also sets _mission_active = False)
+            self._reset_all_state()
+
+            # Reset world state
+            self.world = World()
+
+            # Apply new mission
+            def _set_mission(brief: dict) -> None:
+                self.mission_brief = brief
+                self._init_scenario_subsystems(brief)
+
+            apply_mission_to_world(mission, lambda: self.world, _set_mission)
+
+            # Update AI orchestrator mission brief
+            if hasattr(self, "_ai_orch") and self._ai_orch is not None:
+                try:
+                    setattr(self._ai_orch, "_mission_brief", self.mission_brief)
+                except Exception:
+                    pass
+
+            # Reset ordered states to match ownship spawn
+            ownship = self.world.ships.get("ownship")
+            if ownship:
+                self.ordered = {
+                    "heading": ownship.kin.heading,
+                    "speed": ownship.kin.speed,
+                    "depth": ownship.kin.depth
+                }
+            else:
+                self.ordered = {"heading": 0.0, "speed": 5.0, "depth": 100.0}
+
+            # Log mission load
+            insert_event(self.engine, self.run_id, "mission.loaded", json.dumps({"mission_id": mission_id}))
+
+            # Activate simulation
+            self._mission_id = mission_id
+            self._mission_active = True
+
+            return True
+        finally:
+            self._loading = False
 
     def stop(self) -> None:
         if self._stop is None:
@@ -335,6 +649,36 @@ class Simulation:
         for station, stage in worst_by_station.items():
             self._apply_stage_penalties(ship, station, stage)
 
+    def _get_recent_enemy_pings(self, own: Ship) -> list:
+        """Get recent enemy pings with distance for audio playback."""
+        pings = []
+        if not hasattr(self, "_enemy_ping_contacts"):
+            return pings
+        now = time.time()
+        for epc in self._enemy_ping_contacts:
+            contact = epc.get("contact")
+            ping_time = epc.get("timestamp_epoch", 0)
+            source_id = epc.get("source", "")
+            # Only include pings from last 3 seconds
+            if now - ping_time > 3.0:
+                continue
+            # Calculate distance from ping source to ownship
+            bearing = getattr(contact, "bearing", 0) if contact else 0
+            distance = 5000  # default
+            # Find the source ship by ID
+            source_ship = self.world.get_ship(source_id)
+            if source_ship:
+                dx = source_ship.kin.x - own.kin.x
+                dy = source_ship.kin.y - own.kin.y
+                distance = math.hypot(dx, dy)
+            pings.append({
+                "id": f"ping_{int(ping_time * 1000)}",
+                "at": ping_time,
+                "bearing": bearing,
+                "distance": distance,
+            })
+        return pings[-5:]  # Keep only last 5
+
     def _step_station_tasks(self, ship: Ship, dt: float) -> None:
         now_s = time.perf_counter()
         # Spawn logic per station (allow multiple concurrent tasks)
@@ -384,10 +728,108 @@ class Simulation:
                 await asyncio.sleep(self.dt - elapsed)
                 continue
             last = now
-            await self.tick(self.dt)
+            try:
+                await self.tick(self.dt)
+            except Exception as e:
+                import traceback
+                print(f"ERROR in tick(): {e}")
+                traceback.print_exc()
+                # Continue running despite errors
+                await asyncio.sleep(1.0)
+
+    def get_current_status(self) -> dict:
+        """Get the current simulation status for initial WebSocket sync.
+
+        Returns:
+            A status message dict with topic and data fields
+        """
+        if self._loading:
+            status = "loading"
+            message = "Loading mission..."
+        elif not self._mission_active:
+            status = "idle"
+            message = "Awaiting mission selection"
+        elif hasattr(self, "_mission_outcome") and self._mission_outcome.status != "ongoing":
+            status = "ended"
+            message = None
+        else:
+            status = "active"
+            message = None
+
+        payload = {
+            "missionActive": self._mission_active and not self._loading,
+            "missionVersion": self._mission_version,
+            "missionId": self._mission_id,
+            "status": status,
+        }
+
+        if message:
+            payload["message"] = message
+
+        if status == "ended" and hasattr(self, "_mission_outcome"):
+            payload["outcome"] = self._mission_outcome.dict()
+
+        return {"topic": "status", "data": payload}
+
+    async def _broadcast_idle_telemetry(self) -> None:
+        """Broadcast minimal status when no mission is active (idle state)."""
+        payload = {
+            "missionActive": False,
+            "missionVersion": self._mission_version,
+            "missionId": self._mission_id,
+            "status": "idle",
+            "message": "Awaiting mission selection"
+        }
+        for topic in ["tick:captain", "tick:helm", "tick:sonar", "tick:weapons",
+                      "tick:engineering", "tick:debug", "tick:fleet", "tick:logs"]:
+            await BUS.publish(topic, {"topic": "status", "data": payload})
+
+    async def _broadcast_ended_telemetry(self) -> None:
+        """Broadcast status when mission has ended (victory/defeat)."""
+        payload = {
+            "missionActive": False,
+            "missionVersion": self._mission_version,
+            "missionId": self._mission_id,
+            "status": "ended",
+            "outcome": self._mission_outcome.dict() if hasattr(self, "_mission_outcome") else {"status": "unknown"}
+        }
+        for topic in ["tick:captain", "tick:helm", "tick:sonar", "tick:weapons",
+                      "tick:engineering", "tick:debug", "tick:fleet", "tick:logs"]:
+            await BUS.publish(topic, {"topic": "status", "data": payload})
 
     async def tick(self, dt: float) -> None:
+        # Loading state - mission transition in progress, skip tick entirely
+        if self._loading:
+            return
+
+        # Idle state - no active mission, broadcast status and return
+        if not self._mission_active:
+            await self._broadcast_idle_telemetry()
+            await asyncio.sleep(self.dt)  # Throttle idle broadcasts to tick rate
+            return
+
+        # Check if mission has ended (victory/defeat) - auto-end
+        if hasattr(self, "_mission_outcome") and self._mission_outcome.status != "ongoing":
+            await self._broadcast_ended_telemetry()
+            await asyncio.sleep(self.dt)
+            return
+
         own = self.world.get_ship("ownship")
+
+        # Guard: if no ownship, skip tick (mission not loaded properly)
+        if own is None:
+            # Debug: print world state
+            if not hasattr(self, "_debug_no_ownship_warned"):
+                print(f"DEBUG: No ownship found. World has ships: {list(self.world.ships.keys())}")
+                self._debug_no_ownship_warned = True
+            return
+
+        # DEBUG: Log that we're running a full tick
+        if not hasattr(self, "_debug_tick_count"):
+            self._debug_tick_count = 0
+        self._debug_tick_count += 1
+        if self._debug_tick_count % 100 == 1:  # Log every 100 ticks (every 5 seconds at 20Hz)
+            print(f"DEBUG: Running tick #{self._debug_tick_count}, mission_active={self._mission_active}, ownship={own.id}")
 
         if CONFIG.use_ai_orchestrator:
             # Advance orchestrator timers
@@ -486,6 +928,29 @@ class Simulation:
                                     pass
                             except Exception:
                                 pass
+                        # Handle Fleet Commander journal entries
+                        elif tc.get("tool") == "write_journal":
+                            try:
+                                args = tc.get("arguments", {})
+                                text = args.get("text", "").strip() if isinstance(args, dict) else ""
+                                if text:
+                                    # Write to logs/fleet_journal_YYYY-MM-DD.md
+                                    today = time.strftime("%Y-%m-%d", time.gmtime())
+                                    journal_dir = Path(__file__).parent.parent.parent.parent / "logs"
+                                    journal_dir.mkdir(parents=True, exist_ok=True)
+                                    journal_path = journal_dir / f"fleet_journal_{today}.md"
+                                    timestamp = time.strftime("%H:%M:%S", time.gmtime())
+                                    # Create header if file is new
+                                    if not journal_path.exists():
+                                        header = f"# Fleet Commander's Log - {today}\n\n"
+                                        journal_path.write_text(header, encoding="utf-8")
+                                    # Append entry
+                                    entry = f"## {timestamp}\n{text}\n\n"
+                                    with journal_path.open("a", encoding="utf-8") as f:
+                                        f.write(entry)
+                                    insert_event(self.engine, self.run_id, "ai.tool.journal", json.dumps({"timestamp": timestamp, "length": len(text)}))
+                            except Exception as je:
+                                print(f"Warning: Failed to write journal: {je}")
                     # Mirror recent runs into sim for Fleet UI; drop alert after one alert cadence window with no additional triggers
                     self._ai_recent_runs = getattr(self._ai_orch, "_recent_runs", [])
                     try:
@@ -498,9 +963,11 @@ class Simulation:
                 self._ai_pending.add(t)
                 t.add_done_callback(lambda _t: self._ai_pending.discard(_t))
             # Schedule per-ship runs (RED side only)
-            for ship in self.world.all_ships():
-                if ship.side != "RED":
-                    continue
+            red_ships = [s for s in self.world.all_ships() if s.side == "RED"]
+            if not hasattr(self, "_debug_ship_ai_logged"):
+                print(f"DEBUG: Found {len(red_ships)} RED ships for AI control: {[s.id for s in red_ships]}")
+                self._debug_ship_ai_logged = True
+            for ship in red_ships:
                 sid = ship.id
                 if sid not in self._ai_ship_timers:
                     # Trigger initial run quickly after startup for each ship
@@ -518,194 +985,35 @@ class Simulation:
                 cadence = ship_alert_cadence if is_alert else ship_normal_cadence
                 if self._ai_ship_timers[sid] >= cadence:
                     self._ai_ship_timers[sid] = 0.0
+                    print(f"DEBUG: Triggering ship AI run for {sid} (alert={is_alert}, cadence={cadence})")
                     async def _ship_job(_sid: str = sid):
-                        res = await self._ai_orch.run_ship(_sid)
-                        # Apply first validated tool call
-                        for tc in res.get("tool_calls_validated", []):
-                            tool = tc.get("tool")
-                            args = tc.get("arguments", {})
-                            if tool == "set_nav":
-                                try:
-                                    tgt = self.world.get_ship(_sid)
-                                except Exception:
-                                    continue
-                                tgt.kin.heading = float(args.get("heading") or tgt.kin.heading) % 360.0
-                                # Clamp against platform limits
-                                spd = float(args.get("speed") or tgt.kin.speed)
-                                dpt = float(args.get("depth") or tgt.kin.depth)
-                                tgt.kin.speed = max(0.0, min(tgt.hull.max_speed, spd))
-                                tgt.kin.depth = max(0.0, min(tgt.hull.max_depth, dpt))
-                                insert_event(self.engine, self.run_id, "ai.tool.apply", json.dumps({"ship_id": _sid, **tc}))
-                                # Record last orders per ship for agent continuity
-                                try:
-                                    if hasattr(self, "_ai_orch") and getattr(self, "_ai_orch", None) is not None:
-                                        if not hasattr(self._ai_orch, "_orders_last_by_ship"):
-                                            self._ai_orch._orders_last_by_ship = {}
-                                        self._ai_orch._orders_last_by_ship[_sid] = {
-                                            "heading": float(tgt.kin.heading),
-                                            "speed": float(tgt.kin.speed),
-                                            "depth": float(tgt.kin.depth),
-                                        }
-                                except Exception:
-                                    pass
-                            if tool == "fire_torpedo":
-                                # Map standard fire to quick launch for AI ships
-                                try:
-                                    tgt = self.world.get_ship(_sid)
-                                except Exception:
-                                    break
-                                if not getattr(getattr(tgt, "capabilities", None), "has_torpedoes", False):
-                                    break
-                                # Handle potential list values and None values
-                                bearing_val = args.get("bearing")
-                                if isinstance(bearing_val, list) and len(bearing_val) > 0:
-                                    bearing_val = bearing_val[0]
-                                bearing = float(bearing_val or tgt.kin.heading)
-                                
-                                run_depth_val = args.get("run_depth")
-                                if isinstance(run_depth_val, list) and len(run_depth_val) > 0:
-                                    run_depth_val = run_depth_val[0]
-                                run_depth = float(run_depth_val or tgt.kin.depth)
-                                
-                                enable_range_val = args.get("enable_range")
-                                if isinstance(enable_range_val, list) and len(enable_range_val) > 0:
-                                    enable_range_val = enable_range_val[0]
-                                enable_range = float(enable_range_val or 800.0) if enable_range_val is not None else None
-                                doctrine = str(args.get("doctrine") or "passive_then_active")
-                                res = try_launch_torpedo_quick(tgt, bearing, run_depth, enable_range, doctrine)
-                                if res.get("ok"):
-                                    torp = res.get("data")
-                                    if torp:
-                                        self.world.torpedoes.append(torp)
-                                        insert_event(self.engine, self.run_id, "ai.tool.apply", json.dumps({"ship_id": _sid, **tc}))
-                            # Other tools (server-applied)
-                            if tool == "drop_depth_charges":
-                                try:
-                                    tgt = self.world.get_ship(_sid)
-                                except Exception:
-                                    break
-                                if not getattr(getattr(tgt, "capabilities", None), "has_depth_charges", False):
-                                    break
-                                # Handle potential list values and None values
-                                spread_val = args.get("spread_meters")
-                                if isinstance(spread_val, list) and len(spread_val) > 0:
-                                    spread_val = spread_val[0]
-                                spread_m = int(float(spread_val or 20))
-                                
-                                min_d_val = args.get("minDepth")
-                                if isinstance(min_d_val, list) and len(min_d_val) > 0:
-                                    min_d_val = min_d_val[0]
-                                min_d = int(float(min_d_val or 30))
-                                
-                                max_d_val = args.get("maxDepth")
-                                if isinstance(max_d_val, list) and len(max_d_val) > 0:
-                                    max_d_val = max_d_val[0]
-                                max_d = int(float(max_d_val or 50))
-                                
-                                n_val = args.get("spreadSize")
-                                if isinstance(n_val, list) and len(n_val) > 0:
-                                    n_val = n_val[0]
-                                n = int(float(n_val or 3))
-                                res = try_drop_depth_charges(tgt, spread_m, min_d, max_d, n)
-                                if res.get("ok"):
-                                    for dc in res.get("data", []) or []:
-                                        self.world.depth_charges.append(dc)
-                                    insert_event(self.engine, self.run_id, "ai.tool.apply", json.dumps({"ship_id": _sid, **tc}))
-                            if tool == "launch_torpedo_quick":
-                                try:
-                                    tgt = self.world.get_ship(_sid)
-                                except Exception:
-                                    break
-                                if not getattr(getattr(tgt, "capabilities", None), "has_torpedoes", False):
-                                    break
-                                # Handle potential list values and None values
-                                bearing_val = args.get("bearing")
-                                if isinstance(bearing_val, list) and len(bearing_val) > 0:
-                                    bearing_val = bearing_val[0]
-                                bearing = float(bearing_val or tgt.kin.heading)
-                                
-                                run_depth_val = args.get("run_depth")
-                                if isinstance(run_depth_val, list) and len(run_depth_val) > 0:
-                                    run_depth_val = run_depth_val[0]
-                                run_depth = float(run_depth_val or tgt.kin.depth)
-                                
-                                enable_range_val = args.get("enable_range")
-                                if isinstance(enable_range_val, list) and len(enable_range_val) > 0:
-                                    enable_range_val = enable_range_val[0]
-                                enable_range = float(enable_range_val or 800.0) if enable_range_val is not None else None
-                                doctrine = str(args.get("doctrine", "passive_then_active"))
-                                res = try_launch_torpedo_quick(tgt, bearing, run_depth, enable_range, doctrine)
-                                if res.get("ok"):
-                                    torp = res.get("data")
-                                    if torp:
-                                        self.world.torpedoes.append(torp)
-                                        insert_event(self.engine, self.run_id, "ai.tool.apply", json.dumps({"ship_id": _sid, **tc}))
-                            if tool == "active_ping":
-                                try:
-                                    tgt = self.world.get_ship(_sid)
-                                except Exception:
-                                    break
-                                if not getattr(getattr(tgt, "capabilities", None), "has_active_sonar", False):
-                                    break
-                                # Check cooldown
-                                if tgt.active_sonar_cooldown > 0.0:
-                                    break
-                                # Perform active ping
-                                res = active_ping(tgt, [s for s in self.world.all_ships() if s.id != tgt.id])
-                                if res:
-                                    # Set cooldown (12 seconds)
-                                    tgt.active_sonar_cooldown = 12.0
-                                    # Store ping responses for this ship (for AI use)
-                                    now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-                                    ping_responses = [
-                                        {"id": rid, "bearing": brg, "range_est": rng, "strength": st, "at": now_iso, "source": tgt.id}
-                                        for (rid, rng, brg, st) in res
-                                    ]
-                                    # Store in ship-specific ping responses
-                                    if not hasattr(self, "_ai_ping_responses"):
-                                        self._ai_ping_responses = {}
-                                    self._ai_ping_responses[tgt.id] = ping_responses
-                                    
-                                    # Create contact for player when enemy ship pings (counter-detection)
-                                    own = self.world.get_ship("ownship")
-                                    if own and own.id != tgt.id:
-                                        dx = tgt.kin.x - own.kin.x
-                                        dy = tgt.kin.y - own.kin.y
-                                        rng = math.hypot(dx, dy)
-                                        # Compass bearing: 0=N, 90=E, 180=S, 270=W
-                                        brg = normalize_angle_deg(math.degrees(math.atan2(dx, dy)))
-                                        # Add bearing noise for realism
-                                        brg_noise = normalize_angle_deg(brg + random.gauss(0, 2.0))
-                                        # Signal strength based on distance and enemy ship type
-                                        strength = max(0.0, min(1.0, 1.0 / (1.0 + (rng / 3000.0))))
-                                        
-                                        # Create contact for enemy active ping
-                                        enemy_ping_contact = TelemetryContact(
-                                            id="ENEMY_ACTIVE_SONAR",
-                                            bearing=brg_noise,
-                                            strength=strength,
-                                            classifiedAs="ENEMY_ACTIVE_SONAR",
-                                            confidence=0.9,
-                                            bearingKnown=True,
-                                            rangeKnown=False
-                                        )
-                                        
-                                        # Store in enemy ship contacts for this tick
-                                        if not hasattr(self, "_enemy_ping_contacts"):
-                                            self._enemy_ping_contacts = []
-                                        self._enemy_ping_contacts.append({
-                                            "contact": enemy_ping_contact,
-                                            "timestamp": now_iso,
-                                            "timestamp_epoch": time.time(),
-                                            "source": tgt.id
-                                        })
-                                    
-                                    # Add counter-detection event
-                                    self._transient_events.append({"type": "counterDetected", "at": now_iso, "source": tgt.id})
-                                    insert_event(self.engine, self.run_id, "ai.tool.apply", json.dumps({"ship_id": _sid, **tc}))
+                        # Phase 2: decision via ShipController, application via ShipControls.
+                        try:
+                            actions = await self._ship_controller.step(_sid)
+                        except Exception as e:
+                            print(f"DEBUG: Ship {_sid} controller EXCEPTION: {e}")
+                            return
+                        try:
+                            tgt = self.world.get_ship(_sid)
+                        except Exception:
+                            return
+                        controls = ShipControls(tgt, self.world)
+                        # Apply only the first action — preserves prior "first tool only" behavior.
+                        for action in actions:
+                            print(f"DEBUG: Ship {_sid} applying action={action.name}")
+                            result = action.apply(controls)
+                            if result.ok:
+                                insert_event(
+                                    self.engine, self.run_id, "ai.tool.apply",
+                                    json.dumps({"ship_id": _sid, "tool": action.name}),
+                                )
+                                self._post_apply_ship_action(_sid, tgt, action, result)
                             break
-                        # Mirror recent runs into sim for Fleet UI
-                        self._ai_recent_runs = getattr(self._ai_orch, "_recent_runs", [])
+                        # Mirror recent runs into sim for Fleet UI (LLM-only state)
+                        try:
+                            self._ai_recent_runs = getattr(self._ai_orch, "_recent_runs", [])
+                        except Exception:
+                            pass
                     t = asyncio.create_task(_ship_job())
                     self._ai_pending.add(t)
                     t.add_done_callback(lambda _t: self._ai_pending.discard(_t))
@@ -722,65 +1030,64 @@ class Simulation:
                         ship.kin.speed = args.get("speed", ship.kin.speed)
                         ship.kin.depth = args.get("depth", ship.kin.depth)
 
-        ballast_boost = self._pump_fwd or self._pump_aft
-        cav, heading, speed, depth = integrate_kinematics(
-            own,
-            self.ordered["heading"],
-            self.ordered["speed"],
-            self.ordered["depth"],
-            dt,
-            ballast_boost=ballast_boost,
+        # Pure physics step (kinematics, weapons, projectiles, damage,
+        # engineering). All world-mutation primitives are encapsulated in
+        # `SimulationCore`; we stitch the result back to BUS / events here.
+        core = SimulationCore(self.world)
+        core_result = core.step_physics(
+            dt=dt,
+            ordered=self.ordered,
+            pump_assignments=self._pump_assignments,
+            enemy_static=CONFIG.enemy_static and not CONFIG.use_ai_orchestrator,
         )
-        # Cavitation impulse (helm)
-        if cav:
+        if core_result.cavitation:
             self._noise.add_impulse("helm", 82.0, 0.5)
-
-        # Step weapon timers/cooldowns (tubes and depth charge cooldowns) for all ships
-        for s in self.world.all_ships():
-            step_tubes(s, dt)
-
-        for ship in self.world.all_ships():
-            if ship.id == "ownship":
-                continue
-            # Allow enemy movement when orchestrator is enabled regardless of ENEMY_STATIC
-            if CONFIG.enemy_static and not CONFIG.use_ai_orchestrator:
-                continue
-            integrate_kinematics(ship, ship.kin.heading, ship.kin.speed, ship.kin.depth, dt)
-
-        if self.world.torpedoes:
-            for t in list(self.world.torpedoes):
-                def _on_event(name: str, payload: dict) -> None:
-                    insert_event(self.engine, self.run_id, name, json.dumps(payload))
-                step_torpedo(t, self.world, dt, on_event=_on_event)
-                if t["run_time"] > t["max_run_time"]:
-                    self.world.torpedoes.remove(t)
-
-        # Step depth charges
-        if getattr(self.world, "depth_charges", None):
-            for dc in list(self.world.depth_charges):
-                def _on_dc_event(name: str, payload: dict) -> None:
-                    insert_event(self.engine, self.run_id, name, json.dumps(payload))
-                    if name == "depth_charge.detonated":
-                        try:
-                            tx = float(payload.get("x", 0.0)); ty = float(payload.get("y", 0.0))
-                            dx = tx - own.kin.x; dy = ty - own.kin.y
-                            brg_true = (math.degrees(math.atan2(dx, dy)) % 360.0)
-                            if not hasattr(self, "_sonar_explosions"):
-                                self._sonar_explosions = []
-                            self._sonar_explosions.append({"bearing": float(brg_true), "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
-                            self._sonar_explosions = self._sonar_explosions[-12:]
-                        except Exception:
-                            pass
-                step_depth_charge(dc, self.world, dt, on_event=_on_dc_event)
-                if dc.get("exploded", False) or dc.get("depth", 0.0) > 1000.0:
-                    self.world.depth_charges.remove(dc)
-
-        pump_effect = 2.0 if (self._pump_fwd or self._pump_aft) else 0.0
-        step_damage(own, dt, pump_effect=pump_effect)
-        step_engineering(own, dt)
+        self._dispatch_core_events(core_result)
+        self._apply_system_failures(own, core_result.system_failures)
+        # Local aliases used by downstream telemetry / snapshot code below.
+        heading = own.kin.heading
+        speed = own.kin.speed
+        depth = own.kin.depth
+        cav = core_result.cavitation
 
         # Station maintenance/repair tasks lifecycle
         self._step_station_tasks(own, dt)
+
+        # ========== Scenario and Game Rules Step ==========
+        # Increment simulation time
+        self._sim_time_s += dt
+
+        # Step waypoint tracker (monitors ship positions, emits events)
+        if hasattr(self, "_waypoint_tracker"):
+            wp_events = self._waypoint_tracker.step(dt)
+            for ev in wp_events:
+                self._transient_events.append(ev)
+                insert_event(self.engine, self.run_id, "waypoint.reached", json.dumps(ev))
+
+        # Step trigger manager (evaluates conditions, executes actions)
+        if hasattr(self, "_trigger_manager"):
+            trigger_events = self._trigger_manager.step(dt, self._sim_time_s)
+            for ev in trigger_events:
+                self._handle_trigger_event(ev)
+
+        # Step intercept system (delivers intercepted communications)
+        if hasattr(self, "_intercept_system"):
+            intercepts = self._intercept_system.step(dt, self._sim_time_s)
+            for ic in intercepts:
+                self._captain_intercepts.append(ic.dict())
+                insert_event(self.engine, self.run_id, "intercept.received", json.dumps(ic.dict()))
+
+        # Step victory evaluator (checks success criteria)
+        if hasattr(self, "_victory_evaluator"):
+            outcome = self._victory_evaluator.step(self._sim_time_s)
+            if outcome and outcome.status != "ongoing":
+                self._mission_outcome = outcome
+                self._transient_events.append({
+                    "type": "mission_end",
+                    "outcome": outcome.status,
+                    "reason": outcome.reason
+                })
+                insert_event(self.engine, self.run_id, "mission.end", json.dumps(outcome.dict()))
 
         self.active_ping_state.tick(dt)
         
@@ -792,7 +1099,8 @@ class Simulation:
         # Acoustic noise budget and detectability
         noise_from_speed = min(100.0, (speed / max(1.0, own.hull.max_speed)) * 70.0)
         noise_cav = 30.0 if cav else 0.0
-        noise_pumps = 10.0 if (self._pump_fwd or self._pump_aft) else 0.0
+        # Each active pump adds noise
+        noise_pumps = 10.0 * len(self._pump_assignments)
         noise_masts = (10.0 if self._periscope_raised else 0.0) + (10.0 if self._radio_raised else 0.0)
         noise_budget = max(0.0, min(100.0, noise_from_speed + noise_cav + noise_pumps + noise_masts))
         
@@ -827,7 +1135,7 @@ class Simulation:
             self._emcon_high_timer = max(0.0, self._emcon_high_timer - dt)
         emcon_alert = self._emcon_high_timer >= 10.0
         detectability = noise_budget / 100.0
-        contacts = passive_contacts(own, [s for s in self.world.all_ships() if s.id != own.id])
+        contacts = passive_contacts(own, [s for s in self.world.all_ships() if s.id != own.id], self._contact_registry)
         # Build simple alert map for RED ships for orchestrator visibility
         try:
             if hasattr(self, "_ai_orch") and getattr(self, "_ai_orch", None) is not None:
@@ -925,8 +1233,12 @@ class Simulation:
                                     
                                     # Improve detection probability for previously spotted targets
                                     if detection_count > 0:
-                                        # Increase probability by 20% per previous detection (capped at 50% bonus)
-                                        memory_bonus = min(0.5, detection_count * 0.2)
+                                        # Calculate time since last seen for decay
+                                        current_time_check = time.time()
+                                        time_since = current_time_check - last_seen
+                                        # Memory bonus capped at 25%, decays over 60 seconds
+                                        time_factor = max(0.0, 1.0 - time_since / 60.0)
+                                        memory_bonus = min(0.25, detection_count * 0.10) * time_factor
                                         detection_prob = min(0.95, detection_prob + memory_bonus)
                                     
                                     # Cap at 95% maximum detection probability (never perfect, but very high for known targets)
@@ -1027,6 +1339,17 @@ class Simulation:
                 "engineering_dB": noise_levels.get("engineering", 0.0),
                 "total_dB": noise_levels.get("total", 0.0),
             },
+            # Audio events - for client-side sound playback
+            "lastPingAt": getattr(self, "_last_ping_at", None),
+            "enemyPings": self._get_recent_enemy_pings(own),
+            "explosions": list(getattr(self, "_sonar_explosions", [])),
+            # System status for alarms
+            "systems": own.systems.dict() if hasattr(own.systems, 'dict') else {},
+            "maintenance": {"levels": own.maintenance.levels},
+            # Mission state for startup sequence tracking
+            "missionActive": self._mission_active,
+            "missionVersion": self._mission_version,
+            "missionId": self._mission_id,
         }
 
         # Broadcast class/capabilities in the general telemetry for downstream consumers/AI
@@ -1123,19 +1446,20 @@ class Simulation:
                                 
                                 # Improve detection probability for previously spotted targets
                                 if detection_count > 0:
-                                    # Increase probability by 20% per previous detection (capped at 50% bonus)
-                                    memory_bonus = min(0.5, detection_count * 0.2)
+                                    # Memory bonus capped at 25%, decays over 60 seconds
+                                    time_factor = max(0.0, 1.0 - time_since_last_seen / 60.0)
+                                    memory_bonus = min(0.25, detection_count * 0.10) * time_factor
                                     detection_prob = min(0.95, detection_prob + memory_bonus)
-                                
+
                                 # Cap at 95% maximum detection probability (never perfect, but very high for known targets)
                                 detection_prob = min(0.95, detection_prob)
-                                
+
                                 # Roll for detection
                                 detection_roll = random.random()
-                            
+
                             # Check for detection
                             detected_this_cycle = detection_roll < detection_prob
-                            
+
                             # Update contact history if we detected it this cycle
                             if detected_this_cycle:
                                 self._visual_contacts["ownship"][s.id] = {
@@ -1156,12 +1480,24 @@ class Simulation:
                             # Calculate time since last seen for UI display
                             time_since_last_seen = current_time - (last_seen if not detected_this_cycle else current_time)
                             
+                            # Get/create anonymous designation for this contact
+                            designation = self._contact_registry.get_or_create_designation(s.id, current_time)
+                            is_identified = self._contact_registry.is_identified(designation)
+
+                            # Show ship type only if identified, otherwise show generic descriptor
+                            if is_identified:
+                                ship_type = self._contact_registry.get_identified_class(designation) or "Unknown"
+                            else:
+                                ship_type = "Unidentified Vessel"
+
                             self._periscope_contacts.append({
-                                "id": s.id, 
-                                "bearing": brg_true, 
-                                "range_m": rng, 
-                                "speed_kn": s.kin.speed, 
-                                "type": (s.side + " vessel"),
+                                "id": designation,  # Anonymous designation
+                                "actual_id": s.id,  # Hidden from UI, used for identification
+                                "bearing": brg_true,
+                                "range_m": rng,
+                                "speed_kn": s.kin.speed,
+                                "type": ship_type,
+                                "is_identified": is_identified,
                                 "confidence": current_confidence,
                                 "last_seen": last_seen if not detected_this_cycle else current_time,
                                 "detection_count": detection_count + (1 if detected_this_cycle else 0),
@@ -1173,7 +1509,32 @@ class Simulation:
             # Reset timer after detection cycle
             if self._periscope_search_timer >= search_interval:
                 self._periscope_search_timer = 0.0
-        tel_captain = {**base, "periscopeRaised": self._periscope_raised, "radioRaised": self._radio_raised, "mission": {"title": self.mission_brief["title"], "objective": self.mission_brief["objective"], "roe": self.mission_brief["roe"]}, "comms": getattr(self, "_captain_comms", []), "stationStatus": station_statuses, "periscopeContacts": self._periscope_contacts}
+        # Build waypoint progress for captain display
+        waypoint_progress = {}
+        if hasattr(self, "_waypoint_tracker"):
+            waypoint_progress = self._waypoint_tracker.get_all_progress()
+        # Build mission status
+        mission_status = {"status": "ongoing"}
+        if hasattr(self, "_mission_outcome"):
+            mission_status = self._mission_outcome.dict()
+        tel_captain = {
+            **base,
+            "periscopeRaised": self._periscope_raised,
+            "radioRaised": self._radio_raised,
+            "mission": {
+                "title": self.mission_brief["title"],
+                "objective": self.mission_brief["objective"],
+                "roe": self.mission_brief["roe"]
+            },
+            "comms": getattr(self, "_captain_comms", []),
+            "stationStatus": station_statuses,
+            "periscopeContacts": self._periscope_contacts,
+            # New scenario system fields
+            "intercepts": getattr(self, "_captain_intercepts", []),
+            "missionStatus": mission_status,
+            "waypointProgress": waypoint_progress,
+            "simTime": getattr(self, "_sim_time_s", 0.0),
+        }
         tel_helm = {**base, "cavitationSpeedWarn": speed > 25.0, "thermocline": own.acoustics.thermocline_on, "tasks": [t.__dict__ for t in self._active_tasks['helm']]}
         # Prepare recent active ping responses list (bearing, range_est, strength, time)
         # For now, only generate on demand when 'sonar.ping' happens; UI will render as DEMON dots
@@ -1186,17 +1547,61 @@ class Simulation:
             self._sonar_explosions = []
         # Create explosion contacts from recent explosions
         explosion_contacts_list = explosion_contacts(own, getattr(self, "_sonar_explosions", []))
+        # Create countermeasure contacts (noisemakers and decoys)
+        cm_contacts = countermeasure_contacts(own, self.world.countermeasures)
         # Collect all AI ping responses
         # Include enemy ping contacts in the contacts list
         enemy_ping_contacts = []
         if hasattr(self, "_enemy_ping_contacts"):
             enemy_ping_contacts = [epc["contact"] for epc in self._enemy_ping_contacts]
-        
+
         # Note: all_ai_ping_responses removed from pingResponses - enemy pings should appear as contacts, not ping responses
-        all_contacts = contacts + proj_contacts + explosion_contacts_list + enemy_ping_contacts
+        all_contacts = contacts + proj_contacts + explosion_contacts_list + cm_contacts + enemy_ping_contacts
         tel_sonar = {**base, "contacts": [c.dict() for c in all_contacts], "pingCooldown": max(0.0, self.active_ping_state.timer), "pingResponses": list(self._last_ping_responses), "lastPingAt": getattr(self, "_last_ping_at", None), "explosions": list(self._sonar_explosions), "tasks": [t.__dict__ for t in self._active_tasks['sonar']]}
-        tel_weapons = {**base, "tubes": [t.dict() for t in own.weapons.tubes], "consentRequired": CONFIG.require_captain_consent, "captainConsent": self._captain_consent, "tasks": [t.__dict__ for t in self._active_tasks['weapons']]}
-        tel_engineering = {**base, "reactor": own.reactor.dict(), "pumps": {"fwd": self._pump_fwd, "aft": self._pump_aft}, "damage": own.damage.dict(), "power": own.power.dict(), "systems": own.systems.dict(), "maintenance": own.maintenance.levels, "tasks": [t.__dict__ for t in self._active_tasks['engineering']]}
+        tel_weapons = {
+            **base,
+            "tubes": [t.dict() for t in own.weapons.tubes],
+            "consentRequired": CONFIG.require_captain_consent,
+            "captainConsent": self._captain_consent,
+            "tasks": [t.__dict__ for t in self._active_tasks['weapons']],
+            "countermeasures": {
+                "noisemakers": getattr(own.weapons, "noisemakers_stored", 0),
+                "decoys": getattr(own.weapons, "decoys_stored", 0),
+                "deployed": [
+                    {"id": cm["id"], "type": cm["type"], "age_s": cm.get("age_s", 0.0)}
+                    for cm in self.world.countermeasures if cm.get("active", False)
+                ]
+            }
+        }
+        # Build pump status with compartment assignments
+        pump_status = {
+            "assignments": self._pump_assignments,  # {pump_num: compartment_idx}
+            "pump1": self._pump_assignments.get(1),  # None or compartment index
+            "pump2": self._pump_assignments.get(2),  # None or compartment index
+        }
+        # Build compartment data for telemetry
+        compartment_data = [
+            {
+                "index": i,
+                "name": ["FORE", "FORWARD", "CONTROL", "REACTOR", "ENGINE", "STERN"][i],
+                "flooding_level": c.flooding_level,
+                "hull_integrity": c.hull_integrity,
+                "breach_rate": c.breach_rate,
+                "pump_active": c.pump_active,
+            }
+            for i, c in enumerate(own.damage.compartments)
+        ]
+        tel_engineering = {
+            **base,
+            "reactor": own.reactor.dict(),
+            "pumps": pump_status,
+            "compartments": compartment_data,
+            "damage": own.damage.dict(),
+            "power": own.power.dict(),
+            "systems": own.systems.dict(),
+            "maintenance": own.maintenance.levels,
+            "tasks": [t.__dict__ for t in self._active_tasks['engineering']]
+        }
 
         def bearings_to(sx: float, sy: float) -> Dict[str, float]:
             # Compass bearing: 0=N, 90=E, 180=S, 270=W
@@ -1213,6 +1618,7 @@ class Simulation:
                 "x": own.kin.x, "y": own.kin.y, "depth": own.kin.depth,
                 "heading": own.kin.heading, "speed": own.kin.speed,
             },
+            "missionId": getattr(CONFIG, "mission_id", "patrol") or "patrol",
             "maintenance": {"spawnsEnabled": (not self._suppress_maintenance_spawns)},
             "debugToggles": {
                 "playerVisual100": self._debug_player_visual_100,
@@ -1289,6 +1695,9 @@ class Simulation:
                         del self._enemy_ship_contacts[ship_id]
                         del self._enemy_ship_contacts_timestamps[ship_id]
 
+        # DEBUG: Log telemetry broadcast
+        if self._debug_tick_count % 100 == 1:
+            print(f"DEBUG: Broadcasting telemetry to all stations")
         await BUS.publish("tick:all", {"topic": "telemetry", "data": tel_all})
         await BUS.publish("tick:captain", {"topic": "telemetry", "data": tel_captain})
         # Store for tests/inspection
@@ -1319,6 +1728,14 @@ class Simulation:
         }
         await BUS.publish("tick:fleet", {"topic": "telemetry", "data": fleet_payload})
 
+        # Action log telemetry - only sends action events
+        action_events = [e for e in self._transient_events if e.get("type") == "action.log"]
+        logs_payload = {
+            **base,
+            "actions": action_events,
+        }
+        await BUS.publish("tick:logs", {"topic": "telemetry", "data": logs_payload})
+
         # Clear transient events after publishing
         self._transient_events.clear()
         
@@ -1336,6 +1753,143 @@ class Simulation:
             insert_snapshot(self.engine, self.run_id, heading, speed, depth)
         # Handle timed comms after core tick; uses sim time
         self._handle_captain_comms(dt)
+
+    def _dispatch_core_events(self, core_result) -> None:
+        """Wire physics-core events to BUS, transient_events, and event store.
+
+        The core itself does no I/O. Each tick it returns a list of events
+        (torpedo detonations, depth-charge detonations, ship destructions);
+        this method attaches the standard simulation reactions so the core
+        stays free of asyncio/BUS.
+        """
+        for ev in core_result.events:
+            if ev.kind in ("torpedo.detonated", "depth_charge.detonated"):
+                insert_event(self.engine, self.run_id, ev.kind, json.dumps(ev.payload))
+                self._transient_events.append({
+                    "type": ev.kind,
+                    "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    **ev.payload,
+                })
+            elif ev.kind == "ship.destroyed":
+                ship_id = ev.payload.get("ship_id")
+                if ship_id and ship_id not in self._destroyed_ships:
+                    self._destroyed_ships.add(ship_id)
+                    print(f"SHIP DESTROYED: {ship_id}")
+                    self._transient_events.append({
+                        "type": "ship.destroyed",
+                        "target": ship_id,
+                        "x": ev.payload.get("x", 0.0),
+                        "y": ev.payload.get("y", 0.0),
+                        "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    })
+                    insert_event(self.engine, self.run_id, "ship.destroyed", json.dumps({"ship_id": ship_id}))
+
+        if core_result.sonar_explosions:
+            if not hasattr(self, "_sonar_explosions"):
+                self._sonar_explosions = []
+            for sx in core_result.sonar_explosions:
+                self._sonar_explosions.append({
+                    **sx,
+                    "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                })
+            self._sonar_explosions = self._sonar_explosions[-12:]
+
+    def _apply_system_failures(self, own, system_failures) -> None:
+        """Apply compartment-flooding consequences to ownship limits.
+
+        Mirrors the existing per-tick application: each affected limit is
+        scaled by its factor when the factor < 1.0. (This compounds tick
+        over tick; preserved as-is from prior behavior.)
+        """
+        if not system_failures:
+            return
+        loading = system_failures.get("torpedo_loading_factor", 1.0)
+        if loading < 1.0:
+            own.weapons.time_penalty_multiplier = max(
+                own.weapons.time_penalty_multiplier,
+                1.0 / max(0.1, loading),
+            )
+        reactor_factor = system_failures.get("reactor_factor", 1.0)
+        if reactor_factor < 1.0:
+            own.reactor.output_mw = min(own.reactor.output_mw, own.reactor.max_mw * reactor_factor)
+        propulsion_factor = system_failures.get("propulsion_factor", 1.0)
+        if propulsion_factor < 1.0:
+            own.hull.max_speed = own.hull.max_speed * propulsion_factor
+        rudder_factor = system_failures.get("rudder_factor", 1.0)
+        if rudder_factor < 1.0:
+            own.hull.turn_rate_max = own.hull.turn_rate_max * rudder_factor
+
+    def _post_apply_ship_action(self, ship_id, ship, action, result) -> None:
+        """Side effects keyed off the action type, after a successful apply.
+
+        - `SetNavAction`: record last orders so the orchestrator can preserve
+          inter-tick continuity in its prompts.
+        - `ActivePingAction`: trigger simulation-wide reactions (player
+          counter-detection contact + transient UI event).
+        Other action types currently have no post-apply needs.
+        """
+        if isinstance(action, SetNavAction):
+            try:
+                if getattr(self, "_ai_orch", None) is not None:
+                    if not hasattr(self._ai_orch, "_orders_last_by_ship"):
+                        self._ai_orch._orders_last_by_ship = {}
+                    self._ai_orch._orders_last_by_ship[ship_id] = {
+                        "heading": float(ship.kin.heading),
+                        "speed": float(ship.kin.speed),
+                        "depth": float(ship.kin.depth),
+                    }
+            except Exception:
+                pass
+        elif isinstance(action, ActivePingAction):
+            self._handle_enemy_ping_side_effects(ship, result.data or [])
+
+    def _handle_enemy_ping_side_effects(self, src_ship, ping_responses) -> None:
+        """Apply simulation-level reactions to an enemy active sonar ping.
+
+        `ShipControls.active_ping` handles the source ship's cooldown and
+        returns the responses; this method handles everything that's
+        simulation-wide: storing responses for AI continuity, creating a
+        counter-detection contact for the player, and emitting the transient
+        `counterDetected` event.
+        """
+        now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        # Store responses for the source ship (used by AI continuity)
+        ping_records = [
+            {"id": rid, "bearing": brg, "range_est": rng, "strength": st, "at": now_iso, "source": src_ship.id}
+            for (rid, rng, brg, st) in ping_responses
+        ]
+        if not hasattr(self, "_ai_ping_responses"):
+            self._ai_ping_responses = {}
+        self._ai_ping_responses[src_ship.id] = ping_records
+
+        # Counter-detection contact: player hears the enemy's ping
+        own = self.world.get_ship("ownship")
+        if own and own.id != src_ship.id:
+            dx = src_ship.kin.x - own.kin.x
+            dy = src_ship.kin.y - own.kin.y
+            rng = math.hypot(dx, dy)
+            brg = normalize_angle_deg(math.degrees(math.atan2(dx, dy)))
+            brg_noise = normalize_angle_deg(brg + random.gauss(0, 2.0))
+            strength = max(0.0, min(1.0, 1.0 / (1.0 + (rng / 3000.0))))
+            enemy_ping_contact = TelemetryContact(
+                id="ENEMY_ACTIVE_SONAR",
+                bearing=brg_noise,
+                strength=strength,
+                classifiedAs="ENEMY_ACTIVE_SONAR",
+                confidence=0.9,
+                bearingKnown=True,
+                rangeKnown=False,
+            )
+            if not hasattr(self, "_enemy_ping_contacts"):
+                self._enemy_ping_contacts = []
+            self._enemy_ping_contacts.append({
+                "contact": enemy_ping_contact,
+                "timestamp": now_iso,
+                "timestamp_epoch": time.time(),
+                "source": src_ship.id,
+            })
+
+        self._transient_events.append({"type": "counterDetected", "at": now_iso, "source": src_ship.id})
 
     def _handle_captain_comms(self, dt: float) -> None:
         own = self.world.get_ship("ownship")
@@ -1359,377 +1913,10 @@ class Simulation:
                 self._delivered_comms_idx = next_idx
 
     async def handle_command(self, topic: str, data: Dict) -> Optional[str]:
+        # Guard: allow only debug commands when no mission is active or world not ready
+        if not self._mission_active and not topic.startswith("debug."):
+            return "No active mission"
         own = self.world.get_ship("ownship")
-        if topic == "helm.order":
-            self.ordered["heading"] = float(data.get("heading", self.ordered["heading"])) % 360
-            self.ordered["speed"] = float(data.get("speed", self.ordered["speed"]))
-            self.ordered["depth"] = max(0.0, float(data.get("depth", self.ordered["depth"])))
-            return None
-        if topic == "sonar.ping":
-            if self.active_ping_state.start():
-                res = active_ping(own, [s for s in self.world.all_ships() if s.id != own.id])
-                now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-                # Store simplified responses for UI
-                self._last_ping_at = now_iso
-                self._last_ping_responses = [
-                    {"id": rid, "bearing": brg, "range_est": rng, "strength": st, "at": now_iso}
-                    for (rid, rng, brg, st) in res
-                ]
-                
-                # Create counter-detection contacts for enemy ships
-                for ship in self.world.all_ships():
-                    if ship.side == "RED":  # Enemy ships
-                        dx = own.kin.x - ship.kin.x
-                        dy = own.kin.y - ship.kin.y
-                        dist_m = math.hypot(dx, dy)
-                        # Enemy ships can detect player's ping within active sonar range
-                        if dist_m <= 15000.0:  # 15km active sonar range
-                            # Calculate bearing from enemy ship to player
-                            brg = normalize_angle_deg(math.degrees(math.atan2(dx, dy)))
-                            # Add some noise to the bearing
-                            brg_noise = normalize_angle_deg(brg + random.gauss(0, 2.0))
-                            # Calculate signal strength based on distance
-                            strength = max(0.0, min(1.0, 1.0 / (1.0 + (dist_m / 10000.0))))
-                            
-                            # Create a contact for this enemy ship to detect
-                            enemy_contact = TelemetryContact(
-                                id="ENEMY_ACTIVE_SONAR",
-                                bearing=brg_noise,
-                                strength=strength,
-                                classifiedAs="ENEMY_ACTIVE_SONAR",
-                                confidence=0.8,  # High confidence for active sonar detection
-                                bearingKnown=True,
-                                rangeKnown=False  # No range for passive detection
-                            )
-                            
-                            # Store the contact for this enemy ship with timestamp
-                            if not hasattr(self, "_enemy_ship_contacts"):
-                                self._enemy_ship_contacts = {}
-                            if not hasattr(self, "_enemy_ship_contacts_timestamps"):
-                                self._enemy_ship_contacts_timestamps = {}
-                            if ship.id not in self._enemy_ship_contacts:
-                                self._enemy_ship_contacts[ship.id] = []
-                                self._enemy_ship_contacts_timestamps[ship.id] = []
-                            
-                            self._enemy_ship_contacts[ship.id].append(enemy_contact)
-                            self._enemy_ship_contacts_timestamps[ship.id].append(time.time())
-                            
-                            # Add to AI orchestrator's contact history for debug display
-                            if hasattr(self, "_ai_orch") and self._ai_orch is not None:
-                                if not hasattr(self._ai_orch, "_fleet_contact_history"):
-                                    self._ai_orch._fleet_contact_history = []
-                                
-                                history_entry = {
-                                    "time": now_iso,
-                                    "reportedBy": ship.id,
-                                    "reporter_pos": [ship.kin.x, ship.kin.y],
-                                    "type": "active_sonar_detection",
-                                    "id": "ownship",
-                                    "bearing": brg_noise,
-                                    "range_est": None,  # No range for passive detection
-                                    "confidence": 0.8,
-                                    "classifiedAs": "ENEMY_ACTIVE_SONAR"
-                                }
-                                self._ai_orch._fleet_contact_history.append(history_entry)
-                                # Keep last 100 entries
-                                self._ai_orch._fleet_contact_history = self._ai_orch._fleet_contact_history[-100:]
-                
-                # Active ping raises EMCON risk; emit counter-detected event for UI
-                self._transient_events.append({"type": "counterDetected", "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
-                return None
-            return "Ping on cooldown"
-        if topic == "weapons.tube.load":
-            ok = try_load_tube(own, int(data.get("tube", 1)), str(data.get("weapon", "Mk48")))
-            return None if ok else "Cannot load"
-        if topic == "weapons.tube.flood":
-            ok = try_flood_tube(own, int(data.get("tube", 1)))
-            return None if ok else "Cannot flood"
-        if topic == "weapons.tube.doors":
-            ok = try_set_doors(own, int(data.get("tube", 1)), bool(data.get("open", True)))
-            return None if ok else "Cannot set doors"
-        if topic == "weapons.fire":
-            if CONFIG.require_captain_consent and not self._captain_consent:
-                return "Captain consent required"
-            torp = try_fire(
-                own,
-                int(data.get("tube", 1)),
-                float(data.get("bearing", own.kin.heading)),
-                float(data.get("run_depth", own.kin.depth)),
-                float(data.get("enable_range", own.weapons.tubes[0].weapon.enable_range_m if own.weapons.tubes and own.weapons.tubes[0].weapon else 800.0)),
-                str(data.get("doctrine", "passive_then_active")),
-            )
-            if torp is None:
-                return "Cannot fire"
-            self.world.torpedoes.append(torp)
-            insert_event(self.engine, self.run_id, "weapons.fire", json.dumps(data))
-            return None
-        if topic == "weapons.test_fire":
-            # Test torpedo launch - bypasses all interlocks and tube preparation
-            # Create a torpedo directly without going through tube state machine
-            torp = {
-                "id": f"torpedo_test_{int(time.time() * 1000)}",  # Unique ID for sonar tracking
-                "x": own.kin.x,
-                "y": own.kin.y,
-                "depth": own.kin.depth,
-                "heading": float(data.get("bearing", own.kin.heading)) % 360.0,
-                "speed": 45.0,  # Default Mk48 speed
-                "armed": False,
-                "enable_range_m": float(data.get("enable_range", 800.0)),
-                "seeker_range_m": 4000.0,
-                "run_time": 0.0,
-                "max_run_time": 600.0,
-                "target_id": None,
-                "name": "Mk48-TEST",
-                "seeker_cone": 35.0,
-                "side": own.side,
-                "spoofed_timer": 0.0,
-                "run_depth": float(data.get("run_depth", own.kin.depth)),
-                "doctrine": str(data.get("doctrine", "passive_then_active")),
-                "pn_nav_const": 3.0,
-                "los_prev": None,
-            }
-            self.world.torpedoes.append(torp)
-            insert_event(self.engine, self.run_id, "weapons.test_fire", json.dumps(data))
-            return None
-        if topic == "weapons.depth_charges.drop":
-            # Debug/test: drop a spread of depth charges from a specified ship (e.g., a RED destroyer)
-            ship_id = str(data.get("ship_id", "red-dd-01"))
-            try:
-                tgt = self.world.get_ship(ship_id)
-            except Exception:
-                return "Unknown ship"
-            if not getattr(getattr(tgt, "capabilities", None), "has_depth_charges", False):
-                return "Ship cannot drop depth charges"
-            spread_m = float(data.get("spread_meters", 20.0))
-            min_d = float(data.get("minDepth", 30.0))
-            max_d = float(data.get("maxDepth", 50.0))
-            n = int(data.get("spreadSize", 3))
-            res = try_drop_depth_charges(tgt, spread_m, min_d, max_d, n, on_event=lambda n,p: insert_event(self.engine, self.run_id, n, json.dumps(p)))
-            if not res.get("ok"):
-                return res.get("error", "Drop failed")
-            for dc in res.get("data", []) or []:
-                self.world.depth_charges.append(dc)
-            return None
-        if topic == "engineering.reactor.set":
-            mw = max(0.0, min(own.reactor.max_mw, float(data.get("mw", own.reactor.output_mw))))
-            own.reactor.output_mw = mw
-            return None
-        if topic == "engineering.power.allocate":
-            # Expect fractions for helm/weapons/sonar/engineering; must NOT exceed total budget (<= 1.0)
-            p = own.power
-            helm = max(0.0, float(data.get("helm", p.helm)))
-            weapons = max(0.0, float(data.get("weapons", p.weapons)))
-            sonar = max(0.0, float(data.get("sonar", p.sonar)))
-            engineering = max(0.0, float(data.get("engineering", p.engineering)))
-            total = helm + weapons + sonar + engineering
-            if total > 1.000001:
-                return "Allocation exceeds budget"
-            p.helm = helm
-            p.weapons = weapons
-            p.sonar = sonar
-            p.engineering = engineering
-            return None
-        if topic == "station.task.start":
-            station = str(data.get("station", "")).lower()
-            if station not in self._active_tasks:
-                return "Unknown station"
-            tasks = self._active_tasks[station]
-            if not tasks:
-                # Spawn an immediate task if none exists yet, then start it
-                now_s = time.perf_counter()
-                self._spawn_task_for(station, now_s)
-                tasks = self._active_tasks[station]
-            # If a specific task_id was provided, start only that one; stop others
-            task_id = str(data.get("task_id", "")).strip()
-            if task_id:
-                found = False
-                for t in tasks:
-                    if t.id == task_id:
-                        t.started = True
-                        found = True
-                    else:
-                        t.started = False
-                if not found:
-                    return "Unknown task"
-            else:
-                # Choose the most urgent task: worst stage first, then shortest remaining time
-                stage_rank = {"task": 0, "failing": 1, "failed": 2}
-                tasks.sort(key=lambda t: (-stage_rank.get(t.stage, 0), t.time_remaining_s))
-                for i, t in enumerate(tasks):
-                    t.started = (i == 0)
-            # Return None to indicate accepted
-            return None
-        if topic == "engineering.pump.toggle":
-            name = str(data.get("pump", "")).lower()
-            state = bool(data.get("enabled", True))
-            if name == "fwd":
-                self._pump_fwd = state
-            elif name == "aft":
-                self._pump_aft = state
-            return None
-        if topic == "engineering.reactor.scram":
-            own.reactor.scrammed = bool(data.get("scrammed", True))
-            return None
-        if topic == "captain.consent":
-            self.set_captain_consent(bool(data.get("consent", False)))
-            return None
-        if topic == "captain.periscope.raise":
-            self._periscope_raised = bool(data.get("raised", True))
-            return None
-        if topic == "captain.radio.raise":
-            self._radio_raised = bool(data.get("raised", True))
-            return None
-        if topic == "debug.restart":
-            # Reset to original game state
-            # Reload .env on mission restart so config changes take effect without server restart
-            try:
-                reload_from_env()
-            except Exception:
-                pass
-            # Force default world so tests expecting fixed coordinates pass
-            self._force_default_reset = True
-            # Recreate orchestrator if needed to pick up engine changes
-            if getattr(CONFIG, "use_ai_orchestrator", False):
-                self._ai_orch = AgentsOrchestrator(lambda: self.world, self.engine, self.run_id)
-                try:
-                    self._ai_orch.set_fleet_engine(getattr(CONFIG, "ai_fleet_engine", "stub"), getattr(CONFIG, "ai_fleet_model", "stub"))
-                    self._ai_orch.set_ship_engine(getattr(CONFIG, "ai_ship_engine", "stub"), getattr(CONFIG, "ai_ship_model", "stub"))
-                    # Provide mission brief for Fleet Commander inputs after restart as well
-                    try:
-                        setattr(self._ai_orch, "_mission_brief", self.mission_brief)
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
-                # Fleet/Ship engine health check for Fleet UI
-                try:
-                    hc = await self._ai_orch.health_check()
-                    self._ai_recent_runs = (getattr(self, "_ai_recent_runs", []) or []) + [{
-                        "agent": "system",
-                        "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                        "tool_calls": [{"tool": "health_check", "arguments": hc}],
-                    }]
-                except Exception:
-                    pass
-            self._init_default_world()
-            return None
-        if topic == "ai.tool":
-            # Apply an AI tool call to a specified ship (default RED-01)
-            ship_id = str(data.get("ship_id", "red-01"))
-            try:
-                tgt = self.world.get_ship(ship_id)
-            except Exception:
-                return "Unknown ship"
-            tool = str(data.get("tool", "")).strip()
-            args = data.get("arguments", {}) or {}
-            # Respect platform capabilities
-            caps = getattr(tgt, "capabilities", None)
-            if tool == "set_nav":
-                if caps and not caps.can_set_nav:
-                    return "Tool not supported"
-                tgt.kin.heading = float(args.get("heading") or tgt.kin.heading) % 360.0
-                tgt.kin.speed = max(0.0, float(args.get("speed") or tgt.kin.speed))
-                # Clamp against platform max depth so surface vessels cannot submerge
-                tgt.kin.depth = max(0.0, min(tgt.hull.max_depth, float(args.get("depth") or tgt.kin.depth)))
-                return None
-            if tool == "fire_torpedo":
-                if not caps or not caps.has_torpedoes:
-                    return "Tool not supported"
-                # For now, only ownship can launch torpedoes in the sim; ignore others
-                return "Not implemented for non-ownship"
-            if tool == "deploy_countermeasure":
-                if not caps or not caps.countermeasures:
-                    return "Tool not supported"
-                # Placeholder: accept command without effect yet
-                return None
-            if tool == "drop_depth_charges":
-                if not caps or not getattr(caps, "has_depth_charges", False):
-                    return "Tool not supported"
-                # Handle potential list values and None values
-                spread_val = args.get("spread_meters")
-                if isinstance(spread_val, list) and len(spread_val) > 0:
-                    spread_val = spread_val[0]
-                spread_m = float(spread_val or 20.0)
-                
-                min_d_val = args.get("minDepth")
-                if isinstance(min_d_val, list) and len(min_d_val) > 0:
-                    min_d_val = min_d_val[0]
-                min_d = float(min_d_val or 30.0)
-                
-                max_d_val = args.get("maxDepth")
-                if isinstance(max_d_val, list) and len(max_d_val) > 0:
-                    max_d_val = max_d_val[0]
-                max_d = float(max_d_val or 50.0)
-                
-                n_val = args.get("spreadSize")
-                if isinstance(n_val, list) and len(n_val) > 0:
-                    n_val = n_val[0]
-                n = int(float(n_val or 3))
-                res = try_drop_depth_charges(tgt, spread_m, min_d, max_d, n)
-                if not res.get("ok"):
-                    return res.get("error", "Drop failed")
-                for dc in res.get("data", []) or []:
-                    self.world.depth_charges.append(dc)
-                return None
-            return "Unknown tool"
-        if topic == "debug.maintenance.spawns":
-            # Toggle spawning of new maintenance tasks; existing tasks remain
-            enabled = bool(data.get("enabled", True))
-            self._suppress_maintenance_spawns = (not enabled)
-            return None
-        if topic == "debug.visual.player_100":
-            # Toggle 100% visual detection for player periscope
-            self._debug_player_visual_100 = bool(data.get("enabled", False))
-            return f"Player visual detection 100%: {'ON' if self._debug_player_visual_100 else 'OFF'}"
-        if topic == "debug.visual.enemy_100":
-            # Toggle 100% visual detection for enemy ships
-            self._debug_enemy_visual_100 = bool(data.get("enabled", False))
-            return f"Enemy visual detection 100%: {'ON' if self._debug_enemy_visual_100 else 'OFF'}"
-        if topic == "debug.mission.surface_vessel":
-            # Reset to base world, then configure a single slow surface contact (convoy ship)
-            self._init_default_world()
-            own = self.world.get_ship("ownship")
-            # Reconfigure the default RED contact as a surface vessel at ~6km, slow speed
-            for ship in self.world.all_ships():
-                if ship.id != own.id and ship.side == "RED":
-                    ship.kin.x = 6000.0
-                    ship.kin.y = 0.0
-                    ship.kin.depth = 3.0  # surface contact
-                    ship.kin.heading = 90.0
-                    ship.kin.speed = 5.0
-                    # Assign convoy class and capabilities; lower max speed per catalog
-                    ship.ship_class = "Convoy"
-                    if 'Convoy' in SHIP_CATALOG:
-                        ship.capabilities = SHIP_CATALOG["Convoy"].capabilities
-                        ship.hull.max_speed = min(ship.hull.max_speed, SHIP_CATALOG["Convoy"].default_hull.max_speed)
-                    else:
-                        ship.hull.max_speed = min(ship.hull.max_speed, 20.0)
-                    break
-            # Update mission brief to reflect this scenario
-            self.mission_brief = {
-                "title": "Surface Vessel Intercept (Training)",
-                "objective": "Escort convoy ship red-01 safely across sector; training shot optional.",
-                "roe": [
-                    "Weapons release authorized for training shot.",
-                    "Minimize active sonar to preserve EMCON.",
-                ],
-                # Provide a simple target waypoint for the fleet commander
-                "target_wp": [100.0, 100.0],
-                "comms_schedule": [
-                    {"at_s": 90.0, "msg": "INFO: Surface contact maintaining 5 kn on easterly course."},
-                ],
-            }
-            return None
-        if topic == "debug.mission1":
-            # Configure a slow-moving surface contact for torpedo testing
-            # Keep ownship as-is; reposition/redesignate the RED ship
-            for ship in self.world.all_ships():
-                if ship.id != own.id and ship.side == "RED":
-                    ship.kin.x = 6000.0
-                    ship.kin.y = 0.0
-                    ship.kin.depth = 3.0  # surface contact
-                    ship.kin.heading = 90.0
-                    ship.kin.speed = 5.0
-                    break
-            return None
-        return None
+        if own is None and not topic.startswith("debug."):
+            return "Simulation not ready"
+        return await self._cmd_dispatcher.dispatch(topic, data)

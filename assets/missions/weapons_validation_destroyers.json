@@ -1,16 +1,27 @@
 {
   "id": "weapons_validation_destroyers",
-  "title": "Weapons Validation - Destroyers",
+  "title": "Gauntlet Run",
+  "subtitle": "ASW Weapons Validation Exercise",
+  "difficulty": "Medium",
+  "duration_estimate": "5-15 minutes",
+  "tags": ["training", "weapons-test", "survival", "chaos"],
+  "briefing": {
+    "situation": "Four RED destroyers are positioned in the exercise area conducting weapons validation tests. Two destroyers will be testing their torpedo systems, while two others will conduct depth charge pattern exercises. This is a live-fire exercise with real weapons.",
+    "mission": "Survive the weapons validation exercise. You are the designated target for evasion training. The destroyers will fire at predetermined coordinates - use your knowledge of their timing to evade.",
+    "execution": "Monitor radio communications for weapons clearance announcements. When you hear a unit is cleared to fire, that weapon is incoming. Use depth changes, speed adjustments, and course corrections to evade. The thermocline is disabled for this exercise - you cannot hide in thermal layers.",
+    "threats": "Multiple torpedoes and depth charge patterns will be deployed in rapid succession. Torpedo units will fire at coordinates near your starting position. Depth charge units will drop patterns at [500,0] and [-500,0]. Expect a chaotic environment with weapons everywhere.",
+    "notes": "This is an intense survival exercise. There is no thermocline protection. You will need quick reactions and good situational awareness. Listen to the comms for timing cues. This exercise tests your ability to survive in a saturated ASW environment."
+  },
   "red_mission_summary": "RED destroyers are conducting weapons validation exercises at designated test coordinates. Execute depth charge tests at specified locations and times.",
   "blue_mission_summary": "BLUE submarine is participating in weapons validation exercises. RED destroyers will test their ASW capabilities at predetermined coordinates.",
-  "objective": "Validate destroyer weapons systems at specific test coordinates with predetermined timing.",
+  "objective": "Survive the live-fire weapons validation exercise.",
   "side_objectives": { "RED": "validate_weapons_systems", "BLUE": "test_evasion_capabilities" },
   "blue_captain_summary": "Weapons validation exercise. RED destroyers will test torpedo and depth charge systems at predetermined coordinates. Practice evasion and counter-detection techniques.",
   "roe": [
     "Weapons release authorized for validation purposes at designated test coordinates."
   ],
   "target_wp": [0, 0],
-  "environment": { "timeOfDay": "day", "weather": "calm" },
+  "environment": { "timeOfDay": "day", "weather": "calm", "thermocline_on": false, "thermocline_depth_m": 50.0 },
   "ship_behaviors": {
     "red-dd-torp-01": "You are a destroyer conducting torpedo validation exercises. Fire torpedoes at test coordinates immediately.",
     "red-dd-torp-02": "You are a destroyer conducting torpedo validation exercises. Fire torpedoes at test coordinates immediately.",

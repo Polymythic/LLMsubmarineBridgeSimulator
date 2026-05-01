@@ -1,0 +1,29 @@
+/* station-common.css — Shared styles across all station pages */
+
+/* dB Meter */
+#dbWrap { width: 30px; height: 160px; border:1px solid #1B2440; background:#0B1020; position: relative; border-radius:4px; }
+#dbFill { position:absolute; bottom:0; left:0; right:0; background: linear-gradient(180deg, #8DEB8D 0%, #FACC15 60%, #EF4444 100%); }
+#dbPeak { position:absolute; left:0; right:0; height:3px; background:#FF6B6B; box-shadow:0 0 6px rgba(255,107,107,0.8); }
+
+/* Damage LEDs */
+.damage-led { width:12px; height:12px; border-radius:50%; display:inline-block; margin-left:8px; border:2px solid #333; }
+.damage-led.flashing { animation: flash 1s infinite; }
+.damage-led.hull-damage { background:#FF6B6B; }
+.damage-led.flooding { background:#4A90E2; }
+.damage-led.normal { background:#8BE28B; }
+@keyframes flash { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0.3; } }
+
+/* Mission state overlays */
+.mission-overlay { display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.85); z-index:9999; justify-content:center; align-items:center; }
+.mission-overlay.active { display:flex; }
+.mission-overlay-box { background:#1B2440; border:2px solid #89B4FA; border-radius:12px; padding:40px; text-align:center; max-width:500px; }
+.mission-overlay-box h2 { color:#89B4FA; margin:0 0 16px; }
+.mission-overlay-box h1 { color:#89B4FA; margin:0 0 16px; }
+.mission-overlay-box p { color:#D7E3FF; margin:0 0 24px; }
+.mission-overlay-box button { background:#2563EB; color:white; border:none; padding:12px 32px; font-size:1rem; border-radius:6px; cursor:pointer; }
+.mission-overlay-box button:hover { background:#1D4ED8; }
+.idle-banner { display:none; position:fixed; top:0; left:0; right:0; background:#1B3D2F; color:#4ADE80; text-align:center; padding:12px; z-index:9998; font-weight:600; }
+.idle-banner.active { display:block; }
+.idle-banner a { color:#89B4FA; }
+.victory-title { color:#4ADE80 !important; }
+.defeat-title { color:#F87171 !important; }

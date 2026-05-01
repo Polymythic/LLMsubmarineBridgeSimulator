@@ -5,15 +5,41 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Sub Bridge - Home</title>
   <style>
-    body { background:#0B1020; color:#D7E3FF; font-family: ui-sans-serif, system-ui, -apple-system; }
+    body { background:#0B1020; color:#D7E3FF; font-family: ui-sans-serif, system-ui, -apple-system; padding: 20px; }
     a { color:#89B4FA; text-decoration:none; }
     .card { background:#11172B; border:1px solid #1B2440; padding:16px; margin:12px; border-radius:8px; box-shadow:0 0 12px rgba(0,0,0,0.4); }
     .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px; }
-    h1 { font-family: ui-monospace, Menlo, monospace; }
+    h1 { font-family: ui-monospace, Menlo, monospace; color: #89B4FA; }
+    h2 { color: #6B7A99; font-size: 1rem; margin-top: 30px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .mission-card {
+      background: linear-gradient(135deg, #1E3A5F, #11172B);
+      border: 2px solid #2563EB;
+      padding: 24px;
+      margin: 20px 0;
+      border-radius: 12px;
+      text-align: center;
+    }
+    .mission-card a {
+      font-size: 1.4rem;
+      font-weight: 600;
+      color: #fff;
+    }
+    .mission-card p {
+      color: #6B7A99;
+      margin: 8px 0 0;
+      font-size: 0.9rem;
+    }
   </style>
 </head>
 <body>
   <h1>Submarine Bridge Simulator</h1>
+
+  <div class="mission-card">
+    <a href="/missions">Select Mission & Start</a>
+    <p>Choose a scenario, review the briefing, and begin your mission</p>
+  </div>
+
+  <h2>Station Links (Current Mission)</h2>
   <div class="grid">
     <div class="card"><a href="/captain" title="Captain: consent, periscope, radio mast, ROE overview">Captain</a></div>
     <div class="card"><a href="/helm" title="Helm: heading, speed, depth orders; cavitation and thermocline indicators">Helm</a></div>

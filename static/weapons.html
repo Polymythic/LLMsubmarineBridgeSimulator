@@ -11,8 +11,22 @@
     label { display:block; margin-top:8px; }
     input { width:100%; background:#0F162A; color:#D7E3FF; border:1px solid #1B2440; padding:8px; }
     button { margin-top:12px; padding:8px 12px; background:#26406E; border:none; color:#D7E3FF; border-radius:6px; }
-    .tubes { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:8px; }
-    .tube { padding:8px; border:1px solid #1B2440; border-radius:6px; background:#0F162A; }
+    .tubes { display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:10px; }
+    .tube { padding:10px; border:1px solid #1B2440; border-radius:6px; background:#0F162A; display:flex; flex-direction:column; gap:6px; }
+    .tube .hdr { display:flex; justify-content:space-between; align-items:baseline; }
+    .tube .tname { font-weight:bold; font-size:14px; }
+    .tube .tstate { font-size:11px; padding:2px 6px; border-radius:10px; background:#1B2440; }
+    .tube .tstate.Empty { background:#3A2A1A; color:#D9A56C; }
+    .tube .tstate.Loaded { background:#1A3A1A; color:#8DEB8D; }
+    .tube .tstate.Flooded { background:#1A2A4A; color:#89B4FA; }
+    .tube .tstate.DoorsOpen { background:#3A1A1A; color:#FF8888; }
+    .tube .tlabel { font-size:10px; color:#6E84C8; text-transform:uppercase; letter-spacing:1px; margin-top:2px; }
+    .tube input { padding:4px 6px; font-size:12px; }
+    .tube .row2 { display:grid; grid-template-columns:repeat(2, 1fr); gap:6px; }
+    .tube button { margin-top:0; padding:5px 8px; font-size:12px; }
+    .tube button:disabled { background:#1B2440; color:#3A4674; cursor:not-allowed; }
+    .tube .btnrow { display:flex; gap:4px; flex-wrap:wrap; }
+    .tube .timer { font-size:11px; color:#EAB308; min-height:14px; }
     .small { opacity:0.8; font-size:12px; }
     /* Shared styles loaded from station-common.css */
   </style>
@@ -58,27 +72,10 @@
       </div>
       
     </div>
-    <label title="Select a tube to operate">Tube <input id="tube" type="number" min="1" max="6" value="1"></label>
-    <div>
-      <button id="load" title="Load a torpedo into the selected tube (starts reload timer)">Load</button>
-      <button id="flood" title="Flood the selected tube (makes it ready to open)">Flood</button>
-      <button id="doors" title="Open outer doors on the selected tube (required to fire)">Open Doors</button>
-    </div>
-    <label title="Set bearing to fire along">Bearing <input id="bearing" type="number" min="0" max="359" value="270"></label>
-    <label title="Set commanded torpedo run depth">Run Depth <input id="rdepth" type="number" min="0" max="600" value="120"></label>
-    <label title="Seeker enable range (m)">Enable Range <input id="enable" type="number" min="100" max="8000" step="100" value="1500"></label>
-    <label title="Guidance doctrine">Doctrine
-      <select id="doctrine">
-        <option value="passive_then_active" selected>Passive→Active</option>
-      </select>
-    </label>
-    <button id="fire" title="Fire the selected tube (interlocks apply)">Fire</button>
-    
     <div style="margin-top: 20px; padding: 16px; border: 2px solid #FF4444; border-radius: 8px; background: rgba(255, 68, 68, 0.1);">
       <h4 style="color: #FF4444; margin: 0 0 12px 0;">🧪 TEST MODE - BYPASS ALL INTERLOCKS</h4>
       <div style="font-size: 12px; color: #FF8888; margin-bottom: 12px;">
-        This button launches a torpedo immediately without any tube preparation, captain consent, or other safety checks.
-        <br>Use only for testing torpedo tracking and damage systems!
+        Test-fire from Tube 1 with its current bearing / run-depth / enable-range settings.
       </div>
       <button id="testFire" title="Launch test torpedo (bypasses all interlocks)" style="background: #FF4444; color: white; font-weight: bold;">🚀 LAUNCH TEST TORPEDO</button>
     </div>
@@ -114,19 +111,80 @@
     const consentEl = document.getElementById('consent');
     const weapNoise = document.getElementById('weapNoise');
 
+    // Cache of rendered tube card elements, keyed by tube idx — preserves
+    // input values across telemetry updates instead of rebuilding each tick.
+    const tubeCards = {};
+
+    function buildTubeCard(idx) {
+      const card = document.createElement('div');
+      card.className = 'tube';
+      card.innerHTML = `
+        <div class='hdr'>
+          <span class='tname'>Tube ${idx}</span>
+          <span class='tstate' data-role='state'>—</span>
+        </div>
+        <div class='small' data-role='weapon'>(empty)</div>
+        <div class='timer' data-role='timer'></div>
+        <div>
+          <div class='tlabel'>Bearing (deg)</div>
+          <input type='number' min='0' max='359' value='270' data-role='bearing'>
+        </div>
+        <div class='row2'>
+          <div>
+            <div class='tlabel'>Run Depth (m)</div>
+            <input type='number' min='0' max='600' value='120' data-role='rdepth'>
+          </div>
+          <div>
+            <div class='tlabel'>Enable Range (m)</div>
+            <input type='number' min='100' max='8000' step='100' value='1500' data-role='enable'>
+          </div>
+        </div>
+        <div class='btnrow'>
+          <button data-role='load' title='Load Mk48'>Load</button>
+          <button data-role='flood' title='Flood tube'>Flood</button>
+          <button data-role='doors' title='Open outer doors'>Doors</button>
+          <button data-role='fire' title='Fire tube'>Fire</button>
+        </div>`;
+      const q = sel => card.querySelector(`[data-role='${sel}']`);
+      const getInputs = () => ({
+        bearing: parseFloat(q('bearing').value),
+        run_depth: parseFloat(q('rdepth').value),
+        enable_range: parseFloat(q('enable').value),
+        doctrine: 'passive_then_active',
+      });
+      q('load').onclick = () => station.sendCommand('weapons.tube.load', {tube: idx, weapon: 'Mk48'});
+      q('flood').onclick = () => station.sendCommand('weapons.tube.flood', {tube: idx});
+      q('doors').onclick = () => station.sendCommand('weapons.tube.doors', {tube: idx, open: true});
+      q('fire').onclick = () => station.sendCommand('weapons.fire', {tube: idx, ...getInputs()});
+      return card;
+    }
+
+    function updateTubeCard(card, t) {
+      const q = sel => card.querySelector(`[data-role='${sel}']`);
+      const stateEl = q('state');
+      stateEl.textContent = t.state;
+      stateEl.className = 'tstate ' + t.state;
+      q('weapon').textContent = t.weapon ? `Loaded: ${t.weapon.name}` : '(empty)';
+      const timer = t.timer_s && t.timer_s > 0 ? `↻ ${t.timer_s.toFixed(1)}s` : '';
+      q('timer').textContent = timer;
+      const idle = !t.timer_s || t.timer_s <= 0;
+      q('load').disabled = !(t.state === 'Empty' && idle);
+      q('flood').disabled = !(t.state === 'Loaded' && idle);
+      q('doors').disabled = !(t.state === 'Flooded' && idle);
+      q('fire').disabled = !(t.state === 'DoorsOpen' && idle);
+    }
+
     station.onTelemetry = function(d) {
       tel.textContent = JSON.stringify(d, null, 2);
       consentEl.textContent = d.consentRequired ? `Captain consent ${d.captainConsent ? 'GRANTED' : 'REQUIRED'}` : 'Consent not required';
-      tubesEl.innerHTML = '';
       (d.tubes || []).forEach(t => {
-        const div = document.createElement('div');
-        div.className = 'tube';
-        const timer = t.timer_s && t.timer_s > 0 ? ` [${t.timer_s.toFixed(1)}s]` : '';
-        const canFlood = t.state === 'Loaded' && (!t.timer_s || t.timer_s <= 0);
-        const canDoors = t.state === 'Flooded' && (!t.timer_s || t.timer_s <= 0);
-        const canFire = t.state === 'DoorsOpen' && (!t.timer_s || t.timer_s <= 0);
-        div.innerHTML = `<div title='Tube state and weapon type'>Tube ${t.idx}: ${t.state} ${t.weapon ? '('+t.weapon.name+')' : ''}</div><div class='small' title='Time remaining on current transition'>Timer${timer}</div><div class='small'>Flood:${canFlood?'YES':'NO'} Doors:${canDoors?'YES':'NO'} Fire:${canFire?'YES':'NO'}</div>`;
-        tubesEl.appendChild(div);
+        let card = tubeCards[t.idx];
+        if (!card) {
+          card = buildTubeCard(t.idx);
+          tubeCards[t.idx] = card;
+          tubesEl.appendChild(card);
+        }
+        updateTubeCard(card, t);
       });
       const nz = (d.noise && d.noise.weapons_dB) || 0; weapNoise.textContent = nz.toFixed(0); station.setDbMeter(nz);
       if (d.ownship && d.ownship.damage) { station.updateDamageLEDs(d.ownship.damage); }
@@ -149,18 +207,6 @@
     };
     station.connect();
 
-    const tube = () => parseInt(document.getElementById('tube').value, 10);
-    document.getElementById('load').onclick = () => station.sendCommand('weapons.tube.load', {tube: tube(), weapon:'Mk48'});
-    document.getElementById('flood').onclick = () => station.sendCommand('weapons.tube.flood', {tube: tube()});
-    document.getElementById('doors').onclick = () => station.sendCommand('weapons.tube.doors', {tube: tube(), open:true});
-    document.getElementById('fire').onclick = () => {
-      const bearing = parseFloat(document.getElementById('bearing').value);
-      const run_depth = parseFloat(document.getElementById('rdepth').value);
-      const enable_range = parseFloat(document.getElementById('enable').value);
-      const doctrine = document.getElementById('doctrine').value;
-      station.sendCommand('weapons.fire', {tube: tube(), bearing, run_depth, enable_range, doctrine});
-    };
-
     document.getElementById('deployNoisemaker').onclick = () => {
       station.sendCommand('weapons.countermeasure.deploy', {type: 'noisemaker'});
       const btn = document.getElementById('deployNoisemaker');
@@ -176,14 +222,16 @@
     };
 
     document.getElementById('testFire').onclick = () => {
-      const bearing = parseFloat(document.getElementById('bearing').value);
-      const run_depth = parseFloat(document.getElementById('rdepth').value);
-      const enable_range = parseFloat(document.getElementById('enable').value);
-      const doctrine = document.getElementById('doctrine').value;
+      const card = tubeCards[1];
+      if (!card) return;
+      const q = sel => card.querySelector(`[data-role='${sel}']`);
+      const bearing = parseFloat(q('bearing').value);
+      const run_depth = parseFloat(q('rdepth').value);
+      const enable_range = parseFloat(q('enable').value);
       const testBtn = document.getElementById('testFire');
       const originalText = testBtn.textContent;
       testBtn.textContent = '🚀 LAUNCHING...'; testBtn.style.background = '#FF8800';
-      station.sendCommand('weapons.test_fire', {tube: tube(), bearing, run_depth, enable_range, doctrine});
+      station.sendCommand('weapons.test_fire', {tube: 1, bearing, run_depth, enable_range, doctrine: 'passive_then_active'});
       setTimeout(() => { testBtn.textContent = originalText; testBtn.style.background = '#FF4444'; }, 1000);
     };
 

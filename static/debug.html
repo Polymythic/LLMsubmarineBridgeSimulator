@@ -491,6 +491,31 @@
         });
       }
 
+      // Draw active countermeasures (decoys + noisemakers) with a fading
+      // remaining-life ring so the operator can see expiry approaching.
+      if (data.countermeasures && data.countermeasures.length > 0) {
+        data.countermeasures.forEach(cm => {
+          const [cmx, cmy] = worldToScreen(cm.x, cm.y);
+          const isDecoy = cm.type === 'decoy';
+          const color = isDecoy ? '#42A5F5' : '#66BB6A';
+          const remaining = Math.max(0, 1 - (cm.age_s || 0) / (cm.lifetime_s || 1));
+          // Filled centerpoint
+          ctx.fillStyle = color;
+          ctx.beginPath(); ctx.arc(cmx, cmy, 3, 0, Math.PI * 2); ctx.fill();
+          // Fading lifetime ring
+          ctx.strokeStyle = color;
+          ctx.globalAlpha = 0.3 + 0.5 * remaining;
+          ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.arc(cmx, cmy, 8, 0, Math.PI * 2); ctx.stroke();
+          ctx.globalAlpha = 1;
+          ctx.lineWidth = 1;
+          // Type label
+          ctx.fillStyle = color;
+          ctx.font = '10px ui-monospace, monospace';
+          ctx.fillText(isDecoy ? 'DECOY' : 'NOISE', cmx + 10, cmy + 3);
+        });
+      }
+
       // Enemies
       data.ships.forEach(s => {
         const [sx, sy] = worldToScreen(s.x, s.y);

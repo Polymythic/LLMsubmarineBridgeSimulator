@@ -14,6 +14,22 @@
     .col { flex:1; min-width:260px; }
     .pill { padding:4px 8px; border-radius:12px; background:#0F162A; border:1px solid #1B2440; }
     svg { width:100%; height:220px; }
+    /* Digital readout — 7-segment-style amber-on-black */
+    .digital {
+      font-family: "DSEG7 Classic", "Courier New", ui-monospace, monospace;
+      background:#000;
+      border:1px solid #2a1a00;
+      border-radius:4px;
+      padding:6px 10px;
+      margin-top:6px;
+      text-align:right;
+      letter-spacing:2px;
+    }
+    .digital .row { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+    .digital .lbl { color:#7a5c1a; font-size:10px; font-family: ui-sans-serif, system-ui; letter-spacing:1px; text-transform:uppercase; }
+    .digital .val { color:#ffb300; font-size:24px; font-weight:bold; text-shadow:0 0 6px rgba(255,179,0,0.55); }
+    .digital .ord { color:#5a4500; font-size:14px; text-shadow:0 0 4px rgba(90,69,0,0.6); }
+    .digital .unit { color:#7a5c1a; font-size:10px; font-family: ui-sans-serif, system-ui; }
     /* Shared styles loaded from station-common.css */
   </style>
   <link rel="stylesheet" href="/static/css/station-common.css">
@@ -44,6 +60,11 @@
     <div class="row">
       <div class="col">
         <svg id="hdgDial" viewBox="0 0 300 300" title="Heading dial (drag to set)"></svg>
+        <div class="digital" title="Heading: actual / ordered">
+          <div class="row"><span class="lbl">Heading</span><span class="unit">deg</span></div>
+          <div class="row"><span></span><span class="val" id="hdgVal">---</span></div>
+          <div class="row"><span class="lbl">Ordered</span><span class="ord" id="hdgOrd">---</span></div>
+        </div>
         <div class="row">
           <div class="pill" id="cav" title="Cavitation increases detectability and noise">Cavitation: NO</div>
           <div class="pill" id="therm" title="Thermocline may attenuate sound; affects detection">Thermocline: ON</div>
@@ -52,9 +73,19 @@
       </div>
       <div class="col">
         <svg id="depthLadder" viewBox="0 0 120 300" title="Depth ladder"></svg>
+        <div class="digital" title="Depth: actual / ordered">
+          <div class="row"><span class="lbl">Depth</span><span class="unit">m</span></div>
+          <div class="row"><span></span><span class="val" id="depthVal">---</span></div>
+          <div class="row"><span class="lbl">Ordered</span><span class="ord" id="depthOrd">---</span></div>
+        </div>
       </div>
       <div class="col">
         <svg id="speedTele" viewBox="0 0 120 300" title="Speed telegraph"></svg>
+        <div class="digital" title="Speed: actual / ordered">
+          <div class="row"><span class="lbl">Speed</span><span class="unit">kn</span></div>
+          <div class="row"><span></span><span class="val" id="speedVal">---</span></div>
+          <div class="row"><span class="lbl">Ordered</span><span class="ord" id="speedOrd">---</span></div>
+        </div>
       </div>
       <div class="col">
         <div class="pill">Helm Noise: <span id="helmNoise">0</span> dB</div>
@@ -169,6 +200,16 @@
       svg.appendChild(dot);
     }
 
+    const hdgVal = document.getElementById('hdgVal');
+    const hdgOrd = document.getElementById('hdgOrd');
+    const depthVal = document.getElementById('depthVal');
+    const depthOrd = document.getElementById('depthOrd');
+    const speedVal = document.getElementById('speedVal');
+    const speedOrd = document.getElementById('speedOrd');
+    const fmtHdg = v => (v == null) ? '---' : String(Math.round(((v % 360) + 360) % 360)).padStart(3, '0');
+    const fmtDepth = v => (v == null) ? '---' : String(Math.round(v)).padStart(3, '0');
+    const fmtSpeed = v => (v == null) ? '---' : v.toFixed(1).padStart(4, '0');
+
     station.onTelemetry = function(d) {
         tel.textContent = JSON.stringify(d, null, 2);
         cav.textContent = 'Cavitation: ' + (d.ownship?.cavitation ? 'YES' : 'NO');
@@ -176,6 +217,12 @@
         drawDial(hdgDial, d.ownship.heading, d.ownship.orderedHeading);
         drawLadder(depthLadder, d.ownship.depth, d.ownship.orderedDepth);
         drawTele(speedTele, d.ownship.speed, d.ownship.orderedSpeed);
+        hdgVal.textContent = fmtHdg(d.ownship.heading);
+        hdgOrd.textContent = fmtHdg(d.ownship.orderedHeading);
+        depthVal.textContent = fmtDepth(d.ownship.depth);
+        depthOrd.textContent = fmtDepth(d.ownship.orderedDepth);
+        speedVal.textContent = fmtSpeed(d.ownship.speed);
+        speedOrd.textContent = fmtSpeed(d.ownship.orderedSpeed);
         if (d.ownship && d.ownship.damage) { station.updateDamageLEDs(d.ownship.damage); }
         const nz = (d.noise && d.noise.helm_dB) || 0; helmNoise.textContent = nz.toFixed(0); station.setDbMeter(nz);
         station.updateTasks(d.tasks || []);

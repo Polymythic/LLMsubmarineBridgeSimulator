@@ -350,6 +350,7 @@ def doctrine_for(
     fleet_destination: Optional[Tuple[float, float]] = None,
     fleet_speed_kn: Optional[float] = None,
     threats: Optional[Sequence[ThreatAlert]] = None,
+    in_flight_torpedoes_from_self: int = 0,
 ) -> DoctrineRecommendation:
     """Pick a default doctrine. The LLM may override with a `deviate:` note.
 
@@ -363,6 +364,9 @@ def doctrine_for(
            c. `friendly_hit` → CLOSE on the hit ship's bearing; active
               sonar authorized by role doctrine.
         1. High-confidence contact in torpedo envelope → ENGAGE_TORPEDO.
+           Suppressed to CLOSE when this ship already has a torpedo in
+           the water (`in_flight_torpedoes_from_self > 0`); we wait for
+           the previous shot to resolve before launching another.
         2. High-confidence contact in DC envelope → ENGAGE_DC.
         3. High-confidence contact known position → CLOSE.
         4. Moderate-confidence contact (INVESTIGATE_CONFIDENCE..ACTIONABLE)
@@ -375,6 +379,7 @@ def doctrine_for(
     has_torpedoes = bool(caps and getattr(caps, "has_torpedoes", False))
     has_depth_charges = bool(caps and getattr(caps, "has_depth_charges", False))
     threats = list(threats or [])
+    torp_already_in_water = int(in_flight_torpedoes_from_self) > 0
 
     # 0. Threat overrides take precedence over normal doctrine.
     rec = _threat_doctrine(ship, threats, contacts, has_torpedoes, has_depth_charges)
@@ -388,7 +393,7 @@ def doctrine_for(
 
     for c in actionable:
         assert c.estimated_pos is not None
-        if has_torpedoes:
+        if has_torpedoes and not torp_already_in_water:
             env = weapon_envelope(ship, c.estimated_pos, "fire_torpedo")
             if env.in_range:
                 return DoctrineRecommendation(
@@ -408,7 +413,9 @@ def doctrine_for(
                 )
 
     if actionable:
-        # In-bound contact but out of weapon envelope → close on it.
+        # Either out of weapon envelope, or torpedo suppressed because a
+        # previous shot is still in the water. Close on the contact and
+        # let the next decision cycle re-evaluate.
         c = actionable[0]
         target = c.estimated_pos
         assert target is not None
@@ -419,9 +426,19 @@ def doctrine_for(
             target_heading_deg=0.0,  # unknown course; treat as static for the suggestion
             target_speed_kn=0.0,
         )
+        if torp_already_in_water and has_torpedoes:
+            reason = (
+                f"contact {c.id} confidence {c.confidence:.2f}; previous torpedo "
+                f"still in water — close for follow-up shot if needed"
+            )
+        else:
+            reason = (
+                f"contact {c.id} confidence {c.confidence:.2f} outside weapon "
+                f"envelope; close to engage"
+            )
         return DoctrineRecommendation(
             action="CLOSE",
-            reason=f"contact {c.id} confidence {c.confidence:.2f} outside weapon envelope; close to engage",
+            reason=reason,
             target_id=c.id,
             suggested_heading=sol.heading,
             suggested_speed_kn=ship.hull.max_speed,

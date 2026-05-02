@@ -650,12 +650,22 @@ class AgentsOrchestrator:
                     fleet_speed = float(speed_kn)
             except Exception:
                 pass
+            in_flight_self = 0
+            try:
+                world_for_torps = self._world_getter()
+                in_flight_self = sum(
+                    1 for t in (getattr(world_for_torps, "torpedoes", []) or [])
+                    if t.get("shooter_id") == ship.id
+                )
+            except Exception:
+                in_flight_self = 0
             rec = _tactical.doctrine_for(
                 ship,
                 beliefs,
                 fleet_destination=fleet_dest,
                 fleet_speed_kn=fleet_speed,
                 threats=threats,
+                in_flight_torpedoes_from_self=in_flight_self,
             )
             tactical_briefing = {
                 "doctrine_recommendation": rec.action,

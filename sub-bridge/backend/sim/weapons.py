@@ -101,6 +101,7 @@ def try_fire(ship: Ship, tube_idx: int, bearing_deg: float, run_depth: float, en
     import time
     torp = {
         "id": f"torpedo_{ship.id}_{tube_idx}_{int(time.time() * 1000)}",  # Unique ID for sonar tracking
+        "shooter_id": ship.id,
         "x": ship.kin.x,
         "y": ship.kin.y,
         "depth": ship.kin.depth,
@@ -130,9 +131,19 @@ def try_fire(ship: Ship, tube_idx: int, bearing_deg: float, run_depth: float, en
 
 
 def step_torpedo(t: dict, world, dt: float, on_event: Optional[Callable[[str, dict], None]] = None, countermeasures: list = None) -> None:
-    dx = t["x"] - world.ships["ownship"].kin.x
-    dy = t["y"] - world.ships["ownship"].kin.y
-    dist_from_shooter = math.hypot(dx, dy)
+    own = world.ships.get("ownship")
+
+    # Arming: a torpedo arms after it has traveled `enable_range_m` from
+    # its own shooter (not from the player sub). For legacy/test torps
+    # without a shooter_id we fall back to ownship's position.
+    shooter_id = t.get("shooter_id")
+    shooter = world.ships.get(shooter_id) if shooter_id else own
+    if shooter is not None:
+        dx_s = t["x"] - shooter.kin.x
+        dy_s = t["y"] - shooter.kin.y
+        dist_from_shooter = math.hypot(dx_s, dy_s)
+    else:
+        dist_from_shooter = float("inf")
     if not t["armed"] and dist_from_shooter >= t["enable_range_m"]:
         t["armed"] = True
         if on_event:
@@ -142,27 +153,33 @@ def step_torpedo(t: dict, world, dt: float, on_event: Optional[Callable[[str, di
     if t.get("spoofed_timer", 0.0) > 0.0:
         t["spoofed_timer"] = max(0.0, t["spoofed_timer"] - dt)
 
-    # Self-preservation: avoid ownship
-    own = world.ships.get("ownship")
-    own_rng = math.hypot(own.kin.x - t["x"], own.kin.y - t["y"]) if own else 1e9
-    if not t["armed"]:
-        # If ownship is within 300 m and ahead within 60°, bias heading away pre-arm
-        if own and own_rng < 300.0:
-            bearing_to_own = (math.degrees(math.atan2(own.kin.x - t["x"], own.kin.y - t["y"])) % 360.0)
-            off = abs(((bearing_to_own - t["heading"] + 540) % 360) - 180)
-            if off < 60.0:
-                # Turn away by up to 30°/s pre-arm
-                away = (bearing_to_own + 180.0) % 360.0
-                dh = ((away - t["heading"] + 540) % 360) - 180
-                max_turn = 30.0 * dt
-                t["heading"] = (t["heading"] + max(-max_turn, min(max_turn, dh))) % 360
-    else:
-        # Post-arm: self-destruct if dangerously close to ownship (safety), but allow initial departure
-        if own and own_rng < 200.0 and t.get("run_time", 0.0) > 3.0:
-            if on_event:
-                on_event("torpedo.self_destruct", {"reason": "ownship_proximity", "range_m": own_rng})
-            t["run_time"] = t["max_run_time"] + 1.0
-            return
+    # Self-preservation: ONLY for torpedoes the player fired. Don't let a
+    # circling friendly torp track back and kill ownship. Hostile torpedoes
+    # closing on ownship must be allowed to detonate normally — that's the
+    # whole point of incoming weapons.
+    is_own_torp = (shooter_id == "ownship") or (
+        shooter_id is None and t.get("side") == "BLUE"
+    )
+    if is_own_torp and own is not None:
+        own_rng = math.hypot(own.kin.x - t["x"], own.kin.y - t["y"])
+        if not t["armed"]:
+            # If ownship is within 300 m and ahead within 60°, bias heading away pre-arm
+            if own_rng < 300.0:
+                bearing_to_own = (math.degrees(math.atan2(own.kin.x - t["x"], own.kin.y - t["y"])) % 360.0)
+                off = abs(((bearing_to_own - t["heading"] + 540) % 360) - 180)
+                if off < 60.0:
+                    # Turn away by up to 30°/s pre-arm
+                    away = (bearing_to_own + 180.0) % 360.0
+                    dh = ((away - t["heading"] + 540) % 360) - 180
+                    max_turn = 30.0 * dt
+                    t["heading"] = (t["heading"] + max(-max_turn, min(max_turn, dh))) % 360
+        else:
+            # Post-arm: self-destruct if dangerously close to ownship (safety), but allow initial departure
+            if own_rng < 200.0 and t.get("run_time", 0.0) > 3.0:
+                if on_event:
+                    on_event("torpedo.self_destruct", {"reason": "ownship_proximity", "range_m": own_rng})
+                t["run_time"] = t["max_run_time"] + 1.0
+                return
 
     # Detonation check against opposing ships
     for ship in world.all_ships():
@@ -553,6 +570,7 @@ def try_launch_torpedo_quick(
     import time
     torp = {
         "id": f"torpedo_{ship.id}_quick_{int(time.time() * 1000)}",  # Unique ID for sonar tracking
+        "shooter_id": ship.id,
         "x": ship.kin.x,
         "y": ship.kin.y,
         "depth": ship.kin.depth,

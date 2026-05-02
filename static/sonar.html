@@ -14,6 +14,10 @@
     .col { flex:1; }
     #legend { width:100%; height:32px; background:#0B1020; border:1px solid #1B2440; border-radius:6px; margin-bottom:6px; }
     #waterfall { width:100%; height:220px; background:#050814; border:1px solid #1B2440; border-radius:6px; }
+    #waterfallWrap { position:relative; cursor:crosshair; }
+    #bearingMarkers { position:absolute; top:0; left:0; width:100%; height:220px; pointer-events:none; }
+    #markerHint { font-size:11px; color:#6E84C8; margin-top:4px; }
+    #markerHint button { padding:2px 8px; font-size:11px; background:#1B2440; color:#D7E3FF; border:1px solid #3A4674; border-radius:4px; cursor:pointer; }
     .label { font-size:12px; opacity:0.8; }
     /* Shared styles loaded from station-common.css */
   </style>
@@ -56,7 +60,11 @@
       <div class="col">
         <div class="label" title="Bearing axis centered at 0°; time flows downward">Passive Waterfall</div>
         <canvas id="legend" width="720" height="32" title="Sonar contact legend"></canvas>
-        <canvas id="waterfall" width="720" height="220" title="Bearing-time-intensity display (0° centered)"></canvas>
+        <div id="waterfallWrap">
+          <canvas id="waterfall" width="720" height="220" title="Click to drop a bearing line; double-click to clear"></canvas>
+          <canvas id="bearingMarkers" width="720" height="220"></canvas>
+        </div>
+        <div id="markerHint">Click waterfall to drop a bearing line · double-click to clear all · <button id="clearMarkers">Clear</button></div>
         <div style="display:flex; align-items:flex-end; gap:8px; margin-top:8px;">
           <div class="label">Sonar Noise: <span id="sonarNoise">0</span> dB</div>
           <div id="dbWrap" style="width:30px;height:120px;border:1px solid #1B2440;background:#0B1020;position:relative;border-radius:4px;">
@@ -99,6 +107,58 @@
       // shift so rel=180 -> x=0, rel=0 -> x=width/2, rel=360-> x=width
       return Math.floor((rel / 360) * width);
     }
+
+    // Inverse of xForBearing — used by click-to-drop bearing markers.
+    function bearingForX(x, width){
+      const rel = (x / width) * 360;
+      // rel=0 → 180°, rel=180 → 0°, rel=360 → 360°
+      return ((rel - 180) % 360 + 360) % 360;
+    }
+
+    // Persistent operator-dropped bearing reference lines. Stored as
+    // bearings (degrees) so they stay anchored if the canvas resizes.
+    const bearingMarkersCanvas = document.getElementById('bearingMarkers');
+    const bmCtx = bearingMarkersCanvas.getContext('2d');
+    let bearingMarkers = [];
+
+    function drawBearingMarkers(){
+      bmCtx.clearRect(0, 0, W, H);
+      if (!bearingMarkers.length) return;
+      bmCtx.font = '10px ui-monospace, monospace';
+      bearingMarkers.forEach(bearing => {
+        const x = xForBearing(bearing, W);
+        bmCtx.strokeStyle = 'rgba(0, 229, 255, 0.65)';
+        bmCtx.lineWidth = 1;
+        bmCtx.beginPath();
+        bmCtx.moveTo(x + 0.5, 0);
+        bmCtx.lineTo(x + 0.5, H);
+        bmCtx.stroke();
+        const label = bearing.toFixed(0) + '°';
+        const tw = bmCtx.measureText(label).width;
+        bmCtx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        bmCtx.fillRect(x + 2, 2, tw + 4, 12);
+        bmCtx.fillStyle = '#00E5FF';
+        bmCtx.fillText(label, x + 4, 12);
+      });
+    }
+
+    // Use the wrapper for clicks so it works even when overlay sits on top.
+    const wfWrap = document.getElementById('waterfallWrap');
+    wfWrap.addEventListener('click', e => {
+      const rect = canvas.getBoundingClientRect();
+      const xCss = e.clientX - rect.left;
+      const xCanvas = xCss * (W / rect.width);
+      bearingMarkers.push(bearingForX(xCanvas, W));
+      drawBearingMarkers();
+    });
+    wfWrap.addEventListener('dblclick', () => {
+      bearingMarkers = [];
+      drawBearingMarkers();
+    });
+    document.getElementById('clearMarkers').onclick = () => {
+      bearingMarkers = [];
+      drawBearingMarkers();
+    };
 
     function drawLegend(){
       lctx.clearRect(0,0,lW,lH);
@@ -225,6 +285,12 @@
       row = (row + 1) % H;
     }
 
+    // Throttle contacts/ping-responses list redraw — the waterfall remains
+    // real-time, but the human-readable bearing/conf rows are too noisy to
+    // read when they update every tick. ~500ms cadence reads cleanly.
+    let _lastContactsRender = 0;
+    const CONTACTS_REFRESH_MS = 500;
+
     station.onTelemetry = function(d) {
       tel.textContent = JSON.stringify(d, null, 2);
       cd.textContent = (d.pingCooldown || 0).toFixed(1);
@@ -232,6 +298,15 @@
       if (d.ownship && d.ownship.damage) { station.updateDamageLEDs(d.ownship.damage); }
       const nz = (d.noise && d.noise.sonar_dB) || 0; sonarNoise.textContent = nz.toFixed(0); station.setDbMeter(nz);
       station.updateTasks(d.tasks || []);
+
+      // Always update the waterfall (scrolling) — it's the high-rate signal.
+      drawWaterfall(d.contacts || [], d.pingResponses || [], d.explosions || []);
+      if (station.audio) station.audio.processTelemetry(d);
+
+      // Throttle the textual contact rows.
+      const now = performance.now();
+      if (now - _lastContactsRender < CONTACTS_REFRESH_MS) return;
+      _lastContactsRender = now;
 
       list.innerHTML = '';
       (d.contacts || []).forEach(c => {
@@ -271,8 +346,6 @@
       });
       prList.innerHTML = '';
       (d.pingResponses || []).forEach(p => { const li = document.createElement('li'); li.title = 'Active ping response'; const km = (p.range_est/1000).toFixed(1); li.textContent = `ID ${p.id} brg ${p.bearing.toFixed(0)}° range ~${km} km str ${(+p.strength).toFixed(2)} at ${p.at}`; prList.appendChild(li); });
-      drawWaterfall(d.contacts || [], d.pingResponses || [], d.explosions || []);
-      if (station.audio) station.audio.processTelemetry(d);
     };
     station.connect();
 

@@ -1462,10 +1462,28 @@ class Simulation:
 
                             # Update contact history if we detected it this cycle
                             if detected_this_cycle:
+                                # Estimate the target's heading (course) as the
+                                # captain would judge it from silhouette/aspect.
+                                # σ scales with range, periscope health, own
+                                # cavitation, and target speed. Familiarity
+                                # (detection_count) tightens the read.
+                                periscope_health = getattr(own.maintenance.levels, "periscope", 1.0) if hasattr(own, "maintenance") else 1.0
+                                sigma_hdg = (
+                                    4.0
+                                    + rng / 750.0
+                                    + (1.0 - periscope_health) * 8.0
+                                    + max(0.0, own.kin.speed - 8.0) * 0.5
+                                    - min(detection_count + 1, 5) * 0.6
+                                )
+                                sigma_hdg = max(1.5, min(30.0, sigma_hdg))
+                                hdg_noise = random.gauss(0.0, sigma_hdg)
+                                hdg_estimate = (s.kin.heading + hdg_noise) % 360.0
                                 self._visual_contacts["ownship"][s.id] = {
                                     "last_seen": current_time,
                                     "detection_count": detection_count + 1,
-                                    "last_confidence": detection_prob
+                                    "last_confidence": detection_prob,
+                                    "heading_estimate_deg": hdg_estimate,
+                                    "heading_uncertainty_deg": sigma_hdg,
                                 }
                         
                         # Include contact if:
@@ -1490,20 +1508,33 @@ class Simulation:
                             else:
                                 ship_type = "Unidentified Vessel"
 
+                            # Status is "visible" while the most recent successful
+                            # detection is still fresh (within one search interval).
+                            # This stops the contact flickering between yellow and
+                            # gray every tick — the dice only re-rolls every 5s.
+                            effective_last_seen = current_time if detected_this_cycle else last_seen
+                            visible_now = (current_time - effective_last_seen) <= search_interval
+                            # Heading estimate persists across ticks until the
+                            # next successful detection roll. Pull from history.
+                            ch = self._visual_contacts["ownship"].get(s.id, {})
+                            hdg_est = ch.get("heading_estimate_deg")
+                            hdg_sigma = ch.get("heading_uncertainty_deg")
                             self._periscope_contacts.append({
                                 "id": designation,  # Anonymous designation
                                 "actual_id": s.id,  # Hidden from UI, used for identification
                                 "bearing": brg_true,
                                 "range_m": rng,
                                 "speed_kn": s.kin.speed,
+                                "heading_estimate_deg": hdg_est,
+                                "heading_uncertainty_deg": hdg_sigma,
                                 "type": ship_type,
                                 "is_identified": is_identified,
                                 "confidence": current_confidence,
-                                "last_seen": last_seen if not detected_this_cycle else current_time,
+                                "last_seen": effective_last_seen,
                                 "detection_count": detection_count + (1 if detected_this_cycle else 0),
                                 "detected_this_cycle": detected_this_cycle,
                                 "time_since_last_seen": time_since_last_seen,
-                                "status": "visible" if detected_this_cycle else "last_seen"
+                                "status": "visible" if visible_now else "last_seen"
                             })
             
             # Reset timer after detection cycle
@@ -1665,6 +1696,10 @@ class Simulation:
             ],
             "torpedoes": list(self.world.torpedoes),
             "depth_charges": list(getattr(self.world, "depth_charges", [])),
+            "countermeasures": [
+                cm for cm in getattr(self.world, "countermeasures", []) or []
+                if cm.get("active", False)
+            ],
         }
         # Include Fleet Commander contact history if orchestrator is present
         try:

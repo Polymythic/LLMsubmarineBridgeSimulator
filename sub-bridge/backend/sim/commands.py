@@ -80,9 +80,15 @@ class CommandDispatcher:
             res = active_ping(own, [s for s in sim.world.all_ships() if s.id != own.id])
             now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
             sim._last_ping_at = now_iso
+            # Active ping returns a "skin paint": precise range + bearing,
+            # but NO identification — pings echo off a hull, they don't tell
+            # you what kind of hull it is. Strip the actual ship id and emit
+            # anonymous per-ping echo numbers so operators can distinguish
+            # multiple returns in a single ping cycle without correlating
+            # them to passive contacts or ship types.
             sim._last_ping_responses = [
-                {"id": rid, "bearing": brg, "range_est": rng, "strength": st, "at": now_iso}
-                for (rid, rng, brg, st) in res
+                {"id": f"Echo-{i+1}", "bearing": brg, "range_est": rng, "strength": st, "at": now_iso}
+                for i, (_rid, rng, brg, st) in enumerate(res)
             ]
             # Counter-detection contacts for enemy ships
             for ship in sim.world.all_ships():

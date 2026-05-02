@@ -12,6 +12,16 @@
     .pip { width:10px; height:10px; border-radius:50%; display:inline-block; margin-left:6px; }
     .on { background:#8BE28B; box-shadow:0 0 8px rgba(139,226,139,0.6); }
     .off { background:#E26969; box-shadow:0 0 8px rgba(226,105,105,0.6); }
+    /* Periscope contact rows — bearing as a prominent badge so the captain
+       can read it at a glance, like reading off a periscope dial. */
+    .pcontact { display:flex; align-items:center; gap:10px; padding:6px 8px; margin:3px 0; border-radius:4px; background:#0F162A; border:1px solid #1B2440; list-style:none; }
+    .pcontact.dim { opacity:0.5; font-style:italic; background:transparent; }
+    .pcontact .brg { font-family:ui-monospace, monospace; font-size:22px; font-weight:bold; min-width:72px; text-align:center; padding:4px 6px; border-radius:4px; background:#000; border:1px solid #2a1a00; color:#ffb300; text-shadow:0 0 5px rgba(255,179,0,0.5); letter-spacing:1px; }
+    .pcontact.dim .brg { color:#5a4500; text-shadow:none; }
+    .pcontact .meta { flex:1; }
+    .pcontact .id { font-weight:bold; font-size:13px; }
+    .pcontact .typeline { font-size:12px; color:#8593B8; }
+    .pcontact .extra { font-size:11px; color:#6E84C8; margin-top:2px; }
     /* Shared styles loaded from station-common.css */
   </style>
   <link rel="stylesheet" href="/static/css/station-common.css">
@@ -119,7 +129,43 @@
       setStatus(document.getElementById('stWeapons'), `Weapons: ${ss.weapons || 'OK'}`);
       setStatus(document.getElementById('stEng'), `Engineering: ${ss.engineering || 'OK'}`);
       const scope = document.getElementById('scope'); scope.innerHTML = '';
-      (d.periscopeContacts||[]).forEach(c => { const li=document.createElement('li'); const km=(c.range_m/1000).toFixed(2); const timeAgo = c.time_since_last_seen ? Math.floor(c.time_since_last_seen) : 0; if (c.status === 'visible') { li.style.color = c.is_identified ? '#8DEB8D' : '#FACC15'; li.style.fontWeight = 'bold'; const typeText = c.is_identified ? c.type : 'UNIDENTIFIED'; li.innerHTML = `● ${c.id} <strong>${typeText}</strong> brg ${c.bearing.toFixed(0)}° range ${km} km speed ${(+c.speed_kn).toFixed(1)} kn`; if (!c.is_identified) { const btn = document.createElement('button'); btn.textContent = 'Identify'; btn.style.marginLeft = '8px'; btn.style.padding = '2px 8px'; btn.style.cursor = 'pointer'; btn.onclick = () => { station.sendCommand('captain.identify_contact', {designation: c.id}); }; li.appendChild(btn); } } else { li.style.color = '#888'; li.style.fontStyle = 'italic'; const typeText = c.is_identified ? c.type : 'UNIDENTIFIED'; li.textContent = `○ ${c.id} ${typeText} brg ${c.bearing.toFixed(0)}° range ${km} km (last seen ${timeAgo}s ago)`; } scope.appendChild(li); });
+      (d.periscopeContacts||[]).forEach(c => {
+        const km = (c.range_m / 1000).toFixed(2);
+        const timeAgo = c.time_since_last_seen ? Math.floor(c.time_since_last_seen) : 0;
+        const visible = c.status === 'visible';
+        const typeText = c.is_identified ? c.type : 'UNIDENTIFIED';
+        const li = document.createElement('li');
+        li.className = 'pcontact' + (visible ? '' : ' dim');
+        const idColor = visible ? (c.is_identified ? '#8DEB8D' : '#FACC15') : '#888';
+        const brgStr = String(Math.round(((c.bearing % 360) + 360) % 360)).padStart(3, '0');
+        // Captain's visual estimate of the target's own course (not its
+        // bearing from us). Uncertainty (σ) scales with range/conditions.
+        let courseHtml = '';
+        if (c.heading_estimate_deg != null) {
+          const hStr = String(Math.round(((c.heading_estimate_deg % 360) + 360) % 360)).padStart(3, '0');
+          const sig = c.heading_uncertainty_deg != null ? c.heading_uncertainty_deg : 0;
+          const sigTxt = sig >= 1 ? `±${Math.round(sig)}°` : '';
+          const looseClass = sig >= 10 ? ' style="opacity:0.7;font-style:italic"' : '';
+          courseHtml = `<div class="extra"${looseClass}>est. course ${hStr}° ${sigTxt}</div>`;
+        }
+        li.innerHTML = `
+          <span class="brg" title="True bearing from ownship">${brgStr}°</span>
+          <div class="meta">
+            <div class="id" style="color:${idColor};">${visible ? '●' : '○'} ${c.id}</div>
+            <div class="typeline">${typeText}</div>
+            <div class="extra">range ${km} km · speed ${(+c.speed_kn).toFixed(1)} kn${visible ? '' : ' · last seen ' + timeAgo + 's ago'}</div>
+            ${courseHtml}
+          </div>`;
+        if (visible && !c.is_identified) {
+          const btn = document.createElement('button');
+          btn.textContent = 'Identify';
+          btn.style.padding = '4px 10px';
+          btn.style.cursor = 'pointer';
+          btn.onclick = () => { station.sendCommand('captain.identify_contact', {designation: c.id}); };
+          li.appendChild(btn);
+        }
+        scope.appendChild(li);
+      });
       if (station.audio) station.audio.processTelemetry(d);
     };
     station.connect();

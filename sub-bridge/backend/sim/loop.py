@@ -1770,6 +1770,13 @@ class Simulation:
                     "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                     **ev.payload,
                 })
+                # Phase 8 — feed combat events into the orchestrator's
+                # rolling buffer so threat scans can react to them.
+                if getattr(self, "_ai_orch", None) is not None:
+                    try:
+                        self._ai_orch.record_combat_event(ev.kind, ev.payload)
+                    except Exception:
+                        pass
             elif ev.kind == "ship.destroyed":
                 ship_id = ev.payload.get("ship_id")
                 if ship_id and ship_id not in self._destroyed_ships:

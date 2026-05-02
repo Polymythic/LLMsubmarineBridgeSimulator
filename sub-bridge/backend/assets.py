@@ -62,6 +62,19 @@ class MissionConfig(BaseModel):
     duration_estimate: Optional[str] = None
     # Tags for filtering/categorization
     tags: List[str] = Field(default_factory=list)
+    # ========== Phase 6: Scenario Context Overhaul ==========
+    # Per-side narrative + objectives + constraints, used by fleet/captain
+    # prompts to give each side awareness of its own situation.
+    # Shape: {"RED": {"narrative": "...", "primary_objective": "...", ...},
+    #         "BLUE": {...}}
+    scenario_context: Dict[str, Any] = Field(default_factory=dict)
+    # Pre-authored task groups per side. Fleet ADAPTS these (re-tasking,
+    # detaching) rather than INVENTING from a flat list every turn.
+    # Shape: {"RED": {"GROUP_NAME": {"members": [...], "lead": "...", ...}}}
+    task_groups: Dict[str, Any] = Field(default_factory=dict)
+    # Per-ship role assignments: {ship_id: {"role": "...", "task_group": "..."}}
+    # The role string maps to ai/roles/<role>.md doctrine prompt.
+    ship_roles: Dict[str, Any] = Field(default_factory=dict)
 
 
 def _read_json(path: Path) -> Any:
@@ -236,6 +249,10 @@ def apply_mission_to_world(mission: MissionConfig, world_getter, set_mission_bri
         "scenario_triggers": mission.scenario_triggers,
         # Interceptable communications schedule
         "intercept_schedule": mission.intercept_schedule,
+        # ========== Phase 6: Scenario context, task groups, roles ==========
+        "scenario_context": mission.scenario_context,
+        "task_groups": mission.task_groups,
+        "ship_roles": mission.ship_roles,
     }
     set_mission_brief(brief)
 

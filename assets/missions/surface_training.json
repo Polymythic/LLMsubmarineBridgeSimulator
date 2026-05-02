@@ -42,6 +42,35 @@
     "RED": {"reach_wp_within_m": 200, "min_survivors": 2, "timeout_s": 900},
     "BLUE": {"disable_or_delay": {"convoy_speed_below_kn": 3, "duration_s": 120}}
   },
+  "scenario_context": {
+    "RED": {
+      "narrative": "Three unarmed convoy vessels in column transit toward waypoint [5000, 0]. No escort. Maintain formation; speed matters more than evasion in clear waters.",
+      "primary_objective": "Reach waypoint [5000, 0] intact",
+      "win_condition": "At least 2 of 3 vessels reach the waypoint",
+      "lose_condition": "Two or more vessels destroyed",
+      "intelligence": "No escort assigned; submarine activity reported as intermittent in this sector.",
+      "constraints": ["Hold column position and 300 m spacing"],
+      "doctrine_emphasis": "convoy_transit"
+    }
+  },
+  "task_groups": {
+    "RED": {
+      "CONVOY_COLUMN": {
+        "doctrine": "convoy_transit",
+        "lead": "red-01",
+        "members": ["red-01", "red-02", "red-03"],
+        "protected": ["red-01", "red-02", "red-03"],
+        "formation": "column",
+        "primary_route": null,
+        "destination": [5000, 0]
+      }
+    }
+  },
+  "ship_roles": {
+    "red-01": { "role": "convoy_cargo", "task_group": "CONVOY_COLUMN" },
+    "red-02": { "role": "convoy_cargo", "task_group": "CONVOY_COLUMN" },
+    "red-03": { "role": "convoy_cargo", "task_group": "CONVOY_COLUMN" }
+  },
   "environment": { "timeOfDay": "dawn", "weather": "calm", "thermocline_on": true, "thermocline_depth_m": 60.0 },
   "ship_behaviors": {
     "red-01": "You are red-01, a convoy cargo vessel with no weapons so speed and evasion is critical. Follow FleetIntent to reach waypoint X:5000, Y:0. You may override the FleetIntent if it is not safe. Hold column position and spacing; avoid high-risk areas.",

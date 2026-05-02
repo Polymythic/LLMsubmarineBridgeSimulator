@@ -27,6 +27,10 @@ from ..models import Ship
 # Knots → meters per second.
 KN_TO_MS = 0.5144444
 
+# Passive detection range for torpedoes (they are very loud). Beyond this
+# range, captains do not "hear" the torpedo even though it exists.
+TORPEDO_PASSIVE_DETECTION_M = 10000.0
+
 
 # --------------------------------------------------------------------------- #
 # Geometry primitives
@@ -225,9 +229,119 @@ class DoctrineRecommendation:
     suggested_speed_kn: Optional[float] = None
 
 
-# Confidence threshold for treating a contact as actionable. Mirrors the
-# orchestrator's existing `ai_fleet_trigger_conf_threshold` default.
+# Confidence threshold for treating a contact as actionable for engagement.
+# Mirrors the orchestrator's existing `ai_fleet_trigger_conf_threshold`.
 ACTIONABLE_CONFIDENCE = 0.7
+
+# Lower bound for treating a contact as worth investigating without engaging.
+# Below this, the contact is too faint to act on and the ship should hold or
+# follow the fleet. Between this and ACTIONABLE_CONFIDENCE, the captain
+# should vector toward the bearing for better passive geometry but should
+# NOT light up active sonar or expend weapons.
+INVESTIGATE_CONFIDENCE = 0.3
+
+
+# --------------------------------------------------------------------------- #
+# Threat alerts — triggered events that override the role's default doctrine
+# --------------------------------------------------------------------------- #
+
+@dataclass(frozen=True)
+class ThreatAlert:
+    """An unambiguous alert that should override role-default behavior.
+
+    Distinct from a contact: contacts are noisy and uncertain; threats are
+    triggered events (torpedo IS in the water; friendly WAS hit). Captains
+    are expected to drop EMCON and prosecute when threats are present.
+    """
+
+    kind: str
+    """One of: torpedo_in_water | self_hit | friendly_hit."""
+    severity: str
+    """One of: info | warning | critical."""
+    bearing_deg: Optional[float] = None
+    range_m: Optional[float] = None
+    source_id: Optional[str] = None
+    detail: str = ""
+
+
+def scan_threats(
+    ship: Ship,
+    world,
+    recent_combat_events: Sequence[dict],
+) -> List[ThreatAlert]:
+    """Identify active threats relevant to `ship`.
+
+    `recent_combat_events` is a sequence of `{kind, target, ...}` dicts the
+    caller has accumulated over a short window (typically the last ~60s).
+    Each event represents a detonation against a specific target.
+
+    Returns alerts sorted with `critical` severity first.
+    """
+    threats: List[ThreatAlert] = []
+    self_pos = (ship.kin.x, ship.kin.y)
+
+    # Hostile torpedoes within passive detection range — they are very loud.
+    for t in getattr(world, "torpedoes", []) or []:
+        if t.get("side") == ship.side:
+            continue
+        try:
+            tx = float(t.get("x", 0.0))
+            ty = float(t.get("y", 0.0))
+        except (TypeError, ValueError):
+            continue
+        rng = range_to(self_pos, (tx, ty))
+        if rng > TORPEDO_PASSIVE_DETECTION_M:
+            continue
+        brg = bearing_to(self_pos, (tx, ty))
+        threats.append(ThreatAlert(
+            kind="torpedo_in_water",
+            severity="critical",
+            bearing_deg=round(brg, 1),
+            range_m=round(rng, 0),
+            source_id=str(t.get("id") or ""),
+            detail=f"hostile torpedo bearing {brg:.0f}°, range {rng:.0f} m",
+        ))
+
+    # Recent combat detonations against friendly ships.
+    for ev in recent_combat_events:
+        if ev.get("kind") not in ("torpedo.detonated", "depth_charge.detonated"):
+            continue
+        target_id = ev.get("target")
+        if not target_id:
+            continue
+        try:
+            target = world.get_ship(target_id)
+        except Exception:
+            continue
+        if target is None or target.side != ship.side:
+            continue
+        if target_id == ship.id:
+            threats.append(ThreatAlert(
+                kind="self_hit",
+                severity="critical",
+                bearing_deg=None,
+                range_m=0.0,
+                source_id=ship.id,
+                detail=f"taking weapons damage ({ev.get('kind')})",
+            ))
+        else:
+            tpos = (target.kin.x, target.kin.y)
+            brg = bearing_to(self_pos, tpos)
+            rng = range_to(self_pos, tpos)
+            threats.append(ThreatAlert(
+                kind="friendly_hit",
+                severity="warning",
+                bearing_deg=round(brg, 1),
+                range_m=round(rng, 0),
+                source_id=target_id,
+                detail=f"friendly {target_id} hit, bearing {brg:.0f}°",
+            ))
+
+    # Severity ordering: critical first, warning next, info last. Within a
+    # severity, preserve detection order.
+    severity_rank = {"critical": 0, "warning": 1, "info": 2}
+    threats.sort(key=lambda a: severity_rank.get(a.severity, 3))
+    return threats
 
 
 def doctrine_for(
@@ -235,21 +349,37 @@ def doctrine_for(
     contacts: Sequence[ContactBelief],
     fleet_destination: Optional[Tuple[float, float]] = None,
     fleet_speed_kn: Optional[float] = None,
+    threats: Optional[Sequence[ThreatAlert]] = None,
 ) -> DoctrineRecommendation:
     """Pick a default doctrine. The LLM may override with a `deviate:` note.
 
-    Priority:
-        1. If high-confidence contact in torpedo envelope (and ship has
-           torpedoes) → ENGAGE_TORPEDO.
-        2. Else if high-confidence contact in DC envelope (and ship has DC)
-           → ENGAGE_DC.
-        3. Else if a high-confidence contact has a known position → CLOSE.
-        4. Else if a fleet destination is set → TRANSIT.
-        5. Else HOLD.
+    Priority order:
+        0. THREAT OVERRIDE (highest):
+           a. `self_hit` → max-aggression engagement on best contact, or
+              evasive set_nav at flank if no contact (fight back or run).
+           b. `torpedo_in_water` → engage on torpedo bearing (fire back at
+              shooter direction) if able; otherwise evade (perpendicular
+              run from torpedo bearing at flank).
+           c. `friendly_hit` → CLOSE on the hit ship's bearing; active
+              sonar authorized by role doctrine.
+        1. High-confidence contact in torpedo envelope → ENGAGE_TORPEDO.
+        2. High-confidence contact in DC envelope → ENGAGE_DC.
+        3. High-confidence contact known position → CLOSE.
+        4. Moderate-confidence contact (INVESTIGATE_CONFIDENCE..ACTIONABLE)
+           → INVESTIGATE: vector toward bearing at moderate speed for
+           better passive geometry, do not light up.
+        5. Fleet destination set → TRANSIT.
+        6. Else HOLD.
     """
     caps = getattr(ship, "capabilities", None)
     has_torpedoes = bool(caps and getattr(caps, "has_torpedoes", False))
     has_depth_charges = bool(caps and getattr(caps, "has_depth_charges", False))
+    threats = list(threats or [])
+
+    # 0. Threat overrides take precedence over normal doctrine.
+    rec = _threat_doctrine(ship, threats, contacts, has_torpedoes, has_depth_charges)
+    if rec is not None:
+        return rec
 
     actionable: List[ContactBelief] = [
         c for c in contacts if c.confidence >= ACTIONABLE_CONFIDENCE and c.estimated_pos is not None
@@ -297,6 +427,24 @@ def doctrine_for(
             suggested_speed_kn=ship.hull.max_speed,
         )
 
+    # Moderate-confidence contacts → investigate without lighting up.
+    investigate_band: List[ContactBelief] = [
+        c for c in contacts
+        if INVESTIGATE_CONFIDENCE <= c.confidence < ACTIONABLE_CONFIDENCE
+    ]
+    if investigate_band:
+        investigate_band.sort(key=lambda c: c.confidence, reverse=True)
+        c = investigate_band[0]
+        # Vector toward the contact's bearing at moderate speed (~70% of max).
+        # Captains should improve passive geometry, not commit to engagement.
+        return DoctrineRecommendation(
+            action="INVESTIGATE",
+            reason=f"contact {c.id} confidence {c.confidence:.2f} below engagement; close passively",
+            target_id=c.id,
+            suggested_heading=c.bearing_deg,
+            suggested_speed_kn=ship.hull.max_speed * 0.7,
+        )
+
     if fleet_destination is not None:
         sol_heading = bearing_to((ship.kin.x, ship.kin.y), fleet_destination)
         return DoctrineRecommendation(
@@ -307,3 +455,83 @@ def doctrine_for(
         )
 
     return DoctrineRecommendation(action="HOLD", reason="no contacts and no fleet destination")
+
+
+def _threat_doctrine(
+    ship: Ship,
+    threats: Sequence[ThreatAlert],
+    contacts: Sequence[ContactBelief],
+    has_torpedoes: bool,
+    has_depth_charges: bool,
+) -> Optional[DoctrineRecommendation]:
+    """If any threats are active, return an override recommendation."""
+    if not threats:
+        return None
+
+    # Pick the most severe threat first.
+    self_hits = [t for t in threats if t.kind == "self_hit"]
+    torpedoes = [t for t in threats if t.kind == "torpedo_in_water"]
+    friendly_hits = [t for t in threats if t.kind == "friendly_hit"]
+
+    if self_hits:
+        # Fire back at any reasonable contact. If we have one, engage it.
+        best = max(contacts, key=lambda c: c.confidence, default=None)
+        if best is not None and best.estimated_pos is not None:
+            if has_torpedoes:
+                return DoctrineRecommendation(
+                    action="ENGAGE_TORPEDO",
+                    reason="self under attack; weapons free",
+                    target_id=best.id,
+                    suggested_heading=best.bearing_deg,
+                )
+            if has_depth_charges:
+                return DoctrineRecommendation(
+                    action="ENGAGE_DC",
+                    reason="self under attack; saturate area",
+                    target_id=best.id,
+                    suggested_heading=best.bearing_deg,
+                )
+        # No actionable contact: evade at flank, perpendicular to current heading.
+        evasive_heading = (ship.kin.heading + 90.0) % 360.0
+        return DoctrineRecommendation(
+            action="EVADE",
+            reason="self under attack with no firing solution; evade at flank",
+            suggested_heading=evasive_heading,
+            suggested_speed_kn=ship.hull.max_speed,
+        )
+
+    if torpedoes:
+        t = torpedoes[0]
+        # If we can engage on the torpedo bearing (likely back-bearing to
+        # shooter), do so. Else evade perpendicular to the torpedo run.
+        if has_torpedoes and t.bearing_deg is not None:
+            return DoctrineRecommendation(
+                action="ENGAGE_TORPEDO",
+                reason=f"torpedo in water bearing {t.bearing_deg:.0f}°; counter-fire on bearing",
+                target_id=t.source_id,
+                suggested_heading=t.bearing_deg,
+            )
+        # Evade: turn perpendicular to the torpedo's incoming bearing.
+        if t.bearing_deg is not None:
+            evade = (t.bearing_deg + 90.0) % 360.0
+        else:
+            evade = (ship.kin.heading + 90.0) % 360.0
+        return DoctrineRecommendation(
+            action="EVADE",
+            reason=f"torpedo in water bearing {t.bearing_deg}; perpendicular evasion at flank",
+            suggested_heading=evade,
+            suggested_speed_kn=ship.hull.max_speed,
+        )
+
+    if friendly_hits:
+        # Friendly was hit — close on the bearing to support / hunt.
+        f = friendly_hits[0]
+        return DoctrineRecommendation(
+            action="CLOSE",
+            reason=f"friendly {f.source_id} hit; close on bearing {f.bearing_deg} to prosecute",
+            target_id=f.source_id,
+            suggested_heading=f.bearing_deg,
+            suggested_speed_kn=ship.hull.max_speed,
+        )
+
+    return None

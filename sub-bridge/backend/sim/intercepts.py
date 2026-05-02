@@ -193,9 +193,9 @@ class InterceptSystem:
         if not radio_raised:
             return False
 
-        # Check depth
+        # Check depth — `world.ships` is a Dict[str, Ship]; iterate values.
         world = self._world_getter()
-        ownship = next((s for s in world.ships if s.id == "ownship"), None)
+        ownship = next((s for s in world.all_ships() if s.id == "ownship"), None)
         if not ownship:
             return False
 
@@ -205,8 +205,8 @@ class InterceptSystem:
         """Calculate bearing from ownship to specified ship."""
         world = self._world_getter()
 
-        ownship = next((s for s in world.ships if s.id == "ownship"), None)
-        target = next((s for s in world.ships if s.id == ship_id), None)
+        ownship = next((s for s in world.all_ships() if s.id == "ownship"), None)
+        target = next((s for s in world.all_ships() if s.id == ship_id), None)
 
         if not ownship or not target:
             return None
@@ -220,7 +220,7 @@ class InterceptSystem:
         """Calculate bearing from ownship to a point."""
         world = self._world_getter()
 
-        ownship = next((s for s in world.ships if s.id == "ownship"), None)
+        ownship = next((s for s in world.all_ships() if s.id == "ownship"), None)
         if not ownship:
             return None
 
@@ -246,7 +246,7 @@ class InterceptSystem:
             return 0.3  # Low probability without position
 
         world = self._world_getter()
-        ownship = next((s for s in world.ships if s.id == "ownship"), None)
+        ownship = next((s for s in world.all_ships() if s.id == "ownship"), None)
 
         if not ownship:
             return 0.0

@@ -16,6 +16,38 @@
   "blue_mission_summary": "BLUE submarine is participating in weapons validation exercises. RED destroyers will test their ASW capabilities at predetermined coordinates.",
   "objective": "Survive the live-fire weapons validation exercise.",
   "side_objectives": { "RED": "validate_weapons_systems", "BLUE": "test_evasion_capabilities" },
+  "scenario_context": {
+    "RED": {
+      "narrative": "Weapons validation exercise: two torpedo destroyers and two depth-charge destroyers conducting live-fire testing against a maneuvering submarine target. Active sonar authorized; saturating fire patterns expected.",
+      "primary_objective": "Validate ASW weapons systems by destroying the submarine target",
+      "win_condition": "Submarine destroyed during the exercise window",
+      "lose_condition": "Submarine survives the exercise",
+      "intelligence": "Submarine target maneuvering at training depths in the exercise box. No thermocline cover this iteration.",
+      "constraints": [
+        "Active sonar authorized; this is a saturated environment by design",
+        "Coordinate cross-firing between torp and DC sections — the sub will try to slip between fire lanes"
+      ],
+      "doctrine_emphasis": "saturating_fire_validation"
+    }
+  },
+  "task_groups": {
+    "RED": {
+      "ASW_VALIDATION": {
+        "doctrine": "asw_hunt",
+        "lead": "red-dd-torp-01",
+        "members": ["red-dd-torp-01", "red-dd-torp-02", "red-dd-dc-01", "red-dd-dc-02"],
+        "protected": [],
+        "formation": "search-spread",
+        "primary_route": null
+      }
+    }
+  },
+  "ship_roles": {
+    "red-dd-torp-01": { "role": "asw_hunter_destroyer", "task_group": "ASW_VALIDATION" },
+    "red-dd-torp-02": { "role": "asw_hunter_destroyer", "task_group": "ASW_VALIDATION" },
+    "red-dd-dc-01":   { "role": "asw_hunter_destroyer", "task_group": "ASW_VALIDATION" },
+    "red-dd-dc-02":   { "role": "asw_hunter_destroyer", "task_group": "ASW_VALIDATION" }
+  },
   "blue_captain_summary": "Weapons validation exercise. RED destroyers will test torpedo and depth charge systems at predetermined coordinates. Practice evasion and counter-detection techniques.",
   "roe": [
     "Weapons release authorized for validation purposes at designated test coordinates."

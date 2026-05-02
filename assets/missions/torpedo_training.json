@@ -39,6 +39,34 @@
     "RED": {"min_survivors": 1, "timeout_s": 600},
     "BLUE": {"destroy_targets": ["convoy-01", "convoy-02", "convoy-03"]}
   },
+  "scenario_context": {
+    "RED": {
+      "narrative": "Three unarmed cargo vessels providing static targets for torpedo practice. No escort, no sensors, no weapons. Their job is to keep moving in straight lines.",
+      "primary_objective": "Maintain assigned course and speed for the duration of the exercise",
+      "win_condition": "Survive the exercise window",
+      "lose_condition": "Destroyed by trainee torpedo fire",
+      "intelligence": "This is a training range. Trainee submarines will attempt torpedo runs. The convoys are non-evasive practice targets.",
+      "constraints": ["Hold course and speed; this is a training range"],
+      "doctrine_emphasis": "static_training_target"
+    }
+  },
+  "task_groups": {
+    "RED": {
+      "TARGET_CONVOY": {
+        "doctrine": "convoy_transit",
+        "lead": "convoy-02",
+        "members": ["convoy-01", "convoy-02", "convoy-03"],
+        "protected": ["convoy-01", "convoy-02", "convoy-03"],
+        "formation": "loose",
+        "primary_route": null
+      }
+    }
+  },
+  "ship_roles": {
+    "convoy-01": { "role": "convoy_cargo", "task_group": "TARGET_CONVOY" },
+    "convoy-02": { "role": "convoy_cargo", "task_group": "TARGET_CONVOY" },
+    "convoy-03": { "role": "convoy_cargo", "task_group": "TARGET_CONVOY" }
+  },
   "environment": { "timeOfDay": "day", "weather": "calm", "thermocline_on": false },
   "ship_behaviors": {
     "convoy-01": "You are an unarmed cargo vessel. Maintain course and speed. You have no weapons or sensors.",

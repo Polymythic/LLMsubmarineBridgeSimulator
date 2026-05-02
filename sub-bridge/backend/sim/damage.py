@@ -6,7 +6,10 @@ PUMP_COUNT = 2  # Number of assignable pumps
 PUMP_RATE = 0.15  # Flooding reduction per second per pump
 
 # Flooding mechanics
-BREACH_HEALING_RATE = 0.01  # Breach rate heals per second (damage control teams)
+# Healing is slow — a torpedo breach (0.6 rate) takes ~3 minutes to seal even
+# with damage control. This is intentional: a torpedo hit should keep flooding
+# until pumps are assigned and damage control has time to work.
+BREACH_HEALING_RATE = 0.003  # Breach rate heals per second
 FLOOD_SPREAD_THRESHOLD = 0.5  # Flooding must exceed this to spread to neighbors
 FLOOD_SPREAD_RATE_FACTOR = 0.05  # Spread rate = factor * (source_level - threshold)
 
@@ -56,14 +59,55 @@ def step_damage(ship: Ship, dt: float, pump_assignments: dict = None) -> dict:
     # 4. Flooding spread between adjacent compartments
     _process_flood_spread(compartments, dt)
 
-    # 5. Update overall hull damage (average of compartment integrity loss)
-    total_integrity_loss = sum(1.0 - c.hull_integrity for c in compartments)
-    ship.damage.hull = min(1.0, total_integrity_loss / len(compartments))
+    # 5. Update overall hull damage. Naval combat is not "average integrity"
+    # — losing one compartment outright is far worse than scattered damage.
+    # Formula: dominated by the worst compartment + count of destroyed ones.
+    ship.damage.hull = compute_hull_damage(compartments)
 
     # 6. Calculate system failures based on compartment flooding
     system_failures = _calculate_system_failures(compartments)
 
     return system_failures
+
+
+def compute_hull_damage(compartments: list) -> float:
+    """Aggregate compartment damage into a single hull-damage value [0, 1].
+
+    A ship is destroyed when any combination of:
+      * 2+ compartments are fully destroyed (keel break);
+      * a critical compartment (engine or reactor) is destroyed AND fully
+        flooded (catastrophic loss); or
+      * the worst compartment plus distributed damage exceeds the threshold.
+
+    Coefficients tuned so:
+      * single torpedo hit (primary 0.85 / adjacent 0.30) → ~0.45 hull damage;
+      * two hits in the same area (typically destroying the primary
+        compartment) → ~0.95 hull damage / mission-killed;
+      * three hits in the same area or any 2 destroyed compartments → 1.0.
+    """
+    if not compartments:
+        return 0.0
+    losses = [1.0 - c.hull_integrity for c in compartments]
+    max_loss = max(losses)
+    avg_loss = sum(losses) / len(compartments)
+    # "Effectively destroyed" — anything that has lost ≥ 85% integrity
+    # counts. This catches compartments saturated by repeated adjacent
+    # damage (e.g., comp at 0.1 from 3x adjacent torpedo hits).
+    destroyed = sum(1 for c in compartments if c.hull_integrity <= 0.15)
+
+    # Critical compartment loss (engine or reactor) + fully flooded = doomed.
+    critical_indices = (3, 4)  # Aft (Reactor), Engine Room
+    critical_lost = any(
+        i < len(compartments)
+        and compartments[i].hull_integrity <= 0.0
+        and compartments[i].flooding_level >= 0.8
+        for i in critical_indices
+    )
+    if critical_lost:
+        return 1.0
+
+    hull = 0.4 * destroyed + 0.5 * max_loss + 0.1 * avg_loss
+    return max(0.0, min(1.0, hull))
 
 
 def _process_flood_spread(compartments: list, dt: float) -> None:

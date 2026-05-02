@@ -13,6 +13,59 @@
     "notes": "This is an expert-level engagement requiring tactical planning and precise execution. You cannot destroy all targets with a single attack run. Manage your weapons carefully. Survival and mission success both matter. Good luck, Captain."
   },
   "red_mission_summary": "Two RED convoys are transiting south under destroyer escort; maintain formation, minimize detectability, and reach the destination while denying BLUE interdiction.",
+  "scenario_context": {
+    "RED": {
+      "narrative": "Two parallel cargo convoys (CONVOY_A and CONVOY_B) on scheduled transit from base to depot at [0, -25000]. Convoys maintain 4 km lateral separation for redundancy. Each convoy escorted by one destroyer with full ASW load. Transit window is critical — late delivery cascades to scheduled supply runs.",
+      "primary_objective": "Deliver all 4 cargo ships intact to destination [0, -25000]",
+      "win_condition": "All cargo ships reach destination; submarine threat neutralized or evaded",
+      "lose_condition": "Any cargo ship sunk OR both escort destroyers destroyed",
+      "intelligence": "Submarine activity reported in sector DELTA-9 within last 48 hours. Probability of contact: HIGH. BLUE submarine likely starts 10-20 km from convoy track.",
+      "constraints": [
+        "Maintain EMCON (no active sonar) until contact confidence >= 0.7",
+        "Escorts must remain within 5 km of their assigned convoy unless prosecuting a confirmed contact",
+        "Do not coordinate cross-convoy unless one convoy loses its escort"
+      ],
+      "doctrine_emphasis": "convoy_protection"
+    },
+    "BLUE": {
+      "narrative": "Two parallel RED convoys moving south, separated by ~4 km, each with a destroyer escort and two cargo ships. You start 15 km away from convoy track at quiet speed.",
+      "primary_objective": "Sink all 4 cargo vessels before destination",
+      "win_condition": "All 4 cargo vessels destroyed; submarine survives",
+      "lose_condition": "Submarine destroyed OR fewer than 4 cargo vessels sunk before they reach destination",
+      "intelligence": "Convoys at 8 kn southbound, 4 km separation, 2 escorts total",
+      "constraints": ["Survive to extract"]
+    }
+  },
+  "task_groups": {
+    "RED": {
+      "CONVOY_A": {
+        "doctrine": "convoy_escort",
+        "lead": "red-a-dd-01",
+        "members": ["red-a-dd-01", "red-a-cv-01", "red-a-cv-02"],
+        "protected": ["red-a-cv-01", "red-a-cv-02"],
+        "formation": "screen-ahead",
+        "primary_route": null,
+        "destination": [-2000, -25000]
+      },
+      "CONVOY_B": {
+        "doctrine": "convoy_escort",
+        "lead": "red-b-dd-01",
+        "members": ["red-b-dd-01", "red-b-cv-01", "red-b-cv-02"],
+        "protected": ["red-b-cv-01", "red-b-cv-02"],
+        "formation": "screen-ahead",
+        "primary_route": null,
+        "destination": [2000, -25000]
+      }
+    }
+  },
+  "ship_roles": {
+    "red-a-dd-01": { "role": "convoy_escort_destroyer", "task_group": "CONVOY_A" },
+    "red-a-cv-01": { "role": "convoy_cargo",            "task_group": "CONVOY_A" },
+    "red-a-cv-02": { "role": "convoy_cargo",            "task_group": "CONVOY_A" },
+    "red-b-dd-01": { "role": "convoy_escort_destroyer", "task_group": "CONVOY_B" },
+    "red-b-cv-01": { "role": "convoy_cargo",            "task_group": "CONVOY_B" },
+    "red-b-cv-02": { "role": "convoy_cargo",            "task_group": "CONVOY_B" }
+  },
   "blue_mission_summary": "Two RED convoys (each 1x Destroyer + 2x Convoy) are moving in parallel ~4 km apart to a far-south waypoint. You start 15 km away from the convoy path. Interdict and sink all Convoy ships without losing our submarine.",
   "objective": "Sink all enemy convoy vessels before they escape to safety.",
   "side_objectives": { "RED": "escort_convoys_to_destination", "BLUE": "interdict_and_sink_convoys" },

@@ -17,6 +17,11 @@ from ..models import Ship
 from ..storage import insert_event
 from .ai_tools import LocalAIStub
 from .sonar import passive_contacts as _passive_contacts
+from . import tactical as _tactical
+
+
+# Set of role names we've already warned about missing files for.
+_ROLE_WARN_SEEN: set = set()
 
 
 def _load_prompt_template(template_name: str) -> str:
@@ -25,7 +30,7 @@ def _load_prompt_template(template_name: str) -> str:
         # Get the project root (go up from sub-bridge/backend/sim/ to project root)
         project_root = Path(__file__).parent.parent.parent.parent
         template_path = project_root / "ai" / f"{template_name}.md"
-        
+
         if template_path.exists():
             return template_path.read_text(encoding='utf-8')
         else:
@@ -33,6 +38,29 @@ def _load_prompt_template(template_name: str) -> str:
             return ""
     except Exception as e:
         print(f"Error loading prompt template {template_name}: {e}")
+        return ""
+
+
+def _load_role_prompt(role_name: str) -> str:
+    """Load a role doctrine prompt from `ai/roles/<role>.md`.
+
+    Returns the empty string if the role file doesn't exist (not all ships
+    have roles in legacy missions). Logs a one-time warning per missing role.
+    """
+    if not role_name:
+        return ""
+    try:
+        project_root = Path(__file__).parent.parent.parent.parent
+        path = project_root / "ai" / "roles" / f"{role_name}.md"
+        if path.exists():
+            return path.read_text(encoding="utf-8")
+        # No spam: warn once per missing role.
+        if role_name not in _ROLE_WARN_SEEN:
+            print(f"Warning: role prompt '{role_name}.md' not found at {path}")
+            _ROLE_WARN_SEEN.add(role_name)
+        return ""
+    except Exception as e:
+        print(f"Error loading role prompt '{role_name}': {e}")
         return ""
 
 
@@ -107,6 +135,25 @@ class AgentsOrchestrator:
         self._orders_last_by_ship = {}  # type: ignore[attr-defined]
         self._ship_alert_map = {}  # type: ignore[attr-defined]
         self._visual_detection_map = {}  # type: ignore[attr-defined]
+        self._recent_combat_events = []  # type: ignore[attr-defined]
+
+    # Phase 8 — combat event buffer for threat detection. The simulation
+    # appends events here (torpedo detonations, depth-charge detonations)
+    # and `_build_ship_summary` reads the last ~60s when scanning for
+    # threats relevant to a given ship.
+    COMBAT_EVENT_WINDOW_S = 60.0
+
+    def record_combat_event(self, kind: str, payload: Dict[str, Any]) -> None:
+        """Append a combat event with a timestamp; prune anything beyond the window."""
+        if not hasattr(self, "_recent_combat_events"):
+            self._recent_combat_events = []  # type: ignore[attr-defined]
+        now = time.time()
+        self._recent_combat_events.append({"ts": now, "kind": kind, **payload})  # type: ignore[attr-defined]
+        cutoff = now - self.COMBAT_EVENT_WINDOW_S
+        self._recent_combat_events = [  # type: ignore[attr-defined]
+            e for e in self._recent_combat_events  # type: ignore[attr-defined]
+            if e.get("ts", 0.0) >= cutoff
+        ]
 
     # ---------- Public configuration ----------
     def set_fleet_engine(self, kind: Literal["stub", "ollama", "openai"], model: str) -> None:
@@ -307,6 +354,17 @@ class AgentsOrchestrator:
                 "success_criteria": mission_brief.get("success_criteria"),
                 # Waypoint routes for navigation planning
                 "waypoint_routes": mission_brief.get("waypoint_routes"),
+                # Phase 6 — explicit RED-side scenario context.
+                # Pulls the RED slice of `scenario_context` so the fleet
+                # commander reads its own narrative, not BLUE's.
+                "scenario_context": (mission_brief.get("scenario_context", {}) or {}).get("RED"),
+                # Phase 6 — pre-authored task group structure. Fleet adapts
+                # these groups (re-tasking, splitting) rather than inventing
+                # them every turn from a flat ship list.
+                "task_groups": (mission_brief.get("task_groups", {}) or {}).get("RED"),
+                # Phase 6 — per-ship role index, useful when fleet wants to
+                # talk to a specific role (e.g. "all convoy_cargo, increase speed").
+                "ship_roles": mission_brief.get("ship_roles"),
             }
         else:
             mission = {}
@@ -486,6 +544,136 @@ class AgentsOrchestrator:
             orders_last = (getattr(self, "_orders_last_by_ship", {}) or {}).get(ship.id, {})
         except Exception:
             orders_last = {}
+
+        # ---- Scenario context: role + task group + tactical briefing -------- #
+        # All three are cheap projections that let the captain LLM reason
+        # about WHO it is, WHO its teammates are, and WHAT to do next.
+        role_name = ""
+        task_group_context: Optional[Dict[str, Any]] = None
+        try:
+            mission_brief = getattr(self, "_mission_brief", None) or {}
+            ship_roles = mission_brief.get("ship_roles", {}) or {}
+            role_entry = ship_roles.get(ship.id, {}) or {}
+            role_name = str(role_entry.get("role", "")) if isinstance(role_entry, dict) else ""
+            tg_name = str(role_entry.get("task_group", "")) if isinstance(role_entry, dict) else ""
+            if tg_name:
+                tg_root = (mission_brief.get("task_groups", {}) or {}).get(ship.side, {}) or {}
+                tg_def = tg_root.get(tg_name, {}) or {}
+                if tg_def:
+                    # Build peer list (other members of the same group, excluding self)
+                    members = list(tg_def.get("members", []) or [])
+                    peers: List[Dict[str, Any]] = []
+                    try:
+                        world = self._world_getter()
+                        for sid in members:
+                            if sid == ship.id:
+                                continue
+                            try:
+                                peer = world.get_ship(sid)
+                                peers.append({
+                                    "id": peer.id,
+                                    "class": getattr(peer, "ship_class", None),
+                                    "pos": [peer.kin.x, peer.kin.y],
+                                    "heading": peer.kin.heading,
+                                    "speed": peer.kin.speed,
+                                })
+                            except Exception:
+                                continue
+                    except Exception:
+                        peers = []
+                    task_group_context = {
+                        "name": tg_name,
+                        "doctrine": tg_def.get("doctrine"),
+                        "lead": tg_def.get("lead"),
+                        "is_lead": (tg_def.get("lead") == ship.id),
+                        "members": members,
+                        "protected": list(tg_def.get("protected", []) or []),
+                        "formation": tg_def.get("formation"),
+                        "primary_route": tg_def.get("primary_route"),
+                        "peers": peers,
+                    }
+        except Exception:
+            pass
+
+        # Phase 8 — scan for active threats (torpedoes in water, friendly
+        # hits, self hits). These override the contact-confidence ladder.
+        threats: List[_tactical.ThreatAlert] = []
+        try:
+            world_for_threats = self._world_getter()
+            recent_events = list(getattr(self, "_recent_combat_events", []) or [])
+            threats = _tactical.scan_threats(ship, world_for_threats, recent_events)
+        except Exception:
+            threats = []
+
+        # Tactical briefing — pre-computed answers so the LLM doesn't compute
+        # geometry. Uses tactical.doctrine_for + bearing helpers.
+        tactical_briefing: Optional[Dict[str, Any]] = None
+        try:
+            # Build ContactBelief list from local_contacts. A contact has a
+            # known position only when range_est is present.
+            beliefs: List[_tactical.ContactBelief] = []
+            for c in local_contacts:
+                cid = c.get("id") or "unknown"
+                if c.get("side") == ship.side:
+                    continue  # don't engage friendlies
+                bearing = float(c.get("bearing", 0.0))
+                conf = float(c.get("confidence", 0.0))
+                rng = c.get("range_est")
+                est_pos: Optional[tuple] = None
+                if rng is not None:
+                    th = math.radians(bearing)
+                    est_x = ship.kin.x + float(rng) * math.sin(th)
+                    est_y = ship.kin.y + float(rng) * math.cos(th)
+                    est_pos = (est_x, est_y)
+                beliefs.append(_tactical.ContactBelief(id=cid, bearing_deg=bearing, confidence=conf, estimated_pos=est_pos))
+            # Fleet-fused contacts already carry pos_est; promote them to high
+            # confidence so they outrank passive bearings if present.
+            for fc in fleet_fused_contacts:
+                pos = fc.get("pos_est")
+                if isinstance(pos, list) and len(pos) == 2:
+                    beliefs.append(_tactical.ContactBelief(
+                        id=f"fleet_{len(beliefs)}",
+                        bearing_deg=float(fc.get("bearing", 0.0)),
+                        confidence=0.85,
+                        estimated_pos=(float(pos[0]), float(pos[1])),
+                    ))
+            # Fleet destination for this ship, if known.
+            fleet_dest = None
+            fleet_speed = None
+            try:
+                obj_for_self = ((fleet_intent or {}).get("objectives", {}) or {}).get(ship.id, {}) or {}
+                dest = obj_for_self.get("destination")
+                if isinstance(dest, list) and len(dest) == 2:
+                    fleet_dest = (float(dest[0]), float(dest[1]))
+                speed_kn = obj_for_self.get("speed_kn")
+                if isinstance(speed_kn, (int, float)):
+                    fleet_speed = float(speed_kn)
+            except Exception:
+                pass
+            rec = _tactical.doctrine_for(
+                ship,
+                beliefs,
+                fleet_destination=fleet_dest,
+                fleet_speed_kn=fleet_speed,
+                threats=threats,
+            )
+            tactical_briefing = {
+                "doctrine_recommendation": rec.action,
+                "reason": rec.reason,
+                "target_id": rec.target_id,
+                "suggested_heading": rec.suggested_heading,
+                "suggested_speed_kn": rec.suggested_speed_kn,
+            }
+            if fleet_dest is not None:
+                tactical_briefing["fleet_destination_bearing"] = _tactical.bearing_to(
+                    (ship.kin.x, ship.kin.y), fleet_dest
+                )
+                tactical_briefing["fleet_destination_range_m"] = _tactical.range_to(
+                    (ship.kin.x, ship.kin.y), fleet_dest
+                )
+        except Exception:
+            tactical_briefing = None
+        # ----------------------------------------------------------------- #
         # Alert flag surfaced from Simulation (if present) or simple heuristic fallback
         alert_flag = False
         try:
@@ -526,6 +714,23 @@ class AgentsOrchestrator:
             "orders_last": orders_last,
             "fleet_intent": {**fleet_intent, "summary": fleet_summary_line} if isinstance(fleet_intent, dict) else fleet_intent,
             "detected_state": {"alert": alert_flag},
+            # Phase 6 scenario fields. Empty / None for legacy missions.
+            "role": role_name,
+            "task_group_context": task_group_context,
+            "tactical_briefing": tactical_briefing,
+            # Phase 8 — active threat alerts. Empty list when nothing is
+            # happening; presence of any entry should drop EMCON discipline.
+            "threats": [
+                {
+                    "kind": t.kind,
+                    "severity": t.severity,
+                    "bearing": t.bearing_deg,
+                    "range_m": t.range_m,
+                    "source_id": t.source_id,
+                    "detail": t.detail,
+                }
+                for t in threats
+            ],
         }
         # Truncate numeric precision to save prompt space
         return _round_floats(result, 1)
@@ -859,6 +1064,26 @@ class AgentsOrchestrator:
                 return result
             # Load system prompt from template
             system_prompt = _load_prompt_template("ship_commander_system")
+
+            # Phase 6: append role-specific doctrine if the mission assigned
+            # a role to this ship. Falls through silently for legacy missions
+            # that haven't been migrated to ship_roles yet.
+            try:
+                mission_brief = getattr(world, "mission_brief", {}) or {}
+                ship_roles_map = mission_brief.get("ship_roles", {}) or {}
+                role_entry = ship_roles_map.get(ship_id, {}) or {}
+                role_name = str(role_entry.get("role", "")) if isinstance(role_entry, dict) else ""
+                if role_name:
+                    role_doctrine = _load_role_prompt(role_name)
+                    if role_doctrine:
+                        system_prompt = (
+                            system_prompt
+                            + "\n\n---\n\n"
+                            + f"## Active Role\n\nYou are operating as: **{role_name}**.\n\n"
+                            + role_doctrine
+                        )
+            except Exception:
+                pass
             
             # Capture full API call for debugging (mission-agnostic prompts)
             api_call_debug = {

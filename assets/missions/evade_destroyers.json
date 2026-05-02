@@ -15,6 +15,37 @@
     "notes": "This is a training exercise. Weapons release is authorized for self-defense only. The thermocline is your friend - use it wisely. Good hunting, Captain."
   },
   "side_objectives": { "RED": "deny_escape_and_destroy_sub", "BLUE": "reach_escape_wp_undetected_or_survive" },
+  "scenario_context": {
+    "RED": {
+      "narrative": "Three destroyers conducting an aggressive ASW patrol of sector KILO-7. Standing orders are to detect, prosecute, and destroy any submarine attempting to transit the patrol zone. Active sonar authorized; coordinate via 3-5 km spacing to deny escape vectors.",
+      "primary_objective": "Detect and destroy the submarine before it reaches the extraction waypoint at [4000, -2000]",
+      "win_condition": "Submarine destroyed before reaching extraction",
+      "lose_condition": "Submarine escapes to extraction waypoint",
+      "intelligence": "Submarine known to be operating in this sector. A strong thermocline at 75 m may be exploited for acoustic masking — search both above and below the layer.",
+      "constraints": [
+        "Maintain 3-5 km spacing between destroyers to maximize coverage",
+        "Box the submarine using coordinated maneuvers"
+      ],
+      "doctrine_emphasis": "aggressive_asw_prosecution"
+    }
+  },
+  "task_groups": {
+    "RED": {
+      "ASW_PATROL": {
+        "doctrine": "asw_hunt",
+        "lead": "red-dd-01",
+        "members": ["red-dd-01", "red-dd-02", "red-dd-03"],
+        "protected": [],
+        "formation": "line-abreast",
+        "primary_route": null
+      }
+    }
+  },
+  "ship_roles": {
+    "red-dd-01": { "role": "asw_hunter_destroyer", "task_group": "ASW_PATROL" },
+    "red-dd-02": { "role": "asw_hunter_destroyer", "task_group": "ASW_PATROL" },
+    "red-dd-03": { "role": "asw_hunter_destroyer", "task_group": "ASW_PATROL" }
+  },
   "blue_captain_summary": "Three RED destroyers are patrolling the sector. Proceed to the escape waypoint while minimizing detectability. Expect depth-charge attacks if counter-detected.",
   "roe": [
     "Weapons release authorized."

@@ -195,10 +195,25 @@ def test_doctrine_no_contacts_with_fleet_returns_transit():
     assert rec.suggested_speed_kn == pytest.approx(15.0)
 
 
-def test_doctrine_low_confidence_contact_does_not_engage():
-    contacts = [ContactBelief(id="c1", bearing_deg=90.0, confidence=0.3, estimated_pos=(2000.0, 0.0))]
+def test_doctrine_below_investigate_confidence_transits():
+    """Confidence below INVESTIGATE_CONFIDENCE (0.3) is too faint to act on."""
+    contacts = [ContactBelief(id="c1", bearing_deg=90.0, confidence=0.15, estimated_pos=(2000.0, 0.0))]
     rec = doctrine_for(_destroyer(), contacts, fleet_destination=(10000.0, 0.0))
-    assert rec.action == "TRANSIT"  # confidence below ACTIONABLE_CONFIDENCE
+    assert rec.action == "TRANSIT"
+
+
+def test_doctrine_moderate_confidence_contact_investigates():
+    """A contact between INVESTIGATE_CONFIDENCE and ACTIONABLE_CONFIDENCE
+    triggers an INVESTIGATE recommendation: vector toward bearing without
+    engaging or lighting up active sonar."""
+    contacts = [ContactBelief(id="c1", bearing_deg=120.0, confidence=0.5, estimated_pos=(3000.0, 0.0))]
+    rec = doctrine_for(_destroyer(), contacts, fleet_destination=(10000.0, 0.0))
+    assert rec.action == "INVESTIGATE"
+    assert rec.target_id == "c1"
+    assert rec.suggested_heading == pytest.approx(120.0)
+    # Moderate speed (~70% of max), not flank
+    assert rec.suggested_speed_kn is not None
+    assert rec.suggested_speed_kn < _destroyer().hull.max_speed
 
 
 def test_doctrine_high_confidence_contact_in_torpedo_envelope_engages():
@@ -275,3 +290,172 @@ def test_constants_are_reasonable():
     # Sanity check that ACTIONABLE_CONFIDENCE is in the trigger zone the
     # orchestrator uses elsewhere; this catches accidental drift.
     assert 0.5 <= ACTIONABLE_CONFIDENCE <= 0.9
+
+
+# --------------------------------------------------------------------------- #
+# scan_threats — torpedoes in water, friendly hits, self hits
+# --------------------------------------------------------------------------- #
+
+class _StubWorld:
+    """Minimal world stub for testing scan_threats without a Simulation."""
+
+    def __init__(self, ships, torpedoes=None):
+        self._ships = {s.id: s for s in ships}
+        self.torpedoes = list(torpedoes or [])
+
+    def get_ship(self, sid):
+        return self._ships.get(sid)
+
+
+def test_scan_threats_detects_hostile_torpedo_in_range():
+    from backend.sim.tactical import scan_threats, ThreatAlert
+    me = make_ship(id_="red-01", side="RED", x=0.0, y=0.0)
+    world = _StubWorld([me], torpedoes=[
+        {"id": "torp-1", "side": "BLUE", "x": 1000.0, "y": 0.0, "depth": 100, "armed": True},
+    ])
+    threats = scan_threats(me, world, recent_combat_events=[])
+    assert len(threats) == 1
+    t = threats[0]
+    assert t.kind == "torpedo_in_water"
+    assert t.severity == "critical"
+    assert t.bearing_deg == pytest.approx(90.0, abs=0.5)
+    assert t.range_m == pytest.approx(1000.0, abs=1.0)
+
+
+def test_scan_threats_ignores_own_torpedoes():
+    from backend.sim.tactical import scan_threats
+    me = make_ship(id_="red-01", side="RED")
+    world = _StubWorld([me], torpedoes=[
+        {"id": "torp-friendly", "side": "RED", "x": 500.0, "y": 0.0},
+    ])
+    assert scan_threats(me, world, []) == []
+
+
+def test_scan_threats_ignores_torpedoes_beyond_passive_range():
+    from backend.sim.tactical import scan_threats, TORPEDO_PASSIVE_DETECTION_M
+    me = make_ship(id_="red-01", side="RED")
+    far = TORPEDO_PASSIVE_DETECTION_M + 500.0
+    world = _StubWorld([me], torpedoes=[
+        {"id": "t1", "side": "BLUE", "x": far, "y": 0.0},
+    ])
+    assert scan_threats(me, world, []) == []
+
+
+def test_scan_threats_self_hit():
+    from backend.sim.tactical import scan_threats
+    me = make_ship(id_="red-01", side="RED")
+    world = _StubWorld([me])
+    events = [{"kind": "torpedo.detonated", "target": "red-01"}]
+    threats = scan_threats(me, world, events)
+    assert len(threats) == 1
+    assert threats[0].kind == "self_hit"
+    assert threats[0].severity == "critical"
+
+
+def test_scan_threats_friendly_hit():
+    from backend.sim.tactical import scan_threats
+    me = make_ship(id_="red-a-dd-01", side="RED", x=0.0, y=0.0)
+    peer = make_ship(id_="red-a-cv-01", side="RED", x=2000.0, y=0.0)
+    world = _StubWorld([me, peer])
+    events = [{"kind": "torpedo.detonated", "target": "red-a-cv-01"}]
+    threats = scan_threats(me, world, events)
+    assert len(threats) == 1
+    t = threats[0]
+    assert t.kind == "friendly_hit"
+    assert t.severity == "warning"
+    assert t.source_id == "red-a-cv-01"
+    # Bearing TO the hit friendly (east of me)
+    assert t.bearing_deg == pytest.approx(90.0, abs=0.5)
+
+
+def test_scan_threats_ignores_enemy_hits():
+    """A hit on a non-friendly is not OUR threat (nice problem to have)."""
+    from backend.sim.tactical import scan_threats
+    me = make_ship(id_="red-01", side="RED")
+    enemy = make_ship(id_="ownship", side="BLUE")
+    world = _StubWorld([me, enemy])
+    events = [{"kind": "torpedo.detonated", "target": "ownship"}]
+    assert scan_threats(me, world, events) == []
+
+
+def test_scan_threats_severity_ordering():
+    """Critical threats sort before warning."""
+    from backend.sim.tactical import scan_threats
+    me = make_ship(id_="red-a-dd-01", side="RED", x=0.0, y=0.0)
+    peer = make_ship(id_="red-a-cv-01", side="RED", x=2000.0, y=0.0)
+    world = _StubWorld([me, peer], torpedoes=[
+        {"id": "torp-1", "side": "BLUE", "x": 500.0, "y": 0.0},
+    ])
+    events = [{"kind": "depth_charge.detonated", "target": "red-a-cv-01"}]
+    threats = scan_threats(me, world, events)
+    assert len(threats) == 2
+    # Critical (torpedo) first; warning (friendly_hit) second
+    assert threats[0].severity == "critical"
+    assert threats[1].severity == "warning"
+
+
+# --------------------------------------------------------------------------- #
+# doctrine_for with threats
+# --------------------------------------------------------------------------- #
+
+def test_doctrine_torpedo_in_water_engages_back_bearing_when_armed():
+    """A torpedo-in-water threat with a destroyer that has torpedoes should
+    counter-fire on the bearing."""
+    from backend.sim.tactical import ThreatAlert
+    threats = [ThreatAlert(kind="torpedo_in_water", severity="critical", bearing_deg=270.0, range_m=2000)]
+    rec = doctrine_for(_destroyer(), contacts=[], threats=threats)
+    assert rec.action == "ENGAGE_TORPEDO"
+    assert rec.suggested_heading == pytest.approx(270.0)
+
+
+def test_doctrine_torpedo_in_water_evades_when_unarmed():
+    from backend.sim.tactical import ThreatAlert
+    ship = make_ship(id_="cv-01")
+    ship.capabilities = ShipCapabilities(has_torpedoes=False, has_depth_charges=False)
+    threats = [ThreatAlert(kind="torpedo_in_water", severity="critical", bearing_deg=180.0, range_m=1500)]
+    rec = doctrine_for(ship, contacts=[], threats=threats)
+    assert rec.action == "EVADE"
+    # Perpendicular to the incoming bearing (90° offset)
+    assert rec.suggested_heading == pytest.approx(270.0, abs=0.5)
+    assert rec.suggested_speed_kn == pytest.approx(ship.hull.max_speed)
+
+
+def test_doctrine_self_hit_engages_best_contact():
+    from backend.sim.tactical import ThreatAlert
+    contacts = [ContactBelief(id="attacker", bearing_deg=315.0, confidence=0.6, estimated_pos=(-2000.0, 2000.0))]
+    threats = [ThreatAlert(kind="self_hit", severity="critical", source_id="red-01")]
+    rec = doctrine_for(_destroyer(), contacts=contacts, threats=threats)
+    assert rec.action == "ENGAGE_TORPEDO"  # destroyer has torpedoes
+    assert rec.target_id == "attacker"
+
+
+def test_doctrine_self_hit_with_no_contact_evades():
+    from backend.sim.tactical import ThreatAlert
+    threats = [ThreatAlert(kind="self_hit", severity="critical", source_id="red-01")]
+    rec = doctrine_for(_destroyer(), contacts=[], threats=threats)
+    assert rec.action == "EVADE"
+
+
+def test_doctrine_friendly_hit_closes_on_bearing():
+    from backend.sim.tactical import ThreatAlert
+    threats = [ThreatAlert(
+        kind="friendly_hit", severity="warning",
+        bearing_deg=90.0, range_m=2000.0, source_id="red-a-cv-01",
+    )]
+    rec = doctrine_for(_destroyer(), contacts=[], threats=threats)
+    assert rec.action == "CLOSE"
+    assert rec.suggested_heading == pytest.approx(90.0)
+    assert rec.target_id == "red-a-cv-01"
+
+
+def test_doctrine_threat_overrides_transit():
+    """Threat override beats normal TRANSIT logic even if a fleet destination is set."""
+    from backend.sim.tactical import ThreatAlert
+    threats = [ThreatAlert(kind="torpedo_in_water", severity="critical", bearing_deg=180.0, range_m=1000)]
+    rec = doctrine_for(
+        _destroyer(),
+        contacts=[],
+        fleet_destination=(10000.0, 0.0),  # would normally be TRANSIT
+        threats=threats,
+    )
+    assert rec.action != "TRANSIT"

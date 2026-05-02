@@ -4,7 +4,25 @@ import random
 from typing import Optional, Callable
 import os
 from ..models import Ship, Tube, TorpedoDef
-from .damage import apply_compartment_damage, get_compartment_for_hit_position
+from .damage import apply_compartment_damage, compute_hull_damage, get_compartment_for_hit_position
+
+
+# --- Damage tuning constants -------------------------------------------------
+# Naval lethality: a single torpedo hit must cripple a ship; two hits in the
+# same area should destroy it. Tuned in concert with `damage.compute_hull_damage`.
+TORPEDO_PRIMARY_INTEGRITY_LOSS = 0.85
+TORPEDO_PRIMARY_BREACH_RATE = 0.6
+TORPEDO_ADJACENT_INTEGRITY_LOSS = 0.30
+TORPEDO_ADJACENT_BREACH_RATE = 0.25
+
+# Depth charges are cumulative — a single near-miss is painful but rarely
+# fatal; saturating spreads kill. Less per-hit than a torpedo.
+DEPTH_CHARGE_DIRECT_PRIMARY_INTEGRITY_LOSS = 0.45
+DEPTH_CHARGE_DIRECT_PRIMARY_BREACH_RATE = 0.30
+DEPTH_CHARGE_DIRECT_ADJACENT_INTEGRITY_LOSS = 0.15
+DEPTH_CHARGE_DIRECT_ADJACENT_BREACH_RATE = 0.08
+DEPTH_CHARGE_FAR_PRIMARY_INTEGRITY_LOSS = 0.18
+DEPTH_CHARGE_FAR_PRIMARY_BREACH_RATE = 0.10
 
 
 def step_tubes(ship: Ship, dt: float) -> None:
@@ -165,20 +183,30 @@ def step_torpedo(t: dict, world, dt: float, on_event: Optional[Callable[[str, di
             else:
                 hit_position = "midship"
 
-            # Apply compartment damage
+            # Apply compartment damage. Torpedo hits are catastrophic:
+            # the primary compartment is essentially destroyed in one strike,
+            # adjacents take heavy collateral, and the breach rates create
+            # rapid uncontrolled flooding.
             primary_comp = get_compartment_for_hit_position(hit_position)
-            # Primary compartment: +0.3 breach_rate, -0.4 hull_integrity
-            apply_compartment_damage(ship, primary_comp, breach_rate_add=0.3, integrity_loss=0.4)
-
-            # Adjacent compartments: +0.1 breach_rate, -0.1 hull_integrity
+            apply_compartment_damage(
+                ship, primary_comp,
+                breach_rate_add=TORPEDO_PRIMARY_BREACH_RATE,
+                integrity_loss=TORPEDO_PRIMARY_INTEGRITY_LOSS,
+            )
             if primary_comp > 0:
-                apply_compartment_damage(ship, primary_comp - 1, breach_rate_add=0.1, integrity_loss=0.1)
+                apply_compartment_damage(
+                    ship, primary_comp - 1,
+                    breach_rate_add=TORPEDO_ADJACENT_BREACH_RATE,
+                    integrity_loss=TORPEDO_ADJACENT_INTEGRITY_LOSS,
+                )
             if primary_comp < 5:
-                apply_compartment_damage(ship, primary_comp + 1, breach_rate_add=0.1, integrity_loss=0.1)
+                apply_compartment_damage(
+                    ship, primary_comp + 1,
+                    breach_rate_add=TORPEDO_ADJACENT_BREACH_RATE,
+                    integrity_loss=TORPEDO_ADJACENT_INTEGRITY_LOSS,
+                )
 
-            # Update overall hull damage for backwards compatibility
-            total_integrity_loss = sum(1.0 - c.hull_integrity for c in ship.damage.compartments)
-            ship.damage.hull = min(1.0, total_integrity_loss / 6.0)
+            ship.damage.hull = compute_hull_damage(ship.damage.compartments)
 
             if on_event:
                 on_event("torpedo.detonated", {
@@ -446,17 +474,26 @@ def step_depth_charge(dc: dict, world, dt: float, on_event: Optional[Callable[[s
             primary_comp = get_compartment_for_hit_position(hit_position)
 
             if dist <= 60.0:
-                # Direct hit: +0.2 breach_rate, -0.3 hull_integrity
-                apply_compartment_damage(ship, primary_comp, breach_rate_add=0.2, integrity_loss=0.3)
-                # Adjacent compartments get light damage
+                # Direct hit
+                apply_compartment_damage(
+                    ship, primary_comp,
+                    breach_rate_add=DEPTH_CHARGE_DIRECT_PRIMARY_BREACH_RATE,
+                    integrity_loss=DEPTH_CHARGE_DIRECT_PRIMARY_INTEGRITY_LOSS,
+                )
                 if primary_comp > 0:
-                    apply_compartment_damage(ship, primary_comp - 1, breach_rate_add=0.05, integrity_loss=0.05)
+                    apply_compartment_damage(
+                        ship, primary_comp - 1,
+                        breach_rate_add=DEPTH_CHARGE_DIRECT_ADJACENT_BREACH_RATE,
+                        integrity_loss=DEPTH_CHARGE_DIRECT_ADJACENT_INTEGRITY_LOSS,
+                    )
                 if primary_comp < 5:
-                    apply_compartment_damage(ship, primary_comp + 1, breach_rate_add=0.05, integrity_loss=0.05)
+                    apply_compartment_damage(
+                        ship, primary_comp + 1,
+                        breach_rate_add=DEPTH_CHARGE_DIRECT_ADJACENT_BREACH_RATE,
+                        integrity_loss=DEPTH_CHARGE_DIRECT_ADJACENT_INTEGRITY_LOSS,
+                    )
 
-                # Update overall hull damage
-                total_integrity_loss = sum(1.0 - c.hull_integrity for c in ship.damage.compartments)
-                ship.damage.hull = min(1.0, total_integrity_loss / 6.0)
+                ship.damage.hull = compute_hull_damage(ship.damage.compartments)
 
                 if on_event:
                     on_event("depth_charge.hit", {
@@ -466,12 +503,13 @@ def step_depth_charge(dc: dict, world, dt: float, on_event: Optional[Callable[[s
                         "primary_compartment": primary_comp
                     })
             elif dist <= 120.0:
-                # Near miss: +0.05 breach_rate, -0.1 hull_integrity
-                apply_compartment_damage(ship, primary_comp, breach_rate_add=0.05, integrity_loss=0.1)
-
-                # Update overall hull damage
-                total_integrity_loss = sum(1.0 - c.hull_integrity for c in ship.damage.compartments)
-                ship.damage.hull = min(1.0, total_integrity_loss / 6.0)
+                # Near miss: lighter damage, just to the primary compartment
+                apply_compartment_damage(
+                    ship, primary_comp,
+                    breach_rate_add=DEPTH_CHARGE_FAR_PRIMARY_BREACH_RATE,
+                    integrity_loss=DEPTH_CHARGE_FAR_PRIMARY_INTEGRITY_LOSS,
+                )
+                ship.damage.hull = compute_hull_damage(ship.damage.compartments)
 
                 if on_event:
                     on_event("depth_charge.near", {

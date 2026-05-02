@@ -50,6 +50,17 @@ class Config:
     ai_fleet_trigger_conf_threshold: float = _get_env_float("AI_FLEET_TRIGGER_CONF_THRESHOLD", 0.7)
     ai_ship_cadence_s: float = _get_env_float("AI_SHIP_CADENCE_S", 20.0)
     ai_ship_alert_cadence_s: float = _get_env_float("AI_SHIP_ALERT_CADENCE_S", 10.0)
+    # BLUE Fleet Commander — radio-driven intel/comms for the player sub.
+    # Only fires when the radio mast is up. Pushes brief text comms via the
+    # captain's existing comms list. Intel snapshots are sampled from RED
+    # state but only released after a minimum age, simulating decoded
+    # intercepts and other-unit reports rather than live tactical truth.
+    ai_blue_fleet_enabled: bool = _get_env_bool("AI_BLUE_FLEET_ENABLED", True)
+    ai_blue_fleet_engine: str = os.getenv("AI_BLUE_FLEET_ENGINE", "stub")  # stub|ollama|openai
+    ai_blue_fleet_model: str = os.getenv("AI_BLUE_FLEET_MODEL", "stub")
+    ai_blue_fleet_cadence_s: float = _get_env_float("AI_BLUE_FLEET_CADENCE_S", 120.0)
+    ai_blue_fleet_intel_sample_s: float = _get_env_float("AI_BLUE_FLEET_INTEL_SAMPLE_S", 600.0)
+    ai_blue_fleet_intel_min_age_s: float = _get_env_float("AI_BLUE_FLEET_INTEL_MIN_AGE_S", 900.0)
     # Engines configuration
     ollama_host: str = os.getenv("OLLAMA_HOST", "http://localhost:11434")
     openai_api_key: Optional[str] = os.getenv("OPENAI_API_KEY")

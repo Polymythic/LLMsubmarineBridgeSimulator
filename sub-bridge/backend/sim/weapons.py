@@ -14,6 +14,16 @@ TORPEDO_PRIMARY_INTEGRITY_LOSS = 0.85
 TORPEDO_PRIMARY_BREACH_RATE = 0.6
 TORPEDO_ADJACENT_INTEGRITY_LOSS = 0.30
 TORPEDO_ADJACENT_BREACH_RATE = 0.25
+# Per-hit damage variability. ±20% uniform multiplier is applied
+# independently to integrity-loss and breach-rate values per compartment,
+# so two identical-position hits no longer produce identical damage totals.
+TORPEDO_DAMAGE_JITTER = 0.20
+
+
+def _jitter(value: float, frac: float = TORPEDO_DAMAGE_JITTER) -> float:
+    """Return value * uniform[1-frac, 1+frac]. Used to break the fixed-44%
+    appearance — hits in the same place now vary by ±20%."""
+    return value * random.uniform(1.0 - frac, 1.0 + frac)
 
 # Depth charges are cumulative — a single near-miss is painful but rarely
 # fatal; saturating spreads kill. Less per-hit than a torpedo.
@@ -207,20 +217,20 @@ def step_torpedo(t: dict, world, dt: float, on_event: Optional[Callable[[str, di
             primary_comp = get_compartment_for_hit_position(hit_position)
             apply_compartment_damage(
                 ship, primary_comp,
-                breach_rate_add=TORPEDO_PRIMARY_BREACH_RATE,
-                integrity_loss=TORPEDO_PRIMARY_INTEGRITY_LOSS,
+                breach_rate_add=_jitter(TORPEDO_PRIMARY_BREACH_RATE),
+                integrity_loss=_jitter(TORPEDO_PRIMARY_INTEGRITY_LOSS),
             )
             if primary_comp > 0:
                 apply_compartment_damage(
                     ship, primary_comp - 1,
-                    breach_rate_add=TORPEDO_ADJACENT_BREACH_RATE,
-                    integrity_loss=TORPEDO_ADJACENT_INTEGRITY_LOSS,
+                    breach_rate_add=_jitter(TORPEDO_ADJACENT_BREACH_RATE),
+                    integrity_loss=_jitter(TORPEDO_ADJACENT_INTEGRITY_LOSS),
                 )
             if primary_comp < 5:
                 apply_compartment_damage(
                     ship, primary_comp + 1,
-                    breach_rate_add=TORPEDO_ADJACENT_BREACH_RATE,
-                    integrity_loss=TORPEDO_ADJACENT_INTEGRITY_LOSS,
+                    breach_rate_add=_jitter(TORPEDO_ADJACENT_BREACH_RATE),
+                    integrity_loss=_jitter(TORPEDO_ADJACENT_INTEGRITY_LOSS),
                 )
 
             ship.damage.hull = compute_hull_damage(ship.damage.compartments)

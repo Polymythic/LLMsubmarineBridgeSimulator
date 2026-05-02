@@ -127,7 +127,7 @@ class ShipCapabilities(BaseModel):
 
 class ShipDef(BaseModel):
     name: str
-    ship_class: Literal["SSN", "Convoy", "Destroyer"]
+    ship_class: Literal["SSN", "Convoy", "Destroyer", "Neutral"]
     capabilities: ShipCapabilities
     # Defaults that tune ships of this class; applied on spawn/assignment
     default_hull: Hull = Hull()
@@ -212,7 +212,7 @@ class AIProfile(BaseModel):
 
 class Ship(BaseModel):
     id: str
-    side: Literal["BLUE", "RED"]
+    side: Literal["BLUE", "RED", "NEUTRAL"]
     kin: Kinematics
     hull: Hull
     acoustics: Acoustics
@@ -224,7 +224,7 @@ class Ship(BaseModel):
     maintenance: MaintenanceState = MaintenanceState()
     ai_profile: Optional[AIProfile] = None
     # Classification & capabilities for AI and UI
-    ship_class: Optional[Literal["SSN", "Convoy", "Destroyer"]] = None
+    ship_class: Optional[Literal["SSN", "Convoy", "Destroyer", "Neutral"]] = None
     capabilities: Optional[ShipCapabilities] = None
     # Contact tracking for intercept calculations
     contact_tracks: List[ContactTrack] = Field(default_factory=list)

@@ -1,0 +1,125 @@
+{
+  "id": "crowded_waters",
+  "title": "Crowded Waters",
+  "subtitle": "Convoy interdiction in busy shipping lanes",
+  "difficulty": "Hard",
+  "duration_estimate": "30-45 minutes",
+  "tags": ["combat", "convoy", "destroyers", "neutrals", "rules-of-engagement"],
+  "briefing": {
+    "situation": "A RED supply convoy is transiting the lanes south of your patrol area, escorted by one torpedo destroyer and three depth-charge destroyers. The lanes are also active with neutral civilian traffic — six unarmed merchantmen are operating in the same waters under various flags. Identification of contacts before engagement is mandatory.",
+    "mission": "Sink all four cargo vessels in the RED convoy. Avoid the destroyer screen as best you can — the four-ship escort is a serious threat once you reveal yourself. Above all, do not fire on neutral shipping. Confusing a civilian for a target ends the mission.",
+    "execution": "Approach quietly. Use the periscope and your sonar suite to identify each contact before committing torpedoes. RED convoy ships emit a distinctive military propeller signature; civilians are slower and lighter. When in doubt, raise the periscope and visually confirm. The radio mast is available for fleet intel updates between engagements.",
+    "threats": "1 torpedo destroyer (long-range torpedo threat) + 3 depth-charge destroyers (close-range saturation). Six neutrals are not threats but their loss ends your mission. Destroyer escort will go weapons-free if you reveal yourself.",
+    "notes": "Identify before engaging. Killing a neutral is mission failure — no exceptions. You have 15 torpedoes; spend them deliberately."
+  },
+  "red_mission_summary": "RED convoy is transiting south through busy shipping lanes under combined torpedo + depth-charge destroyer escort. Civilian traffic in the area is to be avoided. Get the convoy to its destination intact.",
+  "scenario_context": {
+    "RED": {
+      "narrative": "Single supply convoy of 4 cargo vessels under heavy escort: one torpedo destroyer (red-tor-01) and three depth-charge destroyers (red-dc-01/02/03). The convoy transits south through commercial shipping lanes — neutral civilian traffic is active in the area and must not be engaged. Submarine activity has been reported.",
+      "primary_objective": "Deliver all 4 cargo ships intact to destination [0, -25000]",
+      "win_condition": "All cargo ships reach destination, or BLUE submarine destroyed",
+      "lose_condition": "Any cargo ship sunk OR all four escorts destroyed",
+      "intelligence": "Submarine threat reported in the area. Civilian shipping traffic ALSO active — strict ROE: no engagement of unidentified vessels.",
+      "constraints": [
+        "Do NOT engage NEUTRAL ships under any circumstances",
+        "Maintain EMCON until contact confidence >= 0.7",
+        "Escorts stay within 5 km of convoy unless prosecuting a confirmed sub contact"
+      ],
+      "doctrine_emphasis": "convoy_protection"
+    },
+    "BLUE": {
+      "narrative": "A RED convoy transits south through busy shipping lanes. Civilian traffic is in the area. ROE is strict: identify targets before firing. A single mistaken kill on a civilian ends the mission as a defeat.",
+      "primary_objective": "Sink all 4 cargo vessels of the RED convoy",
+      "win_condition": "All 4 cargo vessels destroyed; no neutrals killed; BLUE survives",
+      "lose_condition": "BLUE destroyed OR any neutral destroyed OR cargo reaches destination",
+      "intelligence": "1 torp DD + 3 DC DDs escort 4 cargo ships. Six neutrals dispersed in operating area.",
+      "constraints": [
+        "DO NOT FIRE ON NEUTRAL CONTACTS — identify before engaging",
+        "15 torpedoes available; conserve them"
+      ]
+    }
+  },
+  "task_groups": {
+    "RED": {
+      "CONVOY": {
+        "doctrine": "convoy_escort",
+        "lead": "red-tor-01",
+        "members": ["red-tor-01", "red-dc-01", "red-dc-02", "red-dc-03", "red-cv-01", "red-cv-02", "red-cv-03", "red-cv-04"],
+        "protected": ["red-cv-01", "red-cv-02", "red-cv-03", "red-cv-04"],
+        "formation": "screen-ahead",
+        "primary_route": null,
+        "destination": [0, -25000]
+      }
+    }
+  },
+  "ship_roles": {
+    "red-tor-01": { "role": "convoy_escort_destroyer", "task_group": "CONVOY" },
+    "red-dc-01":  { "role": "convoy_escort_destroyer", "task_group": "CONVOY" },
+    "red-dc-02":  { "role": "convoy_escort_destroyer", "task_group": "CONVOY" },
+    "red-dc-03":  { "role": "convoy_escort_destroyer", "task_group": "CONVOY" },
+    "red-cv-01":  { "role": "convoy_cargo",            "task_group": "CONVOY" },
+    "red-cv-02":  { "role": "convoy_cargo",            "task_group": "CONVOY" },
+    "red-cv-03":  { "role": "convoy_cargo",            "task_group": "CONVOY" },
+    "red-cv-04":  { "role": "convoy_cargo",            "task_group": "CONVOY" }
+  },
+  "blue_mission_summary": "RED convoy with 4 cargo + 1 torp DD + 3 DC DDs is transiting south through busy shipping lanes. Six NEUTRAL civilian ships are dispersed in the area. Sink all cargo, avoid neutrals, survive.",
+  "objective": "Sink all RED convoy cargo vessels without harming any neutral civilian ships.",
+  "side_objectives": { "RED": "escort_convoy_to_destination", "BLUE": "interdict_convoy_no_neutral_kills" },
+  "blue_captain_summary": "RED convoy of 4 cargo vessels is moving south under combined torpedo + depth-charge destroyer escort. Six neutral civilian ships are operating in the same lanes. Your task is to sink the convoy cargo while avoiding all neutral vessels. Killing a neutral ends the mission as a defeat. Identify before engaging.",
+  "roe": [
+    "Weapons release authorized against confirmed RED targets only.",
+    "Strict prohibition on engagement of NEUTRAL vessels — friendly fire on a neutral is mission failure."
+  ],
+  "target_wp": [0, -25000],
+  "environment": { "timeOfDay": "day", "weather": "calm", "thermocline_on": true, "thermocline_depth_m": 50.0 },
+  "success_criteria": {
+    "defeat_on_neutral_kill": true,
+    "BLUE": {
+      "ships_destroyed": {
+        "targets": ["red-cv-01", "red-cv-02", "red-cv-03", "red-cv-04"],
+        "min_count": 4
+      },
+      "min_survivors": 1
+    },
+    "RED": {
+      "reach_wp_within_m": 1500
+    },
+    "timeout_s": 2700
+  },
+  "ship_behaviors": {
+    "red-tor-01": "You are the lead torpedo escort for a single convoy in busy shipping lanes. Maintain EMCON until you have a high-confidence submarine contact. Civilian traffic is in the area and must NEVER be engaged. Coordinate with the depth-charge destroyers — you handle long-range engagement, they handle close-in saturation. Position 1500m ahead of the cargo column.",
+    "red-dc-01": "You are a depth-charge escort. Hold station 1000m on the convoy's port flank. Your weapons are short-range — close to within 1km of a confirmed submarine contact before dropping. Civilian traffic is in the area; do NOT engage anything not positively identified as hostile.",
+    "red-dc-02": "You are a depth-charge escort. Hold station 1000m on the convoy's starboard flank. Your weapons are short-range — close to within 1km of a confirmed submarine contact before dropping. Civilian traffic is in the area; do NOT engage anything not positively identified as hostile.",
+    "red-dc-03": "You are a depth-charge escort. Hold station 1500m astern of the cargo column. Your weapons are short-range — close to within 1km of a confirmed submarine contact before dropping. Civilian traffic is in the area; do NOT engage anything not positively identified as hostile.",
+    "red-cv-01": "You are a convoy cargo vessel with no weapons. Maintain your course and speed unless directly threatened. If escorts call a submarine contact, increase speed to 12 knots and tighten formation.",
+    "red-cv-02": "You are a convoy cargo vessel with no weapons. Maintain your course and speed unless directly threatened. If escorts call a submarine contact, increase speed to 12 knots and tighten formation.",
+    "red-cv-03": "You are a convoy cargo vessel with no weapons. Maintain your course and speed unless directly threatened. If escorts call a submarine contact, increase speed to 12 knots and tighten formation.",
+    "red-cv-04": "You are a convoy cargo vessel with no weapons. Maintain your course and speed unless directly threatened. If escorts call a submarine contact, increase speed to 12 knots and tighten formation."
+  },
+  "ships": [
+    { "id": "ownship", "side": "BLUE", "class": "SSN", "spawn": { "x": 0, "y": 0, "depth": 120, "heading": 0, "speed": 5 } },
+
+    { "id": "red-tor-01", "side": "RED", "class": "Destroyer", "spawn": { "x": 0,    "y": 13500, "depth": 0, "heading": 180, "speed": 8 } },
+    { "id": "red-dc-01",  "side": "RED", "class": "Destroyer", "spawn": { "x": -1000, "y": 12000, "depth": 0, "heading": 180, "speed": 8 } },
+    { "id": "red-dc-02",  "side": "RED", "class": "Destroyer", "spawn": { "x":  1000, "y": 12000, "depth": 0, "heading": 180, "speed": 8 } },
+    { "id": "red-dc-03",  "side": "RED", "class": "Destroyer", "spawn": { "x": 0,    "y": 10500, "depth": 0, "heading": 180, "speed": 8 } },
+
+    { "id": "red-cv-01",  "side": "RED", "class": "Convoy",    "spawn": { "x": -300,  "y": 12300, "depth": 0, "heading": 180, "speed": 8 } },
+    { "id": "red-cv-02",  "side": "RED", "class": "Convoy",    "spawn": { "x":  300,  "y": 12300, "depth": 0, "heading": 180, "speed": 8 } },
+    { "id": "red-cv-03",  "side": "RED", "class": "Convoy",    "spawn": { "x": -300,  "y": 11800, "depth": 0, "heading": 180, "speed": 8 } },
+    { "id": "red-cv-04",  "side": "RED", "class": "Convoy",    "spawn": { "x":  300,  "y": 11800, "depth": 0, "heading": 180, "speed": 8 } },
+
+    { "id": "neutral-01", "side": "NEUTRAL", "class": "Neutral", "spawn": { "x": -6500, "y":  4000, "depth": 0, "heading":  90, "speed": 6 } },
+    { "id": "neutral-02", "side": "NEUTRAL", "class": "Neutral", "spawn": { "x":  5500, "y":  6500, "depth": 0, "heading": 270, "speed": 5 } },
+    { "id": "neutral-03", "side": "NEUTRAL", "class": "Neutral", "spawn": { "x": -3500, "y":  9500, "depth": 0, "heading": 135, "speed": 7 } },
+    { "id": "neutral-04", "side": "NEUTRAL", "class": "Neutral", "spawn": { "x":  4500, "y":  2500, "depth": 0, "heading": 200, "speed": 6 } },
+    { "id": "neutral-05", "side": "NEUTRAL", "class": "Neutral", "spawn": { "x":  -800, "y":  7500, "depth": 0, "heading":  45, "speed": 4 } },
+    { "id": "neutral-06", "side": "NEUTRAL", "class": "Neutral", "spawn": { "x":  2500, "y":  9000, "depth": 0, "heading": 225, "speed": 5 } }
+  ],
+  "triggers": [
+    { "at_s": 0.0,   "comms": "ROE: Confirmed RED convoy in your patrol box. Civilian traffic active. Identify before engagement. Friendly fire on neutrals = mission abort." },
+    { "at_s": 60.0,  "comms": "INTEL: Convoy escort consists of one torpedo destroyer (lead) and three depth-charge destroyers (flanks + rear)." },
+    { "at_s": 180.0, "comms": "INTEL: Six neutral merchantmen are operating in the lanes. They are not threats. They are not targets." },
+    { "at_s": 420.0, "comms": "INTEL: Convoy maintaining 8 kn southbound. Escorts holding EMCON." }
+  ]
+}

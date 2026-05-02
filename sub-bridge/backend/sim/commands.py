@@ -434,6 +434,11 @@ class CommandDispatcher:
                 try:
                     sim._ai_orch.set_fleet_engine(getattr(CONFIG, "ai_fleet_engine", "stub"), getattr(CONFIG, "ai_fleet_model", "stub"))
                     sim._ai_orch.set_ship_engine(getattr(CONFIG, "ai_ship_engine", "stub"), getattr(CONFIG, "ai_ship_model", "stub"))
+                    if getattr(CONFIG, "ai_blue_fleet_enabled", True):
+                        sim._ai_orch.set_blue_fleet_engine(
+                            getattr(CONFIG, "ai_blue_fleet_engine", "stub"),
+                            getattr(CONFIG, "ai_blue_fleet_model", "stub"),
+                        )
                     try:
                         setattr(sim._ai_orch, "_mission_brief", sim.mission_brief)
                     except Exception:

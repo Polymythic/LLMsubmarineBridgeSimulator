@@ -78,6 +78,8 @@ class StationBase {
             }
           }
           this.onTelemetryReceived();
+          this._applyStationOutline(m.data);
+          this._applyDestroyedOverlay(m.data);
           this.onTelemetry(m.data);
         } else if (m.topic === 'error') {
           console.error('Server error:', m.error);
@@ -102,6 +104,29 @@ class StationBase {
       if (this._commandQueue.length > 10) {
         this._commandQueue.shift(); // Drop oldest command if queue is full
       }
+    }
+  }
+
+  // ---- Station status outline (red = offline, yellow = degraded) ----
+
+  _applyStationOutline(d) {
+    const ss = d && d.stationStatus;
+    if (!ss) return;
+    const status = (ss[this.stationName] || 'OK').toLowerCase();
+    document.body.classList.toggle('station-offline', status === 'offline');
+    document.body.classList.toggle('station-degraded', status === 'degraded');
+  }
+
+  _applyDestroyedOverlay(d) {
+    // ownship hull >= 1.0 means the boat is gone. Apply the prominent
+    // overlay class globally (CSS handles the visual + text).
+    const own = d && d.ownship;
+    const hull = own && own.damage && own.damage.hull;
+    const isDestroyed = (hull != null) && hull >= 1.0;
+    if (isDestroyed && !document.body.classList.contains('sub-destroyed')) {
+      document.body.classList.add('sub-destroyed');
+      // Play the ship-sinking cue once (audio.play is idempotent enough)
+      if (this.audio) this.audio.play('shipSinking', 1.0);
     }
   }
 

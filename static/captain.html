@@ -22,6 +22,28 @@
     .pcontact .id { font-weight:bold; font-size:13px; }
     .pcontact .typeline { font-size:12px; color:#8593B8; }
     .pcontact .extra { font-size:11px; color:#6E84C8; margin-top:2px; }
+    /* Captain comms — scrollable history with newest entries pinned to bottom. */
+    #comms {
+      list-style: none;
+      padding: 6px 8px;
+      margin: 8px 0 0 0;
+      background: #0F162A;
+      border: 1px solid #1B2440;
+      border-radius: 6px;
+      max-height: 200px;
+      overflow-y: auto;
+      font-family: ui-monospace, monospace;
+      font-size: 12px;
+    }
+    #comms li {
+      padding: 3px 0;
+      border-bottom: 1px solid #1B2440;
+      color: #A8B8DA;
+    }
+    #comms li:last-child { border-bottom: none; }
+    #comms li.radio { color: #FFB300; }
+    #comms li.radio .tag { color: #7a5c1a; font-weight: bold; margin-right: 6px; }
+    #comms li .ts { color: #4C5E9A; margin-right: 6px; }
     /* Shared styles loaded from station-common.css */
   </style>
   <link rel="stylesheet" href="/static/css/station-common.css">
@@ -90,11 +112,9 @@
       <h3>Periscope Contacts</h3>
       <ul id="scope"></ul>
     </div>
-    <pre id="telemetry" title="Captain telemetry and events"></pre>
   </div>
   <script>
     const station = new StationBase('captain');
-    const tel = document.getElementById('telemetry');
     const per = document.getElementById('periscope');
     const rad = document.getElementById('radio');
     const emcon = document.getElementById('emcon');
@@ -107,7 +127,6 @@
       else { el.style.color = '#8DEB8D'; el.style.borderColor = '#1B2440'; el.style.backgroundColor = '#0F162A'; }
     }
     station.onTelemetry = function(d) {
-      tel.textContent = JSON.stringify(d, null, 2);
       setPip(per, !!d.periscopeRaised);
       setPip(rad, !!d.radioRaised);
       if (d.acoustics){ emcon.textContent = d.acoustics.emconRisk || 'low'; }
@@ -122,7 +141,36 @@
       const comms = d.comms || [];
       const cu = document.getElementById('comms');
       const seen = new Set(Array.from(cu.querySelectorAll('li')).map(li=>li.dataset.key));
-      comms.forEach(c => { const key = (c.at + c.text); if (!seen.has(key)) { const li=document.createElement('li'); li.dataset.key = key; li.textContent = `${c.at} - ${c.text}`; cu.appendChild(li);} });
+      let newRadioMessage = false;
+      comms.forEach(c => {
+        const key = (c.at + c.text);
+        if (seen.has(key)) return;
+        const li = document.createElement('li');
+        li.dataset.key = key;
+        const isRadio = c.source === 'blue_fleet' || (c.text && c.text.startsWith('[RADIO'));
+        const tsShort = (c.at && c.at.length >= 19) ? c.at.substring(11, 19) : c.at;
+        if (isRadio) {
+          li.className = 'radio';
+          // Strip the `[RADIO • TAG]` prefix and render tag as a separate span
+          const m = (c.text || '').match(/^\[RADIO\s*•\s*([A-Z]+)\]\s*(.*)$/);
+          if (m) {
+            li.innerHTML = `<span class="ts">${tsShort}</span><span class="tag">${m[1]}</span>${m[2]}`;
+          } else {
+            li.innerHTML = `<span class="ts">${tsShort}</span>${c.text || ''}`;
+          }
+          newRadioMessage = true;
+        } else {
+          li.innerHTML = `<span class="ts">${tsShort}</span>${c.text || ''}`;
+        }
+        cu.appendChild(li);
+      });
+      // Auto-scroll to the latest message and chirp the morse-code cue when
+      // a new radio brief arrives (only if the user hasn't scrolled up).
+      if (newRadioMessage) {
+        const atBottom = (cu.scrollHeight - cu.scrollTop - cu.clientHeight) < 30;
+        if (atBottom) cu.scrollTop = cu.scrollHeight;
+        if (station.audio) station.audio.play('morseCode', 0.7);
+      }
       const ss = d.stationStatus || {};
       setStatus(document.getElementById('stHelm'), `Helm: ${ss.helm || 'OK'}`);
       setStatus(document.getElementById('stSonar'), `Sonar: ${ss.sonar || 'OK'}`);

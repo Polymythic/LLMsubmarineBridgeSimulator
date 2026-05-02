@@ -117,11 +117,18 @@ class AgentsOrchestrator:
         # Default engines
         self._fleet_engine_kind: Literal["stub", "ollama", "openai"] = "stub"
         self._ship_engine_kind: Literal["stub", "ollama", "openai"] = "stub"
+        self._blue_fleet_engine_kind: Literal["stub", "ollama", "openai"] = "stub"
         self._fleet_model = "stub"
         self._ship_model = "stub"
+        self._blue_fleet_model = "stub"
         self._stub = LocalAIStub()
         self._fleet_engine: BaseEngine = StubEngine()
         self._ship_engine: BaseEngine = StubEngine()
+        self._blue_fleet_engine: BaseEngine = StubEngine()
+        # BLUE Fleet Commander state (lazy import to avoid circular deps).
+        from .blue_fleet import BlueIntelBuffer
+        self._blue_intel_buffer = BlueIntelBuffer()
+        self._blue_last_brief_sim_time_s: Optional[float] = None
         # Optional JSONL log file path for /fleet API call history
         self._log_file_path: Optional[str] = None
 
@@ -155,6 +162,87 @@ class AgentsOrchestrator:
             if e.get("ts", 0.0) >= cutoff
         ]
 
+    # ---------- BLUE Fleet Commander (radio-driven) ----------
+    def record_blue_intel_sample(self, sim_time_s: float) -> None:
+        """Snapshot current RED state into the BLUE intel buffer.
+
+        Called by the loop on a slow sim-time cadence. The captured snapshot
+        is intentionally lossy and won't be readable by the LLM until it
+        ages past `min_age_s`. See `blue_fleet.BlueIntelBuffer`.
+        """
+        try:
+            world = self._world_getter()
+            self._blue_intel_buffer.record_sample(world, sim_time_s)
+        except Exception:
+            pass
+
+    async def run_blue_fleet(
+        self,
+        sim_time_s: float,
+        intel_min_age_s: float,
+        ownship_summary: Dict[str, Any],
+        mission_brief: Optional[Dict[str, Any]] = None,
+        parent_run_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Build the radio-brief prompt, call the BLUE fleet engine, return
+        a dict {messages, summary} or {error}.
+
+        Does not mutate sim state; the caller (loop) appends the messages
+        to the captain's comms list when this resolves.
+        """
+        from .blue_fleet import build_prompt_payload
+        started = time.perf_counter()
+        run_id = f"blue_fleet_{int(started*1000)}"
+        result: Dict[str, Any] = {"run_id": run_id, "parent_run_id": parent_run_id}
+        try:
+            snapshots = self._blue_intel_buffer.releasable(sim_time_s, intel_min_age_s)
+            last_brief_age = (
+                None if self._blue_last_brief_sim_time_s is None
+                else max(0.0, sim_time_s - self._blue_last_brief_sim_time_s)
+            )
+            payload = build_prompt_payload(
+                snapshots=snapshots,
+                now_s=sim_time_s,
+                mission_brief=mission_brief,
+                ownship_summary=ownship_summary,
+                last_brief_age_s=last_brief_age,
+            )
+            system_prompt = _load_prompt_template("blue_fleet_commander_system")
+            user_prompt = (
+                "RADIO_BRIEF_PAYLOAD:\n" + json.dumps(payload, separators=(",", ":")) +
+                "\n\nReturn JSON only. Empty `messages` is fine if nothing is worth transmitting."
+            )
+            payload_for_engine = dict(payload)
+            payload_for_engine["_prompt_hint"] = {
+                "system_prompt": system_prompt,
+                "user_prompt": user_prompt,
+            }
+            brief = await asyncio.wait_for(
+                self._blue_fleet_engine.propose_radio_brief(payload_for_engine),
+                timeout=max(1.0, getattr(CONFIG, "ai_http_timeout_s", 15.0)),
+            )
+            messages = brief.get("messages") if isinstance(brief, dict) else None
+            if not isinstance(messages, list):
+                messages = []
+            result["messages"] = messages
+            result["summary"] = (brief or {}).get("summary") if isinstance(brief, dict) else None
+            self._blue_last_brief_sim_time_s = sim_time_s
+            # Trace event
+            try:
+                insert_event(self._storage_engine, self._run_id, "ai.run.blue_fleet", json.dumps({
+                    "model": self._blue_fleet_model,
+                    "engine": self._blue_fleet_engine_kind,
+                    "intel_count": len(snapshots),
+                    "messages": len(messages),
+                    "duration_ms": int((time.perf_counter() - started) * 1000),
+                }))
+            except Exception:
+                pass
+        except Exception as e:
+            result["error"] = str(e)
+            result["messages"] = []
+        return result
+
     # ---------- Public configuration ----------
     def set_fleet_engine(self, kind: Literal["stub", "ollama", "openai"], model: str) -> None:
         self._fleet_engine_kind = kind
@@ -179,6 +267,18 @@ class AgentsOrchestrator:
             self._ship_engine = OpenAIAgentsEngine(model=model)
         else:
             self._ship_engine = StubEngine()
+
+    def set_blue_fleet_engine(self, kind: Literal["stub", "ollama", "openai"], model: str) -> None:
+        self._blue_fleet_engine_kind = kind
+        self._blue_fleet_model = model
+        if kind == "stub":
+            self._blue_fleet_engine = StubEngine()
+        elif kind == "ollama":
+            self._blue_fleet_engine = OllamaAgentsEngine(model=model, host=CONFIG.ollama_host)
+        elif kind == "openai":
+            self._blue_fleet_engine = OpenAIAgentsEngine(model=model)
+        else:
+            self._blue_fleet_engine = StubEngine()
 
     # ---------- Summaries (information boundaries) ----------
     def _build_fleet_summary(self) -> Dict[str, Any]:
@@ -229,9 +329,17 @@ class AgentsOrchestrator:
         history_events: List[Dict[str, Any]] = []
         try:
             merged: Dict[str, Dict[str, Any]] = {}
-            blue_ships = [s for s in world.all_ships() if s.side == "BLUE"]
+            # Skip destroyed ships entirely — they shouldn't appear as
+            # contacts to RED, fleet shouldn't issue orders against wrecks,
+            # and dead RED ships shouldn't get AI runs either.
+            blue_ships = [
+                s for s in world.all_ships()
+                if s.side == "BLUE" and s.damage.hull < 1.0
+            ]
             for red in world.all_ships():
                 if red.side != "RED":
+                    continue
+                if red.damage.hull >= 1.0:
                     continue
                 contacts = _passive_contacts(red, blue_ships)
                 for c in contacts:
@@ -437,12 +545,22 @@ class AgentsOrchestrator:
             fleet_summary_line = str((fleet_intent or {}).get("summary", ""))
         except Exception:
             fleet_summary_line = ""
-        # Build local passive + visual contacts for this ship against non-friendly ships
+        # Build local passive + visual contacts for this ship against non-friendly ships.
+        # NEUTRAL ships are deliberately excluded from RED awareness entirely —
+        # they don't appear as contacts at the captain or fleet level, so RED
+        # cannot target them or report them up-chain. BLUE sees neutrals via
+        # the player-side sensor stack, which has its own classification path.
         local_contacts: List[Dict[str, Any]] = []
         fleet_fused_contacts: List[Dict[str, Any]] = []
         try:
             world = self._world_getter()
-            others = [s for s in world.all_ships() if s.id != ship.id and s.side != ship.side]
+            others = [
+                s for s in world.all_ships()
+                if s.id != ship.id
+                and s.side != ship.side
+                and getattr(s, "side", None) != "NEUTRAL"
+                and s.damage.hull < 1.0
+            ]
             contacts = _passive_contacts(ship, others)
             by_id: Dict[str, Dict[str, Any]] = {}
             for c in contacts:
@@ -616,6 +734,8 @@ class AgentsOrchestrator:
                 cid = c.get("id") or "unknown"
                 if c.get("side") == ship.side:
                     continue  # don't engage friendlies
+                if c.get("side") == "NEUTRAL":
+                    continue  # neutrals are not valid engagement targets
                 bearing = float(c.get("bearing", 0.0))
                 conf = float(c.get("confidence", 0.0))
                 rng = c.get("range_est")
@@ -722,6 +842,7 @@ class AgentsOrchestrator:
             "fleet_fused_contacts": fleet_fused_contacts,
             "contacts_history": hist,
             "orders_last": orders_last,
+            "last_action_failed": (getattr(self, "_last_action_failed_by_ship", {}) or {}).get(ship.id),
             "fleet_intent": {**fleet_intent, "summary": fleet_summary_line} if isinstance(fleet_intent, dict) else fleet_intent,
             "detected_state": {"alert": alert_flag},
             # Phase 6 scenario fields. Empty / None for legacy missions.

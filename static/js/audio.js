@@ -36,6 +36,7 @@ class SubmarineAudio {
       shipSinking: '/assets/sounds/ship_sinking.mp3',
       pingEnemy: '/assets/sounds/sonar_ping_enemy.mp3',
       pingFriendly: '/assets/sounds/sonar_ping_friendly.mp3',
+      morseCode: '/assets/sounds/morse_code.mp3',
     };
 
     // Preloaded audio elements

@@ -153,6 +153,11 @@ class Simulation:
             try:
                 self._ai_orch.set_fleet_engine(getattr(CONFIG, "ai_fleet_engine", "stub"), getattr(CONFIG, "ai_fleet_model", "stub"))
                 self._ai_orch.set_ship_engine(getattr(CONFIG, "ai_ship_engine", "stub"), getattr(CONFIG, "ai_ship_model", "stub"))
+                if getattr(CONFIG, "ai_blue_fleet_enabled", True):
+                    self._ai_orch.set_blue_fleet_engine(
+                        getattr(CONFIG, "ai_blue_fleet_engine", "stub"),
+                        getattr(CONFIG, "ai_blue_fleet_model", "stub"),
+                    )
                 # Provide mission brief for Fleet Commander inputs
                 try:
                     setattr(self._ai_orch, "_mission_brief", self.mission_brief)
@@ -962,8 +967,14 @@ class Simulation:
                 t = asyncio.create_task(_fleet_job())
                 self._ai_pending.add(t)
                 t.add_done_callback(lambda _t: self._ai_pending.discard(_t))
-            # Schedule per-ship runs (RED side only)
-            red_ships = [s for s in self.world.all_ships() if s.side == "RED"]
+            # Schedule per-ship runs (RED side only). Skip ships whose hull
+            # is at/over 1.0 — destroyed ships shouldn't accept orders or
+            # waste AI cycles. Without this, captains kept firing on
+            # already-dead targets after a wreck remained in the world.
+            red_ships = [
+                s for s in self.world.all_ships()
+                if s.side == "RED" and s.damage.hull < 1.0
+            ]
             if not hasattr(self, "_debug_ship_ai_logged"):
                 print(f"DEBUG: Found {len(red_ships)} RED ships for AI control: {[s.id for s in red_ships]}")
                 self._debug_ship_ai_logged = True
@@ -1008,6 +1019,25 @@ class Simulation:
                                     json.dumps({"ship_id": _sid, "tool": action.name}),
                                 )
                                 self._post_apply_ship_action(_sid, tgt, action, result)
+                            else:
+                                # Failed actions get logged AND surfaced back
+                                # to the captain in the next prompt so the LLM
+                                # stops choosing tools that don't work for it.
+                                err = getattr(result, "error", "unknown") or "unknown"
+                                insert_event(
+                                    self.engine, self.run_id, "ai.tool.fail",
+                                    json.dumps({"ship_id": _sid, "tool": action.name, "error": err}),
+                                )
+                                try:
+                                    if not hasattr(self._ai_orch, "_last_action_failed_by_ship"):
+                                        self._ai_orch._last_action_failed_by_ship = {}
+                                    self._ai_orch._last_action_failed_by_ship[_sid] = {
+                                        "tool": action.name,
+                                        "error": err,
+                                        "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                                    }
+                                except Exception:
+                                    pass
                             break
                         # Mirror recent runs into sim for Fleet UI (LLM-only state)
                         try:
@@ -1788,6 +1818,8 @@ class Simulation:
             insert_snapshot(self.engine, self.run_id, heading, speed, depth)
         # Handle timed comms after core tick; uses sim time
         self._handle_captain_comms(dt)
+        # BLUE Fleet Commander — radio-driven intel + brief
+        self._handle_blue_fleet(dt)
 
     def _dispatch_core_events(self, core_result) -> None:
         """Wire physics-core events to BUS, transient_events, and event store.
@@ -1829,12 +1861,22 @@ class Simulation:
         if core_result.sonar_explosions:
             if not hasattr(self, "_sonar_explosions"):
                 self._sonar_explosions = []
+            now_epoch = time.time()
             for sx in core_result.sonar_explosions:
                 self._sonar_explosions.append({
                     **sx,
                     "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "ts_epoch": now_epoch,
                 })
             self._sonar_explosions = self._sonar_explosions[-12:]
+        # Always age out old explosions so they don't pile up on the
+        # waterfall after a heavy engagement. 30 second window.
+        if hasattr(self, "_sonar_explosions") and self._sonar_explosions:
+            cutoff = time.time() - 30.0
+            self._sonar_explosions = [
+                e for e in self._sonar_explosions
+                if e.get("ts_epoch", 0.0) >= cutoff
+            ]
 
     def _apply_system_failures(self, own, system_failures) -> None:
         """Apply compartment-flooding consequences to ownship limits.
@@ -1953,6 +1995,105 @@ class Simulation:
                 ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
                 self._captain_comms.append({"at": ts, "text": sched[next_idx]["msg"]})
                 self._delivered_comms_idx = next_idx
+
+    def _handle_blue_fleet(self, dt: float) -> None:
+        """Drive BLUE Fleet Commander intel sampling and radio briefs.
+
+        - Always samples RED state on a slow sim-time cadence into the
+          orchestrator's intel buffer (independent of the player's radio).
+          Snapshots are unreadable by the LLM until they age past the
+          `intel_min_age_s` floor.
+        - Fires a brief on the rising edge of the radio mast (and on a
+          subsequent cadence while it stays up). The brief job is scheduled
+          via asyncio.create_task so the tick is never blocked.
+        """
+        if not getattr(CONFIG, "ai_blue_fleet_enabled", True):
+            return
+        orch = getattr(self, "_ai_orch", None)
+        if orch is None:
+            return
+        own = self.world.get_ship("ownship")
+        if own is None:
+            return
+
+        # Lazy state
+        if not hasattr(self, "_blue_intel_last_sample_s"):
+            self._blue_intel_last_sample_s = -1.0e9  # force first sample on startup
+        if not hasattr(self, "_blue_brief_last_run_s"):
+            self._blue_brief_last_run_s = -1.0e9
+        if not hasattr(self, "_radio_was_raised"):
+            self._radio_was_raised = False
+
+        sample_s = float(getattr(CONFIG, "ai_blue_fleet_intel_sample_s", 600.0))
+        if (self._sim_time_s - self._blue_intel_last_sample_s) >= sample_s:
+            try:
+                orch.record_blue_intel_sample(self._sim_time_s)
+            except Exception:
+                pass
+            self._blue_intel_last_sample_s = self._sim_time_s
+
+        radio_up = bool(self._radio_raised) and own.kin.depth <= 20.0
+        rising_edge = radio_up and not self._radio_was_raised
+        cadence_s = float(getattr(CONFIG, "ai_blue_fleet_cadence_s", 120.0))
+        on_cadence = (
+            radio_up
+            and (self._sim_time_s - self._blue_brief_last_run_s) >= cadence_s
+        )
+        should_brief = rising_edge or (on_cadence and not rising_edge)
+        # Update edge tracker before any await scheduling
+        self._radio_was_raised = radio_up
+
+        if not should_brief:
+            return
+
+        # Optimistically advance the timer so we don't double-schedule while
+        # the previous brief is still in flight. If the run errors, the next
+        # cadence still fires.
+        self._blue_brief_last_run_s = self._sim_time_s
+
+        intel_min_age_s = float(getattr(CONFIG, "ai_blue_fleet_intel_min_age_s", 900.0))
+        ownship_summary = {
+            "depth_m": int(own.kin.depth),
+            "speed_kn": round(own.kin.speed, 1),
+            "elapsed_mission_s": int(self._sim_time_s),
+        }
+
+        async def _blue_fleet_job() -> None:
+            try:
+                result = await orch.run_blue_fleet(
+                    sim_time_s=self._sim_time_s,
+                    intel_min_age_s=intel_min_age_s,
+                    ownship_summary=ownship_summary,
+                    mission_brief=getattr(self, "mission_brief", None),
+                )
+                msgs = result.get("messages") or []
+                if not msgs:
+                    return
+                if not hasattr(self, "_captain_comms"):
+                    self._captain_comms = []
+                ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                for m in msgs:
+                    if not isinstance(m, dict):
+                        continue
+                    text = (m.get("text") or "").strip()
+                    if not text:
+                        continue
+                    tag = (m.get("tag") or "RADIO").strip().upper() or "RADIO"
+                    self._captain_comms.append({
+                        "at": ts,
+                        "text": f"[RADIO • {tag}] {text}",
+                        "source": "blue_fleet",
+                        "tag": tag,
+                    })
+            except Exception:
+                pass
+
+        try:
+            t = asyncio.create_task(_blue_fleet_job())
+            self._ai_pending.add(t)
+            t.add_done_callback(lambda _t: self._ai_pending.discard(_t))
+        except Exception:
+            pass
 
     async def handle_command(self, topic: str, data: Dict) -> Optional[str]:
         # Guard: allow only debug commands when no mission is active or world not ready

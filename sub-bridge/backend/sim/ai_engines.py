@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import httpx
 from openai import AsyncOpenAI
@@ -90,6 +90,10 @@ class BaseEngine:
     async def propose_ship_tool(self, ship: Ship, ship_summary: Dict[str, Any]) -> Dict[str, Any]:
         raise NotImplementedError
 
+    async def propose_radio_brief(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """BLUE Fleet Commander radio brief. Returns {messages, summary}."""
+        raise NotImplementedError
+
 
 class StubEngine(BaseEngine):
     def __init__(self) -> None:
@@ -106,6 +110,23 @@ class StubEngine(BaseEngine):
 
     async def propose_ship_tool(self, ship: Ship, ship_summary: Dict[str, Any]) -> Dict[str, Any]:
         return self._stub.propose_orders(ship)
+
+    async def propose_radio_brief(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        # Deterministic canned brief: one COMSUBPAC line plus one ULTRA line
+        # if any intel snapshots are releasable. Lets tests run without an LLM.
+        snaps = payload.get("intel_snapshots") or []
+        msgs: List[Dict[str, str]] = [
+            {"tag": "COMSUBPAC", "text": "Continue patrol. No new orders."}
+        ]
+        if snaps:
+            oldest = snaps[0]
+            age_min = int(oldest.get("as_of_s_ago", 0)) // 60
+            n_contacts = len(oldest.get("contacts", []) or [])
+            msgs.append({
+                "tag": "ULTRA",
+                "text": f"Intercept {age_min} min old: {n_contacts} RED units observed in patrol box.",
+            })
+        return {"messages": msgs, "summary": "stub brief"}
 
 
 class OllamaAgentsEngine(BaseEngine):
@@ -207,6 +228,22 @@ class OllamaAgentsEngine(BaseEngine):
         obj = _extract_json(content)
         if obj is None:
             raise ValueError("Failed to extract FleetIntent JSON from Ollama output")
+        return obj
+
+    async def propose_radio_brief(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        hint = payload.get("_prompt_hint") if isinstance(payload, dict) else None
+        if isinstance(hint, dict) and hint.get("system_prompt") and hint.get("user_prompt"):
+            system = str(hint.get("system_prompt"))
+            user = str(hint.get("user_prompt"))
+        else:
+            system = "You are COMSUBPAC. Output one JSON object {messages, summary}. Be terse."
+            p = dict(payload)
+            p.pop("_prompt_hint", None)
+            user = "RADIO_BRIEF_PAYLOAD:\n" + json.dumps(p, separators=(",", ":"))
+        content = await self._chat(system, user)
+        obj = _extract_json(content)
+        if obj is None:
+            raise ValueError("Failed to extract RadioBrief JSON from Ollama output")
         return obj
 
     async def propose_ship_tool(self, ship: Ship, ship_summary: Dict[str, Any]) -> Dict[str, Any]:
@@ -348,6 +385,22 @@ class OpenAIAgentsEngine(BaseEngine):
         obj = _extract_json(content)
         if obj is None:
             raise ValueError("Failed to parse FleetIntent JSON from OpenAI response")
+        return obj
+
+    async def propose_radio_brief(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        hint = payload.get("_prompt_hint") if isinstance(payload, dict) else None
+        if isinstance(hint, dict) and hint.get("system_prompt") and hint.get("user_prompt"):
+            system_prompt = str(hint.get("system_prompt"))
+            user_prompt = str(hint.get("user_prompt"))
+        else:
+            system_prompt = "You are COMSUBPAC. Output one JSON object {messages, summary}. Be terse."
+            p = dict(payload)
+            p.pop("_prompt_hint", None)
+            user_prompt = "RADIO_BRIEF_PAYLOAD:\n" + json.dumps(p, separators=(",", ":"))
+        content = await self._chat(system_prompt, user_prompt)
+        obj = _extract_json(content)
+        if obj is None:
+            raise ValueError("Failed to parse RadioBrief JSON from OpenAI response")
         return obj
 
     async def propose_ship_tool(self, ship: Ship, ship_summary: Dict[str, Any]) -> Dict[str, Any]:

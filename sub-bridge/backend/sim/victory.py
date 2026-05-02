@@ -58,6 +58,18 @@ class VictoryEvaluator:
         if self._outcome.status != "ongoing":
             return None
 
+        # Hard defeat: any neutral ship destroyed (rules-of-engagement violation)
+        if self._criteria.get("defeat_on_neutral_kill", False):
+            world = self._world_getter()
+            for s in world.ships.values():
+                if getattr(s, "side", None) == "NEUTRAL" and s.damage.hull >= 1.0:
+                    self._outcome.status = "defeat"
+                    self._outcome.reason = (
+                        f"Neutral vessel {s.id} destroyed — rules-of-engagement violation"
+                    )
+                    self._outcome.ended_at = datetime.utcnow().isoformat()
+                    return self._outcome
+
         # Check RED victory (BLUE defeat)
         red_criteria = self._criteria.get("RED", {})
         if red_criteria and self._check_side_victory("RED", red_criteria, sim_time_s):

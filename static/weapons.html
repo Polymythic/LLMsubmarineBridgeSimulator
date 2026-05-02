@@ -55,6 +55,9 @@
   </div>
   <div class="panel">
     <h2>Weapons <span class="pill" id="wsStatus" title="WebSocket connection status" style="margin-left: 8px; font-size: 14px; font-weight: normal;">WebSocket: Connecting...</span></h2>
+    <div class="row" id="tasksRow" style="margin-bottom:10px;">
+      <div class="small" id="task" title="Current maintenance tasks">No Active Tasks</div>
+    </div>
     <div id="consent" title="Captain consent requirement before firing"></div>
     <div class="tubes" id="tubes" title="Tube state machine: Empty→Flooded→DoorsOpen; timers show progress."></div>
     <div class="row" style="align-items: flex-end;">
@@ -65,13 +68,6 @@
       </div>
       <div class="small">Damage: <span id="hullDamage" class="damage-led normal" title="Hull Damage"></span><span id="flooding" class="damage-led normal" title="Flooding"></span></div>
     </div>
-    <div class="panel" style="width:100%;">
-      <h3>Maintenance</h3>
-      <div class="row" id="tasksRow">
-        <div class="small" id="task" title="Current maintenance tasks">No Active Tasks</div>
-      </div>
-      
-    </div>
     <div style="margin-top: 20px; padding: 16px; border: 2px solid #FF4444; border-radius: 8px; background: rgba(255, 68, 68, 0.1);">
       <h4 style="color: #FF4444; margin: 0 0 12px 0;">🧪 TEST MODE - BYPASS ALL INTERLOCKS</h4>
       <div style="font-size: 12px; color: #FF8888; margin-bottom: 12px;">
@@ -80,33 +76,9 @@
       <button id="testFire" title="Launch test torpedo (bypasses all interlocks)" style="background: #FF4444; color: white; font-weight: bold;">🚀 LAUNCH TEST TORPEDO</button>
     </div>
 
-    <div class="panel" style="margin-top: 20px; border: 2px solid #4A90E2;">
-      <h3 style="color: #4A90E2; margin: 0 0 12px 0;">COUNTERMEASURES</h3>
-      <div style="font-size: 12px; color: #8899AA; margin-bottom: 12px;">
-        Deploy noisemakers or decoys to evade incoming torpedoes
-      </div>
-      <div class="row" style="gap: 20px;">
-        <div>
-          <div style="font-size: 14px;">Noisemakers: <span id="nmCount" style="color: #8DEB8D; font-weight: bold;">0</span></div>
-          <button id="deployNoisemaker" title="Deploy noisemaker - stationary, very loud, attracts torpedoes" style="background: #2E7D32; margin-top: 8px;">
-            Deploy Noisemaker
-          </button>
-        </div>
-        <div>
-          <div style="font-size: 14px;">Decoys: <span id="decoyCount" style="color: #8DEB8D; font-weight: bold;">0</span></div>
-          <button id="deployDecoy" title="Deploy decoy - mobile, leads torpedoes away" style="background: #1565C0; margin-top: 8px;">
-            Deploy Decoy
-          </button>
-        </div>
-      </div>
-      <div id="deployedCMs" style="margin-top: 12px; font-size: 12px; color: #8899AA;"></div>
-    </div>
-
-    <pre id="telemetry" title="Weapons telemetry and events"></pre>
   </div>
   <script>
     const station = new StationBase('weapons');
-    const tel = document.getElementById('telemetry');
     const tubesEl = document.getElementById('tubes');
     const consentEl = document.getElementById('consent');
     const weapNoise = document.getElementById('weapNoise');
@@ -174,8 +146,46 @@
       q('fire').disabled = !(t.state === 'DoorsOpen' && idle);
     }
 
+    // Countermeasure cards live in the same grid as tubes — same .tube
+    // styling, with a deploy button per type and a remaining-count chip.
+    function buildCmCard(kind, label) {
+      const card = document.createElement('div');
+      card.className = 'tube';
+      card.dataset.cm = kind;
+      card.innerHTML = `
+        <div class='hdr'>
+          <span class='tname'>${label}</span>
+          <span class='tstate' data-role='count'>0</span>
+        </div>
+        <div class='small' data-role='active'>none deployed</div>
+        <div class='timer'></div>
+        <div class='btnrow' style="margin-top:auto;">
+          <button data-role='deploy' style='flex:1;'>Deploy ${label}</button>
+        </div>`;
+      card.querySelector("[data-role='deploy']").onclick = () => {
+        station.sendCommand('weapons.countermeasure.deploy', {type: kind});
+      };
+      return card;
+    }
+    function updateCmCard(card, count, deployedList) {
+      const q = sel => card.querySelector(`[data-role='${sel}']`);
+      const kind = card.dataset.cm;
+      const remaining = (count != null) ? count : 0;
+      const countEl = q('count');
+      countEl.textContent = remaining;
+      countEl.className = 'tstate ' + (remaining > 0 ? 'Loaded' : 'Empty');
+      const my = (deployedList || []).filter(cm => cm.type === kind);
+      q('active').textContent = my.length === 0
+        ? 'none deployed'
+        : `active: ${my.map(cm => cm.age_s.toFixed(0) + 's').join(', ')}`;
+      q('deploy').disabled = !(remaining > 0);
+    }
+    const cmCards = {
+      noisemaker: buildCmCard('noisemaker', 'Noisemaker'),
+      decoy: buildCmCard('decoy', 'Decoy'),
+    };
+
     station.onTelemetry = function(d) {
-      tel.textContent = JSON.stringify(d, null, 2);
       consentEl.textContent = d.consentRequired ? `Captain consent ${d.captainConsent ? 'GRANTED' : 'REQUIRED'}` : 'Consent not required';
       (d.tubes || []).forEach(t => {
         let card = tubeCards[t.idx];
@@ -186,40 +196,21 @@
         }
         updateTubeCard(card, t);
       });
+      // Append CM cards once after the tube cards have been seeded
+      if (!cmCards.noisemaker.parentNode && Object.keys(tubeCards).length > 0) {
+        tubesEl.appendChild(cmCards.noisemaker);
+        tubesEl.appendChild(cmCards.decoy);
+      }
       const nz = (d.noise && d.noise.weapons_dB) || 0; weapNoise.textContent = nz.toFixed(0); station.setDbMeter(nz);
       if (d.ownship && d.ownship.damage) { station.updateDamageLEDs(d.ownship.damage); }
 
-      if (d.countermeasures) {
-        document.getElementById('nmCount').textContent = d.countermeasures.noisemakers || 0;
-        document.getElementById('decoyCount').textContent = d.countermeasures.decoys || 0;
-        const deployedDiv = document.getElementById('deployedCMs');
-        const deployed = d.countermeasures.deployed || [];
-        if (deployed.length > 0) {
-          deployedDiv.innerHTML = 'Active: ' + deployed.map(cm =>
-            `<span style="color: ${cm.type === 'noisemaker' ? '#66BB6A' : '#42A5F5'};">${cm.type} (${cm.age_s.toFixed(0)}s)</span>`
-          ).join(', ');
-        } else {
-          deployedDiv.textContent = 'No active countermeasures';
-        }
-      }
+      const cm = d.countermeasures || {};
+      updateCmCard(cmCards.noisemaker, cm.noisemakers, cm.deployed);
+      updateCmCard(cmCards.decoy, cm.decoys, cm.deployed);
       station.updateTasks(d.tasks || []);
       if (station.audio) station.audio.processTelemetry(d);
     };
     station.connect();
-
-    document.getElementById('deployNoisemaker').onclick = () => {
-      station.sendCommand('weapons.countermeasure.deploy', {type: 'noisemaker'});
-      const btn = document.getElementById('deployNoisemaker');
-      btn.textContent = 'DEPLOYING...'; btn.style.background = '#66BB6A';
-      setTimeout(() => { btn.textContent = 'Deploy Noisemaker'; btn.style.background = '#2E7D32'; }, 500);
-    };
-
-    document.getElementById('deployDecoy').onclick = () => {
-      station.sendCommand('weapons.countermeasure.deploy', {type: 'decoy'});
-      const btn = document.getElementById('deployDecoy');
-      btn.textContent = 'DEPLOYING...'; btn.style.background = '#42A5F5';
-      setTimeout(() => { btn.textContent = 'Deploy Decoy'; btn.style.background = '#1565C0'; }, 500);
-    };
 
     document.getElementById('testFire').onclick = () => {
       const card = tubeCards[1];

@@ -57,6 +57,9 @@
   </div>
   <div class="panel">
     <h2>Helm <span class="pill" id="wsStatusTitle" title="WebSocket connection status" style="margin-left: 8px; font-size: 14px; font-weight: normal;">WebSocket: Connecting...</span></h2>
+    <div class="row" id="tasksRow" style="margin-bottom:10px;">
+      <div class="pill" id="task" title="Current maintenance tasks">No Active Tasks</div>
+    </div>
     <div class="row">
       <div class="col">
         <svg id="hdgDial" viewBox="0 0 300 300" title="Heading dial (drag to set)"></svg>
@@ -69,6 +72,9 @@
           <div class="pill" id="cav" title="Cavitation increases detectability and noise">Cavitation: NO</div>
           <div class="pill" id="therm" title="Thermocline may attenuate sound; affects detection">Thermocline: ON</div>
           <div class="pill">Damage: <span id="hullDamage" class="damage-led normal" title="Hull Damage"></span><span id="flooding" class="damage-led normal" title="Flooding"></span></div>
+        </div>
+        <div class="row" style="margin-top:6px;">
+          <div class="pill" title="Ownship world position (X east, Y north, meters)">Position: <span id="posXY">—</span></div>
         </div>
       </div>
       <div class="col">
@@ -101,13 +107,6 @@
       <div class="col"><label title="Ordered keel depth in meters">Depth (m)<input id="depth" type="number" min="0" max="600" value="100"></label></div>
     </div>
     <button id="send" title="Send helm order to the sim loop">Order</button>
-    <div class="panel" style="width:100%;">
-      <h3>Maintenance</h3>
-      <div class="row" id="tasksRow">
-        <div class="pill" id="task" title="Current maintenance tasks">No Active Tasks</div>
-      </div>
-    </div>
-    <pre id="telemetry" title="Ownship state and events"></pre>
   </div>
   <script>
     const station = new StationBase('helm');
@@ -119,6 +118,7 @@
     const depthLadder = document.getElementById('depthLadder');
     const speedTele = document.getElementById('speedTele');
     const helmNoise = document.getElementById('helmNoise');
+    const posXY = document.getElementById('posXY');
 
     function drawDial(svg, hdg, ordered){
       svg.innerHTML = '';
@@ -211,8 +211,10 @@
     const fmtSpeed = v => (v == null) ? '---' : v.toFixed(1).padStart(4, '0');
 
     station.onTelemetry = function(d) {
-        tel.textContent = JSON.stringify(d, null, 2);
         cav.textContent = 'Cavitation: ' + (d.ownship?.cavitation ? 'YES' : 'NO');
+        const ox = (d.ownship && d.ownship.x != null) ? Math.round(d.ownship.x) : null;
+        const oy = (d.ownship && d.ownship.y != null) ? Math.round(d.ownship.y) : null;
+        posXY.textContent = (ox == null || oy == null) ? '—' : `X ${ox}  Y ${oy} m`;
         therm.textContent = 'Thermocline: ' + ((d.thermocline ?? true) ? 'ON' : 'OFF');
         drawDial(hdgDial, d.ownship.heading, d.ownship.orderedHeading);
         drawLadder(depthLadder, d.ownship.depth, d.ownship.orderedDepth);

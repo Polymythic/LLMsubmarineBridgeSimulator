@@ -27,3 +27,42 @@
 .idle-banner a { color:#89B4FA; }
 .victory-title { color:#4ADE80 !important; }
 .defeat-title { color:#F87171 !important; }
+
+/* Submarine destroyed — prominent full-screen red overlay covering the
+   whole station. Stronger than the generic mission-overlay because the
+   crew needs to immediately know the boat is gone. */
+body.sub-destroyed::before {
+  content: "";
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: radial-gradient(circle at center, rgba(180, 0, 0, 0.55), rgba(60, 0, 0, 0.90));
+  z-index: 9998;
+  pointer-events: none;
+  animation: subDestroyedPulse 1.6s ease-in-out infinite alternate;
+}
+body.sub-destroyed::after {
+  content: "GAME OVER\A SUBMARINE DESTROYED — ALL HANDS LOST";
+  white-space: pre;
+  position: fixed;
+  top: 50%; left: 50%; transform: translate(-50%, -50%);
+  z-index: 9999;
+  font-family: ui-monospace, monospace;
+  font-size: 36px;
+  font-weight: bold;
+  color: #FFD0D0;
+  text-align: center;
+  text-shadow: 0 0 20px rgba(255, 0, 0, 0.9), 0 0 40px rgba(255, 0, 0, 0.6);
+  letter-spacing: 4px;
+  pointer-events: none;
+  line-height: 1.4;
+}
+body.sub-destroyed { outline: 8px solid #B00000; outline-offset: -8px; }
+@keyframes subDestroyedPulse {
+  from { opacity: 0.85; }
+  to   { opacity: 1.0; }
+}
+
+/* Station outline based on stationStatus from telemetry.
+   Offline → red border. Degraded → yellow. OK → no border (default). */
+body.station-offline { outline: 4px solid #B00000; outline-offset: -4px; }
+body.station-degraded { outline: 4px solid #EAB308; outline-offset: -4px; }

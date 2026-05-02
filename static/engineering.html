@@ -64,6 +64,9 @@
   </div>
   <div class="panel">
     <h2>Engineering <span class="pill" id="wsStatus" title="WebSocket connection status" style="margin-left: 8px; font-size: 14px; font-weight: normal;">WebSocket: Connecting...</span></h2>
+    <div class="row" id="tasksRow" style="margin-bottom:10px;">
+      <div class="pill" id="task" title="Current maintenance tasks">No Active Tasks</div>
+    </div>
     <div id="toast" style="position:fixed;top:8px;right:8px;background:#2B0F14;color:#FFD1D1;border:1px solid #5F1B25;padding:8px 12px;border-radius:6px;display:none;">Error</div>
     <div title="Reactor output and SCRAM state">Reactor MW <span id="mwv">60</span> / <span id="mwmax">100</span> <span class="pill" id="scramState">SCRAM: OFF</span></div>
     <div class="pill">Damage: <span id="hullDamage" class="damage-led normal" title="Hull Damage"></span><span id="flooding" class="damage-led normal" title="Flooding"></span></div>
@@ -91,13 +94,6 @@
       </div>
     </div>
 
-    <div class="panel" style="width:100%;">
-      <h3>Maintenance</h3>
-      <div class="row" id="tasksRow">
-        <div class="pill" id="task" title="Current maintenance tasks">No Active Tasks</div>
-      </div>
-
-    </div>
     <div class="panel">
       <h3>Current Power Allocation</h3>
       <div class="row">
@@ -142,10 +138,6 @@
       <div class="pill" title="Flooding rate; pumps reduce this">Flooding rate: <span id="flood">0</span></div>
       <div class="pill" title="Overall hull damage fraction">Hull dmg: <span id="hull">0</span></div>
     </div>
-    <details>
-      <summary style="cursor:pointer;color:#89B4FA;">Raw Telemetry</summary>
-      <pre id="telemetry" title="Engineering telemetry and events" style="font-size:10px;max-height:200px;overflow:auto;"></pre>
-    </details>
   </div>
   <script>
     const station = new StationBase('engineering');
@@ -289,7 +281,6 @@
       station.sendCommand('engineering.pump.assign', { pump: pumpNum, compartment: newCompartment });
     }
 
-    const tel = document.getElementById('telemetry');
     const mw = document.getElementById('mw');
     const mwv = document.getElementById('mwv');
     const mwmax = document.getElementById('mwmax');
@@ -359,7 +350,6 @@
     }
 
     station.onTelemetry = function(d) {
-      tel.textContent = JSON.stringify(d, null, 2);
       mwv.textContent = (d.reactor?.output_mw ?? 0).toFixed(0);
       if (!mw.dataset.userSet) { mw.value = (d.reactor?.output_mw ?? 0); }
       mwmax.textContent = (d.reactor?.max_mw ?? 0).toFixed(0);

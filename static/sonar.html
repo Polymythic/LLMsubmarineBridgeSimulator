@@ -46,6 +46,9 @@
   </div>
   <div class="panel">
     <h2>Sonar <span class="pill" id="wsStatus" title="WebSocket connection status" style="margin-left: 8px; font-size: 14px; font-weight: normal;">WebSocket: Connecting...</span></h2>
+    <div class="row" id="tasksRow" style="margin-bottom:10px;">
+      <div class="label" id="task" title="Current maintenance tasks">No Active Tasks</div>
+    </div>
     <div class="row">
       <div class="col">
         <button id="ping" title="Send an active ping; reveals ownship and returns noisy range+bearing">Active Ping</button>
@@ -74,18 +77,9 @@
         </div>
       </div>
     </div>
-    <div class="panel" style="width:100%;">
-      <h3>Maintenance</h3>
-      <div class="row" id="tasksRow">
-        <div class="label" id="task" title="Current maintenance tasks">No Active Tasks</div>
-      </div>
-      
-    </div>
-    <pre id="telemetry" title="Station telemetry and events"></pre>
   </div>
   <script>
     const station = new StationBase('sonar');
-    const tel = document.getElementById('telemetry');
     const cd = document.getElementById('cd');
     const list = document.getElementById('contacts');
     const prList = document.getElementById('pingResponses');
@@ -292,7 +286,6 @@
     const CONTACTS_REFRESH_MS = 500;
 
     station.onTelemetry = function(d) {
-      tel.textContent = JSON.stringify(d, null, 2);
       cd.textContent = (d.pingCooldown || 0).toFixed(1);
       if (d.acoustics) { emcon.textContent = (d.acoustics.emconRisk || 'low'); }
       if (d.ownship && d.ownship.damage) { station.updateDamageLEDs(d.ownship.damage); }

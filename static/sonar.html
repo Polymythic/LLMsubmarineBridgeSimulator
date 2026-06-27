@@ -19,6 +19,14 @@
     #markerHint { font-size:11px; color:#6E84C8; margin-top:4px; }
     #markerHint button { padding:2px 8px; font-size:11px; background:#1B2440; color:#D7E3FF; border:1px solid #3A4674; border-radius:4px; cursor:pointer; }
     .label { font-size:12px; opacity:0.8; }
+    /* Tabular contact / ping-response readouts — fixed columns keep numbers
+       from jumping sideways as bearings/values change width tick to tick. */
+    .data-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .data-table thead th { text-align:left; font-weight:600; color:#6E84C8; font-size:10px; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid #1B2440; padding:2px 10px 4px 0; }
+    .data-table td { padding:2px 10px 2px 0; }
+    .data-table td.num, .data-table th.num { text-align:right; }
+    .data-table td.num, .data-table th.num, .data-table td.mono { font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; white-space:nowrap; }
+    .data-table tbody tr:hover { background:#161E38; }
     /* Shared styles loaded from station-common.css */
   </style>
   <link rel="stylesheet" href="/static/css/station-common.css">
@@ -56,9 +64,15 @@
         <div class="label" title="Current EMCON risk from acoustics">EMCON: <span id="emcon">low</span></div>
         <div class="label">Damage: <span id="hullDamage" class="damage-led normal" title="Hull Damage"></span><span id="flooding" class="damage-led normal" title="Flooding"></span></div>
         <h3>Contacts</h3>
-        <ul id="contacts" title="Bearing-only passive contacts"></ul>
+        <table class="data-table" id="contacts" title="Bearing-only passive contacts">
+          <thead><tr><th>Contact</th><th class="num">Brg</th><th class="num">Det</th><th class="num">Conf</th></tr></thead>
+          <tbody id="contactsBody"></tbody>
+        </table>
         <h3>Ping Responses</h3>
-        <ul id="pingResponses" title="Last active ping responses"></ul>
+        <table class="data-table" id="pingResponses" title="Last active ping responses">
+          <thead><tr><th>ID</th><th class="num">Brg</th><th class="num">Range</th><th class="num">Str</th><th>Time</th></tr></thead>
+          <tbody id="pingResponsesBody"></tbody>
+        </table>
       </div>
       <div class="col">
         <div class="label" title="Bearing axis centered at 0°; time flows downward">Passive Waterfall</div>
@@ -74,7 +88,7 @@
             <div class="label" style="font-size:10px;" id="thermoStatus">—</div>
           </div>
         </div>
-        <div id="markerHint">Click waterfall to drop a bearing line · double-click to clear all · <button id="clearMarkers">Clear</button></div>
+        <div id="markerHint">Click waterfall to drop a bearing line · double-click to clear all · <button id="clearMarkers">Clear Lines</button> <button id="clearWaterfall" title="Wipe the accumulated waterfall history">Clear Waterfall</button></div>
         <div style="display:flex; align-items:flex-end; gap:8px; margin-top:8px;">
           <div class="label">Sonar Noise: <span id="sonarNoise">0</span> dB</div>
           <div id="dbWrap" style="width:30px;height:120px;border:1px solid #1B2440;background:#0B1020;position:relative;border-radius:4px;">
@@ -88,10 +102,14 @@
   <script>
     const station = new StationBase('sonar');
     const cd = document.getElementById('cd');
-    const list = document.getElementById('contacts');
-    const prList = document.getElementById('pingResponses');
+    const list = document.getElementById('contactsBody');
+    const prList = document.getElementById('pingResponsesBody');
     const emcon = document.getElementById('emcon');
     const sonarNoise = document.getElementById('sonarNoise');
+
+    // Build a <td> cell; `cls` ('num' = right-aligned tabular, 'mono' =
+    // left-aligned monospace) keeps columns vertically aligned across rows.
+    function td(text, cls){ const el = document.createElement('td'); if (cls) el.className = cls; el.textContent = text; return el; }
 
     const legend = document.getElementById('legend');
     const lctx = legend.getContext('2d');
@@ -160,6 +178,16 @@
       bearingMarkers = [];
       drawBearingMarkers();
     };
+
+    // Wipe the accumulated waterfall history (the scrolling signal canvas).
+    // Repaints the whole canvas with the same background the per-row fill
+    // uses so fresh rows blend seamlessly; resets the scroll cursor to top.
+    function clearWaterfall(){
+      ctx.fillStyle = 'rgb(9, 14, 28)';
+      ctx.fillRect(0, 0, W, H);
+      row = 0;
+    }
+    document.getElementById('clearWaterfall').onclick = clearWaterfall;
 
     function drawLegend(){
       lctx.clearRect(0,0,lW,lH);
@@ -383,42 +411,52 @@
 
       list.innerHTML = '';
       (d.contacts || []).forEach(c => {
-        const li = document.createElement('li');
         const bearingText = (c.bearingKnown ? `${c.bearing.toFixed(0)}°` : 'unknown');
         const det = (c.detectability != null ? c.detectability : c.strength);
         const cls = c.classifiedAs || '';
+        let name, color, bold = false, title = '';
         if (cls === "ENEMY_ACTIVE_SONAR") {
-          li.title = 'Enemy active sonar ping detected; bearing and signal strength only.';
-          li.style.color = '#FF00FF'; li.style.fontWeight = 'bold';
-          li.textContent = `ENEMY PING brg ${bearingText} str ${det.toFixed(2)} conf ${c.confidence.toFixed(2)}`;
+          name = 'ENEMY PING'; color = '#FF00FF'; bold = true;
+          title = 'Enemy active sonar ping detected; bearing and signal strength only.';
         } else if (cls === "Explosion") {
-          li.title = 'Explosion detected; very loud acoustic event.';
-          li.style.color = '#FF4444'; li.style.fontWeight = 'bold';
-          li.textContent = `EXPLOSION brg ${bearingText} str ${det.toFixed(2)} conf ${c.confidence.toFixed(2)}`;
+          name = 'EXPLOSION'; color = '#FF4444'; bold = true;
+          title = 'Explosion detected; very loud acoustic event.';
         } else if (cls.includes('Torpedo')) {
           const isOwn = cls.includes('Own');
-          li.title = isOwn ? 'Own torpedo in the water.' : 'DANGER: Enemy torpedo detected!';
-          li.style.color = isOwn ? '#55FF55' : '#FF4444'; li.style.fontWeight = 'bold';
-          li.textContent = `${cls.toUpperCase()} brg ${bearingText} det ${det.toFixed(2)} conf ${c.confidence.toFixed(2)}`;
+          name = cls.toUpperCase(); color = isOwn ? '#55FF55' : '#FF4444'; bold = true;
+          title = isOwn ? 'Own torpedo in the water.' : 'DANGER: Enemy torpedo detected!';
         } else if (cls.includes('Noisemaker') || cls.includes('Decoy')) {
           const isOwn = cls.includes('Own');
-          li.title = isOwn ? 'Own countermeasure active.' : 'Enemy countermeasure detected.';
-          li.style.color = isOwn ? '#55FFFF' : '#BB77FF';
-          li.textContent = `${cls} brg ${bearingText} det ${det.toFixed(2)} conf ${c.confidence.toFixed(2)}`;
+          name = cls; color = isOwn ? '#55FFFF' : '#BB77FF';
+          title = isOwn ? 'Own countermeasure active.' : 'Enemy countermeasure detected.';
         } else {
           const isIdentified = cls && !cls.includes('Contact') && !cls.includes('Unknown');
-          if (isIdentified) {
-            li.style.color = '#8DEB8D'; li.title = `Contact identified as ${cls}`;
-            li.textContent = `${c.id} [${cls}] brg ${bearingText} det ${det.toFixed(2)} conf ${c.confidence.toFixed(2)}`;
-          } else {
-            li.style.color = '#FACC15'; li.title = 'Unidentified contact; use periscope to identify.';
-            li.textContent = `${c.id} [${cls || 'Unknown'}] brg ${bearingText} det ${det.toFixed(2)} conf ${c.confidence.toFixed(2)}`;
-          }
+          name = `${c.id} [${cls || 'Unknown'}]`;
+          if (isIdentified) { color = '#8DEB8D'; title = `Contact identified as ${cls}`; }
+          else { color = '#FACC15'; title = 'Unidentified contact; use periscope to identify.'; }
         }
-        list.appendChild(li);
+        const tr = document.createElement('tr');
+        tr.title = title;
+        tr.style.color = color;
+        if (bold) tr.style.fontWeight = 'bold';
+        tr.appendChild(td(name));
+        tr.appendChild(td(bearingText, 'num'));
+        tr.appendChild(td(det.toFixed(2), 'num'));
+        tr.appendChild(td(c.confidence.toFixed(2), 'num'));
+        list.appendChild(tr);
       });
       prList.innerHTML = '';
-      (d.pingResponses || []).forEach(p => { const li = document.createElement('li'); li.title = 'Active ping response'; const km = (p.range_est/1000).toFixed(1); li.textContent = `ID ${p.id} brg ${p.bearing.toFixed(0)}° range ~${km} km str ${(+p.strength).toFixed(2)} at ${p.at}`; prList.appendChild(li); });
+      (d.pingResponses || []).forEach(p => {
+        const tr = document.createElement('tr');
+        tr.title = 'Active ping response';
+        const km = (p.range_est/1000).toFixed(1);
+        tr.appendChild(td(p.id, 'mono'));
+        tr.appendChild(td(`${p.bearing.toFixed(0)}°`, 'num'));
+        tr.appendChild(td(`~${km} km`, 'num'));
+        tr.appendChild(td((+p.strength).toFixed(2), 'num'));
+        tr.appendChild(td(p.at, 'mono'));
+        prList.appendChild(tr);
+      });
     };
     station.connect();
 

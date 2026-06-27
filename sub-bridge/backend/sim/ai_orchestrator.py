@@ -144,6 +144,8 @@ class AgentsOrchestrator:
         self._visual_detection_map = {}  # type: ignore[attr-defined]
         self._recent_combat_events = []  # type: ignore[attr-defined]
         self._recent_torp_fires_by_ship = {}  # type: ignore[attr-defined]
+        self._contacts_history_by_ship = {}  # type: ignore[attr-defined]
+        self._last_action_failed_by_ship = {}  # type: ignore[attr-defined]
 
     # Salvo discipline window. Captains may fire `tactical.SALVO_MAX`
     # torpedoes within this window before the doctrine ladder forces a
@@ -666,7 +668,10 @@ class AgentsOrchestrator:
         try:
             if not hasattr(self, "_contacts_history_by_ship"):
                 self._contacts_history_by_ship = {}  # type: ignore[attr-defined]
-            hist: List[Dict[str, Any]] = list(getattr(self._contacts_history_by_ship, ship.id, [])) if isinstance(getattr(self, "_contacts_history_by_ship"), dict) else []  # type: ignore[attr-defined]
+            # NB: .get on the dict, not getattr — getattr(dict, key) always
+            # misses, which silently wiped this ship's sighting memory every
+            # cycle (contacts_history only ever held the current tick).
+            hist: List[Dict[str, Any]] = list(self._contacts_history_by_ship.get(ship.id, [])) if isinstance(getattr(self, "_contacts_history_by_ship"), dict) else []  # type: ignore[attr-defined]
             now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
             for c in local_contacts:
                 entry = {
@@ -1261,16 +1266,21 @@ class AgentsOrchestrator:
                 "system_prompt": system_prompt,
                 "user_prompt": _load_prompt_template("ship_commander_user").replace(
                     "{{SHIP_SUMMARY_JSON}}", json.dumps(summary, separators=(',', ':'))
-                ).replace(
-                    "{{CRITICAL_ORDERS}}", ""  # Will be filled in below if ship_behavior exists
-                ),
+                ),  # {{CRITICAL_ORDERS}} placeholder is resolved below (empty if none)
                 "summary_size": len(str(summary)),
             }
             
             # Add ship-specific behavior instructions if available - PRIORITIZE THESE
             world = self._world_getter()
-            mission_brief = getattr(world, 'mission_brief', {})
-            ship_behaviors = mission_brief.get('ship_behaviors', {})
+            # ship_behaviors comes from the orchestrator's mirrored mission
+            # brief (set by loop.py on mission load and before fleet runs). The
+            # world object never carries `mission_brief`, so the old
+            # getattr(world, ...) always returned {} and silently dropped every
+            # per-ship mission order even after CRITICAL_ORDERS was repaired.
+            mission_brief = getattr(self, '_mission_brief', None)
+            if not isinstance(mission_brief, dict):
+                mission_brief = getattr(world, 'mission_brief', {}) or {}
+            ship_behaviors = mission_brief.get('ship_behaviors', {}) if isinstance(mission_brief, dict) else {}
             ship_behavior = ship_behaviors.get(ship_id, "")
 
             # Also check fleet_intent notes for attack directives aimed at this ship
@@ -1296,15 +1306,20 @@ class AgentsOrchestrator:
                 critical_orders_parts.append(f"FLEET COMMANDER ORDERS:\n" + "\n".join(f"• {o}" for o in fleet_attack_orders))
 
             if critical_orders_parts:
-                # Insert as critical orders in the template
                 critical_orders = (
                     f"🚨 CRITICAL ORDERS - YOU MUST FOLLOW THESE EXACTLY:\n"
                     + "\n\n".join(critical_orders_parts) +
                     f"\n\n⚠️  EXECUTE THE CRITICAL ORDERS ABOVE IMMEDIATELY.\n\n"
                 )
-                api_call_debug["user_prompt"] = api_call_debug["user_prompt"].replace(
-                    "{{CRITICAL_ORDERS}}", critical_orders
-                )
+            else:
+                critical_orders = ""
+            # Always resolve the placeholder. It was previously pre-replaced
+            # with "" when api_call_debug was built, which made this a silent
+            # no-op and dropped EVERY fleet attack directive and mission
+            # ship_behavior before it could reach the captain LLM.
+            api_call_debug["user_prompt"] = api_call_debug["user_prompt"].replace(
+                "{{CRITICAL_ORDERS}}", critical_orders
+            )
             
             # Ensure engines receive EXACTLY these prompts by passing a prompt hint
             summary_for_engine = dict(summary)

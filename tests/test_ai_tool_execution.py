@@ -132,6 +132,75 @@ def test_run_ship_records_engine_call_input():
 
 
 # --------------------------------------------------------------------------- #
+# CRITICAL ORDERS injection (regression guards)
+#
+# The {{CRITICAL_ORDERS}} placeholder in ship_commander_user.md was being
+# pre-replaced with "" while building the prompt, so the later replace was a
+# silent no-op — every mission `ship_behaviors` order and every fleet attack
+# directive was dropped before reaching the captain LLM. Separately, the
+# ship_behaviors source read `world.mission_brief` (never populated) instead
+# of the orchestrator's mirrored `_mission_brief`. These lock both fixes.
+# --------------------------------------------------------------------------- #
+
+def _last_user_prompt_for(stub: StubLLMEngine, ship_id: str) -> str:
+    """Return the assembled user prompt the orchestrator sent for `ship_id`."""
+    for sid, summary in reversed(stub.ship_calls):
+        if sid == ship_id:
+            hint = summary.get("_prompt_hint", {}) if isinstance(summary, dict) else {}
+            return hint.get("user_prompt", "") or ""
+    return ""
+
+
+def test_run_ship_injects_mission_ship_behavior_as_critical_orders():
+    world = _make_world_with_red_destroyer()
+    stub = StubLLMEngine()
+    orch = _make_orch_with_stub(world, stub)
+    # Source is the orchestrator's mirrored mission brief, not world.*
+    orch._mission_brief = {"ship_behaviors": {"red-01": "RAM THE NEAREST CONVOY ESCORT"}}
+
+    asyncio.run(orch.run_ship("red-01"))
+
+    prompt = _last_user_prompt_for(stub, "red-01")
+    assert "CRITICAL ORDERS" in prompt
+    assert "RAM THE NEAREST CONVOY ESCORT" in prompt
+    # Placeholder must be fully resolved — no literal token left behind.
+    assert "{{CRITICAL_ORDERS}}" not in prompt
+
+
+def test_run_ship_injects_fleet_attack_directive_as_critical_orders():
+    world = _make_world_with_red_destroyer()
+    stub = StubLLMEngine()
+    orch = _make_orch_with_stub(world, stub)
+    # A fleet note containing an attack keyword aimed at this ship must reach
+    # the captain as a critical order.
+    orch._last_fleet_intent = {
+        "objectives": {},
+        "summary": "prosecute the contact",
+        "notes": [{"ship_id": "red-01", "text": "ATTACK contact bearing 270 immediately"}],
+    }
+
+    asyncio.run(orch.run_ship("red-01"))
+
+    prompt = _last_user_prompt_for(stub, "red-01")
+    assert "CRITICAL ORDERS" in prompt
+    assert "ATTACK contact bearing 270 immediately" in prompt
+
+
+def test_run_ship_resolves_critical_orders_placeholder_when_none():
+    world = _make_world_with_red_destroyer()
+    stub = StubLLMEngine()
+    orch = _make_orch_with_stub(world, stub)
+    # No mission orders, no fleet attack notes.
+
+    asyncio.run(orch.run_ship("red-01"))
+
+    prompt = _last_user_prompt_for(stub, "red-01")
+    # The placeholder is always resolved (to empty), never left dangling.
+    assert "{{CRITICAL_ORDERS}}" not in prompt
+    assert "CRITICAL ORDERS - YOU MUST FOLLOW" not in prompt
+
+
+# --------------------------------------------------------------------------- #
 # Fleet-level tool calls
 # --------------------------------------------------------------------------- #
 

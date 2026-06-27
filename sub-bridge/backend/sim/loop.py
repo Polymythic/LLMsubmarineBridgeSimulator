@@ -863,29 +863,51 @@ class Simulation:
             try:
                 if not hasattr(self, "_fleet_conf_tripped"):
                     self._fleet_conf_tripped = False  # type: ignore[attr-defined]
-                if not hasattr(self, "_fleet_last_alert_time"):
-                    self._fleet_last_alert_time = 0.0  # type: ignore[attr-defined]
+                if not hasattr(self, "_fleet_last_trigger_at"):
+                    self._fleet_last_trigger_at = 0.0  # type: ignore[attr-defined]
+                now_s = float(getattr(self, "_sim_time_s", 0.0))
                 trigger_now = False
                 if isinstance(fleet_trigger_conf, (int, float)) and fleet_trigger_conf > 0.0:
+                    thr = float(fleet_trigger_conf)
                     for s in self.world.all_ships():
                         if s.side != "RED":
                             continue
-                        # Build local contacts as orchestrator does; use passive_contacts for bearing-only confidence
-                        contacts = passive_contacts(s, [x for x in self.world.all_ships() if x.side != s.side and x.id != s.id])
-                        for c in contacts:
-                            conf = float(getattr(c, "confidence", 0.0))
-                            # Consider a first-time crossing per ship to avoid repeated triggers
-                            key = f"_{s.id}_conf_crossed"
-                            if conf >= float(fleet_trigger_conf) and not getattr(self, key, False):
-                                setattr(self, key, True)
-                                trigger_now = True
-                                break
-                        if trigger_now:
-                            break
-                # Fleet cadence selection: alert cadence while in tripped state
-                chosen_fleet_cadence = fleet_alert_cadence if trigger_now or getattr(self, "_fleet_conf_tripped", False) else fleet_cadence
+                        # Hostile contacts only — neutrals are scrubbed from RED
+                        # awareness elsewhere, so they must not trip the alert.
+                        others = [x for x in self.world.all_ships()
+                                  if x.side not in (s.side, "NEUTRAL") and x.id != s.id]
+                        contacts = passive_contacts(s, others)
+                        ship_max_conf = max(
+                            (float(getattr(c, "confidence", 0.0)) for c in contacts),
+                            default=0.0,
+                        )
+                        # Rising-edge detector per ship: fire only when this
+                        # ship's best contact FIRST crosses the threshold, and
+                        # re-arm once it falls back below (so a lost-then-
+                        # regained contact can trigger again). The flag used to
+                        # latch True forever, so each ship could trigger only
+                        # once per mission.
+                        key = f"_{s.id}_conf_crossed"
+                        was_crossed = bool(getattr(self, key, False))
+                        is_crossed = ship_max_conf >= thr
+                        if is_crossed and not was_crossed:
+                            trigger_now = True
+                        setattr(self, key, is_crossed)
+                # Fleet alert state with a decaying window: a trigger raises it;
+                # it falls back to normal cadence once an alert window elapses
+                # with no new trigger. Previously _fleet_conf_tripped was set
+                # True and never cleared, pinning the fleet at alert cadence for
+                # the rest of the mission. The `now_s < last_at` guard releases
+                # the latch when sim time resets on mission load.
+                alert_window = max(float(fleet_alert_cadence) * 2.0, 30.0)
                 if trigger_now:
                     self._fleet_conf_tripped = True  # type: ignore[attr-defined]
+                    self._fleet_last_trigger_at = now_s  # type: ignore[attr-defined]
+                elif getattr(self, "_fleet_conf_tripped", False):
+                    last_at = float(getattr(self, "_fleet_last_trigger_at", 0.0))
+                    if now_s < last_at or (now_s - last_at) >= alert_window:
+                        self._fleet_conf_tripped = False  # type: ignore[attr-defined]
+                chosen_fleet_cadence = fleet_alert_cadence if getattr(self, "_fleet_conf_tripped", False) else fleet_cadence
                 # Schedule fleet run
                 do_run_fleet = (self._ai_fleet_timer >= chosen_fleet_cadence) or trigger_now
             except Exception:
@@ -970,14 +992,10 @@ class Simulation:
                                     insert_event(self.engine, self.run_id, "ai.tool.journal", json.dumps({"timestamp": timestamp, "length": len(text)}))
                             except Exception as je:
                                 print(f"Warning: Failed to write journal: {je}")
-                    # Mirror recent runs into sim for Fleet UI; drop alert after one alert cadence window with no additional triggers
+                    # Mirror recent runs into sim for Fleet UI. (Alert-cadence
+                    # decay is handled in the main timer block via the
+                    # _fleet_conf_tripped window, not here.)
                     self._ai_recent_runs = getattr(self._ai_orch, "_recent_runs", [])
-                    try:
-                        if getattr(self, "_fleet_conf_tripped", False):
-                            # If no trigger occurs for one alert cadence window, reset to normal cadence
-                            self._fleet_last_alert_time = 0.0
-                    except Exception:
-                        pass
                 t = asyncio.create_task(_fleet_job())
                 self._ai_pending.add(t)
                 t.add_done_callback(lambda _t: self._ai_pending.discard(_t))
@@ -1032,6 +1050,16 @@ class Simulation:
                                     self.engine, self.run_id, "ai.tool.apply",
                                     json.dumps({"ship_id": _sid, "tool": action.name}),
                                 )
+                                # Clear any stale failure record now that this
+                                # ship has executed a tool successfully. The
+                                # warning was previously never cleared, so one
+                                # failed action pinned the captain off that tool
+                                # for the rest of the run (and across missions).
+                                try:
+                                    if getattr(self._ai_orch, "_last_action_failed_by_ship", None):
+                                        self._ai_orch._last_action_failed_by_ship.pop(_sid, None)
+                                except Exception:
+                                    pass
                                 # Salvo discipline: record successful torpedo
                                 # fires so doctrine_for caps captains at
                                 # tactical.SALVO_MAX shots per window.

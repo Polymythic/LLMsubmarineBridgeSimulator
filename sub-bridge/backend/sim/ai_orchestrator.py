@@ -143,6 +143,34 @@ class AgentsOrchestrator:
         self._ship_alert_map = {}  # type: ignore[attr-defined]
         self._visual_detection_map = {}  # type: ignore[attr-defined]
         self._recent_combat_events = []  # type: ignore[attr-defined]
+        self._recent_torp_fires_by_ship = {}  # type: ignore[attr-defined]
+
+    # Salvo discipline window. Captains may fire `tactical.SALVO_MAX`
+    # torpedoes within this window before the doctrine ladder forces a
+    # CLOSE/HOLD pause. 120s lines up with the longest-running torpedo,
+    # so by the time the cooldown expires the previous shots have either
+    # connected or run out.
+    SALVO_WINDOW_S = 120.0
+
+    def record_torpedo_fire(self, ship_id: str) -> None:
+        """Note that `ship_id` just fired a torpedo. Used by the doctrine
+        path to enforce salvo discipline."""
+        if not hasattr(self, "_recent_torp_fires_by_ship"):
+            self._recent_torp_fires_by_ship = {}  # type: ignore[attr-defined]
+        now = time.time()
+        lst = self._recent_torp_fires_by_ship.setdefault(ship_id, [])  # type: ignore[attr-defined]
+        lst.append(now)
+        cutoff = now - self.SALVO_WINDOW_S
+        self._recent_torp_fires_by_ship[ship_id] = [t for t in lst if t >= cutoff]  # type: ignore[attr-defined]
+
+    def recent_torp_fires_count(self, ship_id: str) -> int:
+        """How many torpedoes `ship_id` has fired in the salvo window."""
+        if not hasattr(self, "_recent_torp_fires_by_ship"):
+            return 0
+        now = time.time()
+        cutoff = now - self.SALVO_WINDOW_S
+        lst = self._recent_torp_fires_by_ship.get(ship_id) or []  # type: ignore[attr-defined]
+        return sum(1 for t in lst if t >= cutoff)
 
     # Phase 8 — combat event buffer for threat detection. The simulation
     # appends events here (torpedo detonations, depth-charge detonations)
@@ -723,6 +751,15 @@ class AgentsOrchestrator:
         except Exception:
             threats = []
 
+        # Salvo discipline / loadout awareness — computed once, reused both
+        # in the tactical briefing call and in the weapons block of the
+        # ship summary.
+        recent_fires = 0
+        try:
+            recent_fires = self.recent_torp_fires_count(ship.id)
+        except Exception:
+            recent_fires = 0
+
         # Tactical briefing — pre-computed answers so the LLM doesn't compute
         # geometry. Uses tactical.doctrine_for + bearing helpers.
         tactical_briefing: Optional[Dict[str, Any]] = None
@@ -770,22 +807,13 @@ class AgentsOrchestrator:
                     fleet_speed = float(speed_kn)
             except Exception:
                 pass
-            in_flight_self = 0
-            try:
-                world_for_torps = self._world_getter()
-                in_flight_self = sum(
-                    1 for t in (getattr(world_for_torps, "torpedoes", []) or [])
-                    if t.get("shooter_id") == ship.id
-                )
-            except Exception:
-                in_flight_self = 0
             rec = _tactical.doctrine_for(
                 ship,
                 beliefs,
                 fleet_destination=fleet_dest,
                 fleet_speed_kn=fleet_speed,
                 threats=threats,
-                in_flight_torpedoes_from_self=in_flight_self,
+                recent_torp_fires=recent_fires,
             )
             tactical_briefing = {
                 "doctrine_recommendation": rec.action,
@@ -828,6 +856,18 @@ class AgentsOrchestrator:
             "weapons": {
                 "tubes": [{"idx": t.idx, "state": t.state} for t in ship.weapons.tubes],
                 "has_countermeasures": bool(getattr(ship.capabilities, "countermeasures", [])),
+                # Loadout + activity awareness so the captain LLM can reason
+                # about magazine depth and salvo discipline.
+                "torpedoes_stored": int(getattr(ship.weapons, "torpedoes_stored", 0)),
+                "torpedoes_in_water": sum(
+                    1 for t in (getattr(self._world_getter(), "torpedoes", []) or [])
+                    if t.get("shooter_id") == ship.id
+                ),
+                "torpedoes_fired_recent": int(recent_fires),
+                "salvo_cap": int(_tactical.SALVO_MAX),
+                "salvo_window_s": float(_tactical.SALVO_WINDOW_S),
+                "reload_cooldown_s": float(getattr(ship.weapons, "torpedo_quick_cooldown_s", 10.0)),
+                "reload_cooldown_remaining_s": round(float(getattr(ship.weapons, "torpedo_quick_cooldown_timer_s", 0.0)), 1),
             },
             "capabilities": {
                 "can_set_nav": bool(getattr(ship.capabilities, "can_set_nav", True)),

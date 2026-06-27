@@ -224,29 +224,40 @@ def test_doctrine_high_confidence_contact_in_torpedo_envelope_engages():
     assert rec.suggested_heading == pytest.approx(90.0)
 
 
-def test_doctrine_suppresses_torpedo_when_shot_already_in_water():
-    """Captain has a torpedo in flight — should CLOSE, not re-fire."""
+def test_doctrine_allows_first_two_torpedoes_in_salvo():
+    """Within the salvo cap (SALVO_MAX=3), repeated engagements are allowed —
+    a 2-shot salvo is normal doctrine."""
     contacts = [ContactBelief(id="c1", bearing_deg=90.0, confidence=0.9, estimated_pos=(3000.0, 0.0))]
-    rec = doctrine_for(_destroyer(), contacts, in_flight_torpedoes_from_self=1)
+    for n in (0, 1, 2):
+        rec = doctrine_for(_destroyer(), contacts, recent_torp_fires=n)
+        assert rec.action == "ENGAGE_TORPEDO", f"fire #{n+1} should still be allowed"
+
+
+def test_doctrine_suppresses_torpedo_after_salvo_cap():
+    """At SALVO_MAX fires, doctrine demotes to CLOSE so the captain assesses
+    before continuing — prevents straight-line magazine dumps."""
+    contacts = [ContactBelief(id="c1", bearing_deg=90.0, confidence=0.9, estimated_pos=(3000.0, 0.0))]
+    rec = doctrine_for(_destroyer(), contacts, recent_torp_fires=3)
     assert rec.action == "CLOSE"
     assert rec.target_id == "c1"
-    assert "previous torpedo" in rec.reason.lower()
+    assert "salvo cap" in rec.reason.lower()
 
 
-def test_doctrine_dc_still_allowed_when_torpedo_in_water():
-    """Suppression only gates ENGAGE_TORPEDO. A DC-eligible contact still
-    gets ENGAGE_DC because depth charges are an independent weapon."""
+def test_doctrine_dc_still_allowed_when_salvo_exhausted():
+    """The salvo cap only gates ENGAGE_TORPEDO. A DC-eligible contact still
+    gets ENGAGE_DC because depth charges are an independent weapon system."""
     # Contact too close for torpedoes (< 800m min) but inside DC envelope.
     contacts = [ContactBelief(id="c1", bearing_deg=0.0, confidence=0.9, estimated_pos=(0.0, 500.0))]
-    rec = doctrine_for(_destroyer(), contacts, in_flight_torpedoes_from_self=2)
+    rec = doctrine_for(_destroyer(), contacts, recent_torp_fires=5)
     assert rec.action == "ENGAGE_DC"
     assert rec.target_id == "c1"
 
 
-def test_doctrine_resumes_engagement_after_torpedo_resolves():
-    """Once in-flight count returns to zero, ENGAGE_TORPEDO is re-enabled."""
+def test_doctrine_resumes_engagement_after_salvo_window_clears():
+    """Once recent_torp_fires returns to 0 (window elapsed), ENGAGE_TORPEDO
+    is re-enabled."""
     contacts = [ContactBelief(id="c1", bearing_deg=90.0, confidence=0.9, estimated_pos=(3000.0, 0.0))]
-    rec = doctrine_for(_destroyer(), contacts, in_flight_torpedoes_from_self=0)
+    rec = doctrine_for(_destroyer(), contacts, recent_torp_fires=0)
     assert rec.action == "ENGAGE_TORPEDO"
 
 

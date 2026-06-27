@@ -344,13 +344,25 @@ def scan_threats(
     return threats
 
 
+SALVO_MAX = 3
+"""Max torpedoes a single captain may fire in `SALVO_WINDOW_S` before the
+doctrine ladder forces a hold/close cooldown. Real WWII sub doctrine ran
+2-4 torpedoes per coordinated salvo, then waited to assess. Without this
+cap, captains would empty their entire magazine in a straight line at the
+first confirmed contact, leaving the ship defenseless against incoming
+weapons or follow-on contacts."""
+
+SALVO_WINDOW_S = 120.0
+"""Window over which `recent_torp_fires` is computed by the caller."""
+
+
 def doctrine_for(
     ship: Ship,
     contacts: Sequence[ContactBelief],
     fleet_destination: Optional[Tuple[float, float]] = None,
     fleet_speed_kn: Optional[float] = None,
     threats: Optional[Sequence[ThreatAlert]] = None,
-    in_flight_torpedoes_from_self: int = 0,
+    recent_torp_fires: int = 0,
 ) -> DoctrineRecommendation:
     """Pick a default doctrine. The LLM may override with a `deviate:` note.
 
@@ -364,9 +376,11 @@ def doctrine_for(
            c. `friendly_hit` → CLOSE on the hit ship's bearing; active
               sonar authorized by role doctrine.
         1. High-confidence contact in torpedo envelope → ENGAGE_TORPEDO.
-           Suppressed to CLOSE when this ship already has a torpedo in
-           the water (`in_flight_torpedoes_from_self > 0`); we wait for
-           the previous shot to resolve before launching another.
+           Suppressed to CLOSE when this captain has already fired
+           `SALVO_MAX` torpedoes within `SALVO_WINDOW_S`; salvo discipline
+           keeps reserves for incoming threats and forces an assessment
+           pause between attacks. Threat-driven engagement bypasses the
+           cap (you fire back on a torpedo-in-water regardless).
         2. High-confidence contact in DC envelope → ENGAGE_DC.
         3. High-confidence contact known position → CLOSE.
         4. Moderate-confidence contact (INVESTIGATE_CONFIDENCE..ACTIONABLE)
@@ -379,7 +393,7 @@ def doctrine_for(
     has_torpedoes = bool(caps and getattr(caps, "has_torpedoes", False))
     has_depth_charges = bool(caps and getattr(caps, "has_depth_charges", False))
     threats = list(threats or [])
-    torp_already_in_water = int(in_flight_torpedoes_from_self) > 0
+    salvo_exhausted = int(recent_torp_fires) >= SALVO_MAX
 
     # 0. Threat overrides take precedence over normal doctrine.
     rec = _threat_doctrine(ship, threats, contacts, has_torpedoes, has_depth_charges)
@@ -393,7 +407,7 @@ def doctrine_for(
 
     for c in actionable:
         assert c.estimated_pos is not None
-        if has_torpedoes and not torp_already_in_water:
+        if has_torpedoes and not salvo_exhausted:
             env = weapon_envelope(ship, c.estimated_pos, "fire_torpedo")
             if env.in_range:
                 return DoctrineRecommendation(
@@ -426,10 +440,10 @@ def doctrine_for(
             target_heading_deg=0.0,  # unknown course; treat as static for the suggestion
             target_speed_kn=0.0,
         )
-        if torp_already_in_water and has_torpedoes:
+        if salvo_exhausted and has_torpedoes:
             reason = (
-                f"contact {c.id} confidence {c.confidence:.2f}; previous torpedo "
-                f"still in water — close for follow-up shot if needed"
+                f"contact {c.id} confidence {c.confidence:.2f}; salvo cap "
+                f"reached — close and assess before re-engaging"
             )
         else:
             reason = (

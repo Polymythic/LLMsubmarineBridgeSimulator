@@ -1018,6 +1018,14 @@ class Simulation:
                                     self.engine, self.run_id, "ai.tool.apply",
                                     json.dumps({"ship_id": _sid, "tool": action.name}),
                                 )
+                                # Salvo discipline: record successful torpedo
+                                # fires so doctrine_for caps captains at
+                                # tactical.SALVO_MAX shots per window.
+                                if action.name == "FireTorpedoAction":
+                                    try:
+                                        self._ai_orch.record_torpedo_fire(_sid)
+                                    except Exception:
+                                        pass
                                 self._post_apply_ship_action(_sid, tgt, action, result)
                             else:
                                 # Failed actions get logged AND surfaced back

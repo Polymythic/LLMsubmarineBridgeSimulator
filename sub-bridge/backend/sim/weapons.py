@@ -602,7 +602,7 @@ def try_launch_torpedo_quick(
         "los_prev": None,
     }
     ws.torpedoes_stored -= 1
-    ws.torpedo_quick_cooldown_timer_s = max(0.0, float(getattr(ws, "torpedo_quick_cooldown_s", 5.0)))
+    ws.torpedo_quick_cooldown_timer_s = max(0.0, float(getattr(ws, "torpedo_quick_cooldown_s", 10.0)))
     if on_event:
         on_event("torpedo.quick_launched", {"bearing": bearing_deg, "run_depth": run_depth})
     return {"ok": True, "data": torp}

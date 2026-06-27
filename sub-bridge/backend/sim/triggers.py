@@ -226,6 +226,14 @@ class TriggerManager:
         ]
 
     def reset(self) -> None:
-        """Reset all triggers to unfired state."""
-        self._triggers.clear()
+        """Reset all triggers to their initial unfired state.
+
+        Retains the loaded triggers (so a scenario can be replayed without a
+        full re-initialize) but clears each fired flag. Marks the manager
+        uninitialized so step() stays inert until the next initialize();
+        mission (re)load calls initialize() afterward, which rebuilds the
+        trigger list from the brief.
+        """
+        for trigger in self._triggers:
+            trigger.fired = False
         self._initialized = False

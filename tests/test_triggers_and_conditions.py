@@ -226,7 +226,6 @@ def test_action_end_scenario():
     assert events[0]["outcome"] == "victory"
 
 
-@pytest.mark.xfail(reason="Pre-existing failure at HEAD: IndexError in reset path. Investigate separately.", strict=False)
 def test_reset_clears_fired_state():
     tm, ev, _ = _make_trigger_manager()
     brief = {

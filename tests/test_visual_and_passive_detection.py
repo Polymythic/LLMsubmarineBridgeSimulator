@@ -124,7 +124,7 @@ class TestPassiveSonarClassification:
 class TestVisualDetectionSystem:
     """Test the visual detection system with ship identification."""
     
-    @pytest.mark.xfail(reason="Pre-existing failure at HEAD: visual-detection logic produces empty contact list. Investigate separately; not blocking refactor.", strict=False)
+    @pytest.mark.xfail(reason="Test-harness issue, NOT a product bug (2026-06-27 review): drives _build_ship_summary with a bare Mock() world and never populates orchestrator._visual_detection_map. Visual detection actually runs in loop.py (~1300-1342); the orchestrator only reads its map, so only passive sonar runs here. Fix = drive a real Simulation / populate the visual map, or test loop.py's visual routine directly.", strict=False)
     def test_visual_detection_includes_side_information(self):
         """Visual detection should include ship side for friendly identification."""
         # Create test world with ships
@@ -158,7 +158,7 @@ class TestVisualDetectionSystem:
         assert "bearing" in ownship_contact
         assert "range_est" in ownship_contact
     
-    @pytest.mark.xfail(reason="Pre-existing failure at HEAD: range/depth gating disagrees with current detection logic.", strict=False)
+    @pytest.mark.xfail(reason="Test-harness issue, NOT a product bug (2026-06-27 review): asserts VISUAL range/depth gating but exercises only the orchestrator's passive sonar (visual detection lives in loop.py and is never activated here). Passive sonar legitimately detects the 'deep' target, so the assertion is wrong for this layer. Fix = test the real visual layer in loop.py.", strict=False)
     def test_visual_detection_range_limits(self):
         """Visual detection should respect range and depth limits."""
         # Create test world with ships at various ranges and depths
@@ -197,7 +197,7 @@ class TestVisualDetectionSystem:
         deep_contact = next((c for c in contacts if c["id"] == "red-deep"), None)
         assert deep_contact is None
     
-    @pytest.mark.xfail(reason="Pre-existing failure at HEAD: bearing math off by ~6°; tolerance vs implementation drift.", strict=False)
+    @pytest.mark.xfail(reason="Test-harness issue, NOT a product bug (2026-06-27 review): expects an exact bearing, but exercises passive sonar which carries ~8 deg Gaussian noise at low speed. Exact bearings exist only on the visual path (loop.py), which this test never activates. Fix = test the real visual layer in loop.py.", strict=False)
     def test_visual_detection_bearing_calculation(self):
         """Visual detection should calculate correct bearings."""
         ownship = make_ship("ownship", "BLUE", "SSN", x=0.0, y=0.0, depth=0.0)
@@ -268,13 +268,15 @@ class TestPassiveSonarContacts:
         assert contact.strength > 0
         assert contact.confidence > 0
     
-    @pytest.mark.xfail(reason="Pre-existing failure at HEAD: classification set vs expected variation differs from current logic.", strict=False)
     def test_passive_contacts_signal_quality_effects(self):
         """Signal quality should affect classification confidence."""
         ownship = make_ship("ownship", "BLUE", "SSN", x=0.0, y=0.0, depth=50.0, heading=0.0)
-        
-        # Test different ranges (affects signal quality) - use closer ranges for better detection
-        ranges = [200, 400, 600, 800]
+
+        # Ranges must span the SNR classification bands to see variation. At a
+        # 130 dB source the strong->medium->weak boundaries sit near ~1.4 km /
+        # ~2.5 km / ~4.5 km, so a 200-800 m cluster (the old values) all land
+        # in one band and produce no variation by design.
+        ranges = [1000, 2500, 4500, 6000]
         classifications = []
         
         for rng in ranges:

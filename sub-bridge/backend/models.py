@@ -58,6 +58,7 @@ class PowerAllocations(BaseModel):
 class SystemsStatus(BaseModel):
     rudder_ok: bool = True
     ballast_ok: bool = True
+    planes_ok: bool = True  # bow/stern diving planes (speed-dependent depth control)
     sonar_ok: bool = True
     radio_ok: bool = True
     periscope_ok: bool = True
@@ -70,6 +71,7 @@ class MaintenanceState(BaseModel):
         default_factory=lambda: {
             "rudder": 1.0,
             "ballast": 1.0,
+            "planes": 1.0,
             "sonar": 1.0,
             "radio": 1.0,
             "periscope": 1.0,
@@ -147,7 +149,7 @@ SHIP_CATALOG: Dict[str, ShipDef] = {}
 class MaintenanceTask(BaseModel):
     id: str
     station: Literal["helm", "sonar", "weapons", "engineering"]
-    system: Literal["rudder", "sonar", "tubes", "ballast"]
+    system: Literal["rudder", "sonar", "tubes", "ballast", "planes"]
     key: str
     title: str
     stage: Literal["task", "failing", "failed"] = "task"

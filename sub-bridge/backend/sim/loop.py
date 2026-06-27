@@ -557,6 +557,9 @@ class Simulation:
             "helm": [
                 ("rudder", "helm.rudder.lube", "Rudder Lubricate"),
                 ("rudder", "helm.rudder.linkage", "Rudder Linkage Adjust"),
+                ("planes", "helm.planes.hydraulics", "Dive Plane Hydraulics Bleed"),
+                ("planes", "helm.planes.linkage", "Dive Plane Linkage Adjust"),
+                ("planes", "helm.planes.tilt", "Plane Tilt Sensor Calibrate"),
                 ("ballast", "helm.depth.sensor", "Depth/Pressure Sensor Recal"),
                 ("ballast", "helm.pressure.sensor", "Hull Pressure Transducer Test"),
                 ("ballast", "helm.salinity.sensor", "Salinity Sensor Clean"),
@@ -1454,7 +1457,7 @@ class Simulation:
             return "Degraded" if any(t.stage in ("failing",) for t in tasks) else "OK"
 
         station_statuses = {
-            "helm": station_status("helm", own.systems.rudder_ok),
+            "helm": station_status("helm", own.systems.rudder_ok and own.systems.planes_ok),
             "sonar": station_status("sonar", own.systems.sonar_ok),
             "weapons": station_status("weapons", own.systems.tubes_ok),
             "engineering": station_status("engineering", own.systems.ballast_ok),

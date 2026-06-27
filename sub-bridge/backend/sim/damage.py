@@ -302,6 +302,7 @@ def step_engineering(ship: Ship, dt: float) -> None:
     # System failures if maintenance too low
     ship.systems.rudder_ok = ship.maintenance.levels.get("rudder", 1.0) > 0.2
     ship.systems.ballast_ok = ship.maintenance.levels.get("ballast", 1.0) > 0.2
+    ship.systems.planes_ok = ship.maintenance.levels.get("planes", 1.0) > 0.2
     ship.systems.sonar_ok = ship.maintenance.levels.get("sonar", 1.0) > 0.2
     ship.systems.radio_ok = ship.maintenance.levels.get("radio", 1.0) > 0.2
     ship.systems.periscope_ok = ship.maintenance.levels.get("periscope", 1.0) > 0.2

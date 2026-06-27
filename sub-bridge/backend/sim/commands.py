@@ -587,6 +587,7 @@ class CommandDispatcher:
                 own.systems.sonar_ok = True
                 own.systems.tubes_ok = True
                 own.systems.ballast_ok = True
+                own.systems.planes_ok = True
                 own.systems.radio_ok = True
                 own.systems.periscope_ok = True
             for station_name in sim._active_tasks:

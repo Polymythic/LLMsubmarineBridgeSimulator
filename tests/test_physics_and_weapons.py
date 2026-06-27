@@ -5,7 +5,15 @@ import sys
 # Add project sub-bridge to import path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'sub-bridge')))
 
-from backend.sim.physics import clamp, cavitation_speed_for_depth
+from backend.sim.physics import (
+    clamp,
+    cavitation_speed_for_depth,
+    integrate_kinematics,
+    planes_depth_rate,
+    BALLAST_FLOOR_RATE,
+    BALLAST_BOOST_RATE,
+    PLANES_REF_SPEED,
+)
 from backend.sim.weapons import _get_tube, try_load_tube, try_flood_tube, try_set_doors, try_fire, step_tubes
 from backend.models import Ship, Kinematics, Hull, Acoustics, WeaponsSuite, Reactor, DamageState
 
@@ -29,6 +37,48 @@ def test_clamp_and_cavitation_curve():
     assert clamp(11, 0, 10) == 10
     # cavitation threshold grows with depth
     assert cavitation_speed_for_depth(0) <= cavitation_speed_for_depth(100)
+
+
+def test_planes_term_scales_with_speed_squared():
+    # Diving-planes lift is ~v^2: doubling speed quadruples the planes contribution
+    # (within the sub-reference-speed regime where it isn't yet clamped).
+    r_low = planes_depth_rate(PLANES_REF_SPEED / 4.0)
+    r_high = planes_depth_rate(PLANES_REF_SPEED / 2.0)
+    assert r_low > 0.0
+    assert math.isclose(r_high, 4.0 * r_low, rel_tol=1e-6)
+    # Saturates at/above the reference speed
+    assert planes_depth_rate(PLANES_REF_SPEED) == planes_depth_rate(PLANES_REF_SPEED * 2)
+
+
+def test_depth_rate_increases_with_speed():
+    # A faster boat changes depth faster than a slow one (planes authority).
+    def achieved_rate(speed):
+        ship = make_own()
+        ship.kin.speed = speed
+        integrate_kinematics(ship, ship.kin.heading, speed, 200.0, dt=1.0)
+        return ship.kin.depth_rate
+    slow = achieved_rate(2.0)
+    fast = achieved_rate(PLANES_REF_SPEED)
+    assert fast > slow
+    # Stopped boat still has the speed-independent ballast floor available.
+    assert achieved_rate(0.0) > 0.0
+    assert math.isclose(achieved_rate(0.0), BALLAST_FLOOR_RATE, rel_tol=1e-6)
+
+
+def test_planes_failure_forces_ballast_only_depth_control():
+    # With planes down, depth rate collapses to the ballast floor regardless of speed.
+    ship = make_own()
+    ship.kin.speed = PLANES_REF_SPEED
+    ship.systems.planes_ok = False
+    integrate_kinematics(ship, ship.kin.heading, PLANES_REF_SPEED, 200.0, dt=1.0)
+    assert math.isclose(ship.kin.depth_rate, BALLAST_FLOOR_RATE, rel_tol=1e-6)
+
+
+def test_ballast_boost_raises_the_floor():
+    # Pump assignment (emergency blow/flood) raises the speed-independent floor.
+    ship = make_own()  # speed 0 -> planes contribute nothing
+    integrate_kinematics(ship, ship.kin.heading, 0.0, 200.0, dt=1.0, ballast_boost=True)
+    assert math.isclose(ship.kin.depth_rate, BALLAST_BOOST_RATE, rel_tol=1e-6)
 
 
 def test_tube_state_machine_timing():

@@ -13,6 +13,11 @@ ENV/
 # OS
 .DS_Store
 
+# Editor swap/backup files
+*.swp
+*.swo
+*~
+
 # Local DB
 sub-bridge.db
 

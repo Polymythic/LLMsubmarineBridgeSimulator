@@ -10,6 +10,11 @@ if TYPE_CHECKING:
 
 
 BAFFLES_DEG = 60.0
+# Torpedo tonal "ID card" (kHz) for the sonar tonal filter. Torpedoes aren't
+# catalog ships, so their card is seeded here. Shares 5.0/12.0 kHz with the
+# Destroyer card by design (telling an inbound fish from its escort is hard);
+# 14.5 kHz is the unique seeker discriminator.
+TORPEDO_TONAL_LINES = [2.0, 5.0, 8.8, 12.0, 14.5]
 CONTACT_PERSISTENCE_SECONDS = 8.0  # How long contacts persist after dropping below threshold
 CONTACT_DECAY_RATE = 0.15  # Confidence decay per second when contact is fading
 ARRAY_GAIN_DB = 18.0  # Passive sonar array gain from beamforming (typical for spherical/cylindrical array)
@@ -161,6 +166,7 @@ def passive_contacts(
                     detectability=detect,
                     snrDb=snr_db,
                     bearingSigmaDeg=sigma,
+                    tonalLines=list(other.acoustics.tonal_lines),
                 )
             )
         elif memory and current_time - memory.get("last_seen", 0) < CONTACT_PERSISTENCE_SECONDS:
@@ -195,6 +201,7 @@ def passive_contacts(
                         detectability=fading_detect,
                         snrDb=memory.get("last_snr", 0) * decay_factor,
                         bearingSigmaDeg=memory.get("last_sigma", 5.0),
+                        tonalLines=list(other.acoustics.tonal_lines),
                     )
                 )
 
@@ -276,6 +283,7 @@ def passive_projectiles(self_ship: Ship, torpedoes: List[dict] | None, depth_cha
                 detectability=detect,
                 snrDb=snr_db,
                 bearingSigmaDeg=sigma,
+                tonalLines=list(TORPEDO_TONAL_LINES),
             ))
         except Exception:
             continue

@@ -29,6 +29,10 @@ class Acoustics(BaseModel):
         default_factory=lambda: {5: 110.0, 10: 118.0, 15: 130.0}
     )
     broadband_sig: float = 0.0
+    # Narrowband tonal signature ("ID card"), frequencies in kHz. The sonar
+    # tonal filter scales display brightness by the fraction of these lines
+    # inside the operator's Min/Max band. Empty => broadband/all-pass.
+    tonal_lines: List[float] = Field(default_factory=list)
     thermocline_on: bool = True
     thermocline_depth_m: float = 50.0  # Depth of thermocline layer (configurable per mission)
     # Additional noise injected into bearing measurement sigma (degradation effects)
@@ -254,6 +258,9 @@ class TelemetryContact(BaseModel):
     detectability: Optional[float] = None
     snrDb: Optional[float] = None
     bearingSigmaDeg: Optional[float] = None
+    # Narrowband tonal signature (kHz) for the sonar tonal filter. Empty/None =>
+    # broadband/no card => all-pass (filter never dims it).
+    tonalLines: Optional[List[float]] = None
 
 
 class ContactTrack(BaseModel):

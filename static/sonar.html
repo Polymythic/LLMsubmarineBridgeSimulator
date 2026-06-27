@@ -27,6 +27,17 @@
     .data-table td.num, .data-table th.num { text-align:right; }
     .data-table td.num, .data-table th.num, .data-table td.mono { font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; white-space:nowrap; }
     .data-table tbody tr:hover { background:#161E38; }
+    /* Tonal narrowband filter — frequency-domain ID-card browser. Styled
+       deliberately unlike the bearing waterfall (own panel, frequency axis) so
+       the two stacked strips aren't misread as sharing an X-axis. */
+    .tonal-panel { margin-top:10px; background:#0A1428; border:1px solid #243156; border-radius:6px; padding:8px; }
+    .tonal-head { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:6px; }
+    .tonal-card-nav { display:flex; align-items:center; gap:6px; }
+    .tonal-card-nav button { margin-top:0; padding:2px 10px; background:#1B2440; border:1px solid #3A4674; color:#D7E3FF; border-radius:4px; cursor:pointer; font-size:14px; line-height:1.2; }
+    .tonal-card-name { min-width:118px; text-align:center; font-weight:600; color:#FFB454; background:#1A1206; border:1px solid #5A3E12; border-radius:4px; padding:3px 8px; font-size:13px; }
+    .tonal-readout { font-family: ui-monospace, monospace; font-size:12px; color:#9DB0E0; }
+    .tonal-head button.tiny { margin-top:0; padding:2px 8px; font-size:11px; background:#1B2440; border:1px solid #3A4674; border-radius:4px; cursor:pointer; }
+    #tonalStrip { display:block; width:720px; max-width:100%; background:#06101F; border:1px solid #243156; border-radius:4px; cursor:ew-resize; }
     /* Shared styles loaded from station-common.css */
   </style>
   <link rel="stylesheet" href="/static/css/station-common.css">
@@ -89,6 +100,20 @@
           </div>
         </div>
         <div id="markerHint">Click waterfall to drop a bearing line · double-click to clear all · <button id="clearMarkers">Clear Lines</button> <button id="clearWaterfall" title="Wipe the accumulated waterfall history">Clear Waterfall</button></div>
+        <div class="tonal-panel" id="tonalPanel">
+          <div class="tonal-head">
+            <span class="label" style="font-weight:600;color:#FFB454;">Tonal Filter</span>
+            <div class="tonal-card-nav">
+              <button id="cardPrev" title="Previous reference signature">&#9664;</button>
+              <span class="tonal-card-name" id="cardName">&mdash;</span>
+              <button id="cardNext" title="Next reference signature">&#9654;</button>
+            </div>
+            <span class="tonal-readout" id="bandReadout">Min &mdash; &middot; Max &mdash;</span>
+            <button id="bandReset" class="tiny" title="Open the band fully (all-pass)">Reset Band</button>
+          </div>
+          <canvas id="tonalStrip" width="720" height="64" title="Orange = selected class's reference tonal lines. Drag the Min/Max handles to set the passband."></canvas>
+          <div class="label" style="font-size:10px;margin-top:3px;color:#5A6C9A;">Orange ticks = selected class's tonal lines &middot; drag &#9650; handles to set Min/Max &middot; axis is FREQUENCY (kHz), not bearing</div>
+        </div>
         <div style="display:flex; align-items:flex-end; gap:8px; margin-top:8px;">
           <div class="label">Sonar Noise: <span id="sonarNoise">0</span> dB</div>
           <div id="dbWrap" style="width:30px;height:120px;border:1px solid #1B2440;background:#0B1020;position:relative;border-radius:4px;">
@@ -384,8 +409,123 @@
       }
     }
 
+    // ---- Tonal narrowband filter (frequency-domain ID-card browser) ----
+    // Read-only for now: draws the selected class's reference lines and a
+    // draggable Min/Max passband. Brightness gating of the waterfall is step 3.
+    const TONAL_MIN_KHZ = 0.0, TONAL_MAX_KHZ = 15.0;
+    const tonalStrip = document.getElementById('tonalStrip');
+    const tsCtx = tonalStrip.getContext('2d');
+    const TS_W = tonalStrip.width, TS_H = tonalStrip.height;
+    const TICK_BOT = 17, LANE_TOP = 21, LANE_BOT = 50; // vertical layout (px)
+    // Preferred browse order (mockup: Destroyer → Torpedo → Convoy → SSN → Neutral)
+    const CARD_ORDER = ['Destroyer', 'Torpedo', 'Convoy', 'SSN', 'Neutral'];
+    let tonalCards = {};            // {className: [kHz,...]} from telemetry
+    let cardNames = [];             // ordered class names present in the library
+    let selectedCard = 0;
+    let bandMinKHz = TONAL_MIN_KHZ; // full-open default = all-pass (today's behavior)
+    let bandMaxKHz = TONAL_MAX_KHZ;
+    let dragging = null;            // 'min' | 'max' | null
+
+    const freqToX = khz => ((khz - TONAL_MIN_KHZ) / (TONAL_MAX_KHZ - TONAL_MIN_KHZ)) * TS_W;
+    const xToFreq = x => TONAL_MIN_KHZ + (x / TS_W) * (TONAL_MAX_KHZ - TONAL_MIN_KHZ);
+    const currentCardName = () => cardNames[selectedCard] || null;
+    const currentCardLines = () => { const n = currentCardName(); return n ? (tonalCards[n] || []) : []; };
+
+    function updateBandReadout(){
+      document.getElementById('bandReadout').textContent =
+        `Min ${bandMinKHz.toFixed(1)} kHz · Max ${bandMaxKHz.toFixed(1)} kHz`;
+    }
+
+    function drawHandle(x){
+      tsCtx.fillStyle = '#7FB2FF';
+      tsCtx.beginPath();
+      tsCtx.moveTo(x, LANE_BOT - 1);
+      tsCtx.lineTo(x - 5, LANE_BOT + 9);
+      tsCtx.lineTo(x + 5, LANE_BOT + 9);
+      tsCtx.closePath();
+      tsCtx.fill();
+    }
+
+    function drawTonalStrip(){
+      tsCtx.clearRect(0, 0, TS_W, TS_H);
+      tsCtx.fillStyle = '#06101F'; tsCtx.fillRect(0, 0, TS_W, TS_H);
+      const xMin = freqToX(bandMinKHz), xMax = freqToX(bandMaxKHz);
+      // Passband shaded region
+      tsCtx.fillStyle = 'rgba(80,140,220,0.12)';
+      tsCtx.fillRect(xMin, LANE_TOP, xMax - xMin, LANE_BOT - LANE_TOP);
+      // Frequency axis ticks + labels (top)
+      tsCtx.font = '9px ui-monospace, monospace'; tsCtx.textAlign = 'center';
+      for (let f = 0; f <= TONAL_MAX_KHZ; f += 5){
+        const x = freqToX(f);
+        tsCtx.strokeStyle = '#243156'; tsCtx.lineWidth = 1;
+        tsCtx.beginPath(); tsCtx.moveTo(x + 0.5, TICK_BOT); tsCtx.lineTo(x + 0.5, TICK_BOT - 4); tsCtx.stroke();
+        tsCtx.fillStyle = '#5A6C9A';
+        tsCtx.fillText(f + 'k', Math.max(9, Math.min(TS_W - 9, x)), TICK_BOT - 7);
+      }
+      // Selected card's tonal lines (orange; dim if outside the band)
+      currentCardLines().forEach(f => {
+        const x = freqToX(f);
+        const inBand = (f >= bandMinKHz && f <= bandMaxKHz);
+        tsCtx.strokeStyle = inBand ? '#FF9A2E' : 'rgba(255,154,46,0.28)';
+        tsCtx.lineWidth = 2;
+        tsCtx.beginPath(); tsCtx.moveTo(x, LANE_TOP); tsCtx.lineTo(x, LANE_BOT); tsCtx.stroke();
+      });
+      // Band edges + handles
+      tsCtx.strokeStyle = 'rgba(127,178,255,0.85)'; tsCtx.lineWidth = 1;
+      [xMin, xMax].forEach(x => { tsCtx.beginPath(); tsCtx.moveTo(x + 0.5, LANE_TOP); tsCtx.lineTo(x + 0.5, LANE_BOT); tsCtx.stroke(); });
+      drawHandle(xMin); drawHandle(xMax);
+    }
+
+    function refreshCard(){
+      document.getElementById('cardName').textContent = currentCardName() || '—';
+      drawTonalStrip();
+    }
+
+    const tsEvtX = e => {
+      const rect = tonalStrip.getBoundingClientRect();
+      return (e.clientX - rect.left) * (TS_W / rect.width);
+    };
+    function applyDrag(x){
+      const f = Math.max(TONAL_MIN_KHZ, Math.min(TONAL_MAX_KHZ, xToFreq(x)));
+      const GAP = 0.3;
+      if (dragging === 'min') bandMinKHz = Math.min(f, bandMaxKHz - GAP);
+      else if (dragging === 'max') bandMaxKHz = Math.max(f, bandMinKHz + GAP);
+      updateBandReadout(); drawTonalStrip();
+    }
+    tonalStrip.addEventListener('mousedown', e => {
+      const x = tsEvtX(e);
+      const dMin = Math.abs(x - freqToX(bandMinKHz)), dMax = Math.abs(x - freqToX(bandMaxKHz));
+      // Grab the nearest handle; if neither is close, move whichever edge is nearer.
+      dragging = (dMin <= dMax) ? 'min' : 'max';
+      applyDrag(x);
+      e.preventDefault();
+    });
+    window.addEventListener('mousemove', e => { if (dragging) applyDrag(tsEvtX(e)); });
+    window.addEventListener('mouseup', () => { dragging = null; });
+
+    document.getElementById('cardPrev').onclick = () => { if (cardNames.length){ selectedCard = (selectedCard - 1 + cardNames.length) % cardNames.length; refreshCard(); } };
+    document.getElementById('cardNext').onclick = () => { if (cardNames.length){ selectedCard = (selectedCard + 1) % cardNames.length; refreshCard(); } };
+    document.getElementById('bandReset').onclick = () => { bandMinKHz = TONAL_MIN_KHZ; bandMaxKHz = TONAL_MAX_KHZ; updateBandReadout(); drawTonalStrip(); };
+
+    function ingestTonalCards(cards){
+      if (!cards || !Object.keys(cards).length) return;
+      tonalCards = cards;
+      const present = CARD_ORDER.filter(n => cards[n]);
+      const extras = Object.keys(cards).filter(n => !CARD_ORDER.includes(n));
+      const next = present.concat(extras);
+      if (next.join(',') !== cardNames.join(',')){
+        cardNames = next;
+        if (selectedCard >= cardNames.length) selectedCard = 0;
+        refreshCard();
+      }
+    }
+
+    updateBandReadout();
+    drawTonalStrip();
+
     station.onTelemetry = function(d) {
       const own = d.ownship || {};
+      ingestTonalCards(d.tonalCards);
       drawThermocline(own.depth, !!d.thermocline, d.thermoclineDepth);
       if (d.thermocline) {
         const ld = d.thermoclineDepth != null ? Math.round(d.thermoclineDepth) : 50;

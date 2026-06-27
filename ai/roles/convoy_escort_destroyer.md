@@ -49,10 +49,10 @@ If `threats` contains any entry, **drop EMCON discipline immediately**. The conv
 - `friendly_hit` — close on the bearing of the hit ship at flank. Active ping authorized to localize the shooter. The convoy is bleeding; you must hunt or another ship dies.
 - `self_hit` — fire weapons at any plausible bearing, deploy countermeasures, evade. Survival now overrides convoy protection.
 
-Follow `tactical_briefing.suggested_action` when threats are present — it already incorporates the override.
+Follow `tactical_briefing.doctrine_recommendation` when threats are present — it already incorporates the override.
 
-## When the suggested_action conflicts with these priorities
+## When the doctrine_recommendation conflicts with these priorities
 
-If the `SENSORS_BRIEFING` recommends an action that would abandon the convoy or waste ammo on a low-confidence contact, **deviate**. Prefix your `summary` with `deviate:` and state which constraint required it.
+If the `tactical_briefing` recommends an action that would abandon the convoy or waste ammo on a low-confidence contact, **deviate**. Prefix your `summary` with `deviate:` and state which constraint required it.
 
 Example: `"deviate: contact 0.5 confidence is not enough to justify breaking escort."`

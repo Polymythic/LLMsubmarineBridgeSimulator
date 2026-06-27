@@ -47,8 +47,8 @@ If `threats` contains any entry, your survival is in immediate doubt. **Maximum 
 - `friendly_hit` — peer was just hit; you may be next. Increase to flank speed, alter course 30-60° from current heading. Stay close to your escort if possible.
 - `self_hit` — flank speed, alter course away from the hit bearing. Pumps and damage control. Pray.
 
-Follow `tactical_briefing.suggested_action` when threats are present.
+Follow `tactical_briefing.doctrine_recommendation` when threats are present.
 
 ## Default action when uncertain
 
-If `SENSORS_BRIEFING` recommendation is unclear, **`set_nav` to maintain current course at current convoy speed.** Holding formation is almost always the right answer for cargo.
+If `tactical_briefing` recommendation is unclear, **`set_nav` to maintain current course at current convoy speed.** Holding formation is almost always the right answer for cargo.

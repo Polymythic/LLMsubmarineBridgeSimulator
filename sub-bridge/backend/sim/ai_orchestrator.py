@@ -311,6 +311,28 @@ class AgentsOrchestrator:
             self._blue_fleet_engine = StubEngine()
 
     # ---------- Summaries (information boundaries) ----------
+    def _red_mission_brief(self) -> Dict[str, Any]:
+        """RED-only view of the mission brief for the Fleet Commander prompt.
+
+        NEVER expose the raw brief: it carries `blue_mission_summary` and the
+        BLUE slices of scenario_context / task_groups / side_objectives —
+        i.e. the player's playbook. Source is the mirrored `_mission_brief`
+        (the world object never carries mission_brief, so the old
+        `getattr(world, 'mission_brief', {})` here was always empty anyway —
+        but it would have leaked the whole brief the moment that changed).
+        """
+        mb = getattr(self, "_mission_brief", None)
+        if not isinstance(mb, dict):
+            return {}
+        return {
+            "objective": mb.get("objective"),
+            "mission_summary": mb.get("red_mission_summary") or mb.get("mission_summary"),
+            "side_objective": (mb.get("side_objectives", {}) or {}).get("RED"),
+            "scenario_context": (mb.get("scenario_context", {}) or {}).get("RED"),
+            "task_groups": (mb.get("task_groups", {}) or {}).get("RED"),
+            "success_criteria": (mb.get("success_criteria", {}) or {}).get("RED"),
+        }
+
     def _build_fleet_summary(self) -> Dict[str, Any]:
         world = self._world_getter()
         own_fleet = []
@@ -944,7 +966,7 @@ class AgentsOrchestrator:
                 "user_prompt": _load_prompt_template("fleet_commander_user").replace(
                     "{{FLEET_SUMMARY_JSON}}", json.dumps(summary, separators=(',', ':'))
                 ).replace(
-                    "{{MISSION_BRIEF}}", json.dumps(getattr(self._world_getter(), 'mission_brief', {}), separators=(',', ':'))
+                    "{{MISSION_BRIEF}}", json.dumps(self._red_mission_brief(), separators=(',', ':'))
                 ),
                 "summary_size": len(str(summary)),
             }
@@ -1245,7 +1267,14 @@ class AgentsOrchestrator:
             # a role to this ship. Falls through silently for legacy missions
             # that haven't been migrated to ship_roles yet.
             try:
-                mission_brief = getattr(world, "mission_brief", {}) or {}
+                # Source is the orchestrator's mirrored brief; the world object
+                # never carries mission_brief, so the old getattr(world, ...)
+                # made role_name always "" — the entire role-doctrine library
+                # (convoy escort / ASW hunter / cargo) was silently never
+                # appended to ANY captain prompt in production.
+                mission_brief = getattr(self, "_mission_brief", None)
+                if not isinstance(mission_brief, dict):
+                    mission_brief = getattr(world, "mission_brief", {}) or {}
                 ship_roles_map = mission_brief.get("ship_roles", {}) or {}
                 role_entry = ship_roles_map.get(ship_id, {}) or {}
                 role_name = str(role_entry.get("role", "")) if isinstance(role_entry, dict) else ""

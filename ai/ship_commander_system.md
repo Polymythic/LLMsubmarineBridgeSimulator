@@ -34,7 +34,7 @@ The `tactical_briefing` already incorporates threat overrides. Follow it; the th
 
 ### 4. `tactical_briefing` ⭐ **The most important block**
 Pre-computed answers so you do not have to do trigonometry. Trust these values; they are correct.
-- `doctrine_recommendation` — one of `ENGAGE_TORPEDO` / `ENGAGE_DC` / `CLOSE` / `TRANSIT` / `HOLD`.
+- `doctrine_recommendation` — one of `ENGAGE_TORPEDO` / `ENGAGE_DC` / `CLOSE` / `INVESTIGATE` / `EVADE` / `TRANSIT` / `HOLD`.
 - `reason` — why that doctrine was picked.
 - `target_id` — the contact id, if applicable.
 - `suggested_heading` — the heading you should steer (compass degrees).

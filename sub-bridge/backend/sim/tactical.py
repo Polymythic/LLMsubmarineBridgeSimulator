@@ -222,7 +222,7 @@ class ContactBelief:
 @dataclass(frozen=True)
 class DoctrineRecommendation:
     action: str
-    """One of: ENGAGE_TORPEDO | ENGAGE_DC | CLOSE | TRANSIT | HOLD."""
+    """One of: ENGAGE_TORPEDO | ENGAGE_DC | CLOSE | INVESTIGATE | EVADE | TRANSIT | HOLD."""
     reason: str
     target_id: Optional[str] = None
     suggested_heading: Optional[float] = None

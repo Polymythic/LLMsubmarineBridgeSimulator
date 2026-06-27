@@ -201,6 +201,37 @@ def test_run_ship_resolves_critical_orders_placeholder_when_none():
 
 
 # --------------------------------------------------------------------------- #
+# Role-doctrine injection (regression guard)
+#
+# run_ship read ship_roles from world.mission_brief (never populated), so
+# role_name was always "" and the role-doctrine library was never appended to
+# any captain prompt. Source is now the mirrored _mission_brief.
+# --------------------------------------------------------------------------- #
+
+def _last_system_prompt_for(stub: StubLLMEngine, ship_id: str) -> str:
+    for sid, summary in reversed(stub.ship_calls):
+        if sid == ship_id:
+            hint = summary.get("_prompt_hint", {}) if isinstance(summary, dict) else {}
+            return hint.get("system_prompt", "") or ""
+    return ""
+
+
+def test_run_ship_appends_role_doctrine_from_mission_brief():
+    world = _make_world_with_red_destroyer()
+    stub = StubLLMEngine()
+    orch = _make_orch_with_stub(world, stub)
+    orch._mission_brief = {"ship_roles": {"red-01": {"role": "asw_hunter_destroyer"}}}
+
+    asyncio.run(orch.run_ship("red-01"))
+
+    system_prompt = _last_system_prompt_for(stub, "red-01")
+    assert "Active Role" in system_prompt
+    assert "asw_hunter_destroyer" in system_prompt
+    # A distinctive line from the ASW hunter doctrine file must be present.
+    assert "find and destroy enemy submarines" in system_prompt.lower()
+
+
+# --------------------------------------------------------------------------- #
 # Fleet-level tool calls
 # --------------------------------------------------------------------------- #
 

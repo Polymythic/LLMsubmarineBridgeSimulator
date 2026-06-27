@@ -54,8 +54,8 @@ If `threats` contains any entry, you are already in combat — execute decisivel
 - `friendly_hit` — close on the hit ship's bearing at flank, full active ping. Submarine is in that area.
 - `self_hit` — saturating attack on best contact, deploy countermeasures, continue prosecuting through the damage.
 
-The `tactical_briefing.suggested_action` already encodes the override; follow it unless your role-specific judgement clearly disagrees.
+The `tactical_briefing.doctrine_recommendation` already encodes the override; follow it unless your role-specific judgement clearly disagrees.
 
-## When suggested_action says HOLD or TRANSIT and you have any contact
+## When doctrine_recommendation says HOLD or TRANSIT and you have any contact
 
 For an ASW hunter, HOLD with a contact present is almost never correct. **Deviate to active investigation or engagement.** Prefix `summary` with `deviate: aggressive prosecution required`.

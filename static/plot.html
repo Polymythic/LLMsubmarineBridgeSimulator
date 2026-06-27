@@ -60,7 +60,7 @@
       <div class="group">
         <label>Tool</label>
         <button id="toolSelect" class="active" title="Select / drag / edit existing items">Select</button>
-        <button id="toolBearing" title="Click on the map at the bearing direction to drop a bearing line from ownship">Bearing</button>
+        <button id="toolBearing" title="Click on the map to mark a single bearing & range from ownship (each click replaces the previous); use it to eyeball where to drop a contact">Bearing</button>
         <button id="toolContact" title="Click on the map to drop a new contact">Contact</button>
       </div>
       <div class="group" id="contactTypeGroup" style="display:none;">
@@ -82,6 +82,7 @@
         </select>
       </div>
       <div class="group">
+        <button id="clearBearing" title="Clear the current bearing & range line">Clear Bearing</button>
         <button id="clearAll" title="Clear all bearings, contacts, and notes" style="background:#7F1D1D;">Clear All</button>
       </div>
       <div class="group legend">
@@ -107,7 +108,7 @@
     <div class="panel" style="display:flex; flex-direction:column;">
       <canvas id="map" width="900" height="700"></canvas>
       <div style="margin-top:6px; font-size:11px; color:#6E84C8;">
-        Sub at center · click center to measure range · drag a contact to move · click contact to edit · right-click contact to delete
+        Sub at center · drag from center to measure · Bearing tool: click to mark a bearing &amp; range · drag a contact to move · click contact to edit · right-click contact to delete
       </div>
       <!-- Selected contact editor -->
       <div id="contactEditor" class="editor hidden">
@@ -156,6 +157,11 @@
     let dragOffset = null;          // {dx, dy} world meters
     // Measurement (drag from ownship)
     let measuring = null;           // {sx, sy} screen coords or null
+    // Single local bearing+range marker (placement aid). Stored as a world
+    // point so it stays pinned as ownship moves; each Bearing-tool click
+    // replaces it, the Clear Bearing button removes it. Not shared/synced —
+    // it's scratch geometry for eyeballing where to drop a contact.
+    let bearingMark = null;         // {wx, wy} world meters or null
     // Range (half-extent in meters covered by min(W,H)/2 pixels)
     let rangeM = parseFloat(document.getElementById('rangeSelect').value);
 
@@ -273,6 +279,34 @@
       ctx.closePath();
       ctx.fill(); ctx.stroke();
 
+      // Persistent bearing+range marker: dashed line from ownship to the
+      // marked point, a range dot at the point, and a bearing/range label.
+      if (bearingMark) {
+        const [mx, my] = worldToScreen(bearingMark.wx, bearingMark.wy);
+        ctx.strokeStyle = '#FACC15';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.moveTo(W/2, H/2); ctx.lineTo(mx, my);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // Range dot
+        ctx.fillStyle = '#FACC15';
+        ctx.beginPath(); ctx.arc(mx, my, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#0B1020'; ctx.lineWidth = 1; ctx.stroke();
+        // Bearing + range label (live from current ownship position)
+        const distM = Math.hypot(bearingMark.wx - ownship.x, bearingMark.wy - ownship.y);
+        const brg = ((Math.atan2(bearingMark.wx - ownship.x, bearingMark.wy - ownship.y) * 180 / Math.PI) + 360) % 360;
+        const rngText = distM >= 1000 ? `${(distM/1000).toFixed(2)} km` : `${Math.round(distM)} m`;
+        const text = `${Math.round(brg).toString().padStart(3,'0')}° · ${rngText}`;
+        ctx.font = '11px ui-monospace, monospace';
+        const tw = ctx.measureText(text).width;
+        ctx.fillStyle = 'rgba(0,0,0,0.75)';
+        ctx.fillRect(mx + 8, my - 18, tw + 8, 16);
+        ctx.fillStyle = '#FACC15';
+        ctx.fillText(text, mx + 12, my - 6);
+      }
+
       // Measurement rubber-band line + live distance
       if (measuring) {
         ctx.strokeStyle = '#00E5FF';
@@ -328,8 +362,13 @@
       };
     });
     document.getElementById('rangeSelect').onchange = e => { rangeM = parseFloat(e.target.value); draw(); };
+    document.getElementById('clearBearing').onclick = () => { bearingMark = null; draw(); };
     document.getElementById('clearAll').onclick = () => {
-      if (confirm('Clear ALL bearings, contacts, and notes?')) station.sendCommand('plot.clear', {});
+      if (confirm('Clear ALL bearings, contacts, and notes?')) {
+        station.sendCommand('plot.clear', {});
+        bearingMark = null;
+        draw();
+      }
     };
 
     // ---- Mouse events on canvas ----
@@ -363,10 +402,12 @@
           selectContact(null);
         }
       } else if (tool === 'bearing') {
-        // Compute the bearing FROM ownship TO the click point
+        // Drop a single local bearing+range marker at the click point,
+        // replacing any previous one. Used to eyeball a spot before
+        // dropping a contact there; cleared via the Clear Bearing button.
         const [wx, wy] = screenToWorld(sx, sy);
-        const brg = ((Math.atan2(wx - ownship.x, wy - ownship.y) * 180 / Math.PI) + 360) % 360;
-        station.sendCommand('plot.bearing.add', {bearing: brg});
+        bearingMark = {wx, wy};
+        draw();
       } else if (tool === 'contact') {
         const [wx, wy] = screenToWorld(sx, sy);
         station.sendCommand('plot.contact.add', {x: wx, y: wy, type: contactType, heading_deg: 0, label: ''});

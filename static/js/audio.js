@@ -3,9 +3,9 @@
  *
  * Shared audio module for all stations. Handles:
  * - Ambient background sounds
- * - Alarms (critical, warning, diving)
+ * - Alarms (critical, warning, diving, surface, general warning/alarm)
  * - Distance-based sound effects (pings, explosions)
- * - Event-triggered sounds (ship sinking)
+ * - Event-triggered sounds (ship sinking, torpedo launch)
  */
 
 class SubmarineAudio {
@@ -19,6 +19,9 @@ class SubmarineAudio {
     // Track state for triggering sounds
     this.lastDepth = null;
     this.wasAtPeriscopeDepth = false;
+    this.wasSurfaced = false;          // for surface-alert rising edge
+    this._wasWarning = false;          // for general-warning rising edge (degraded)
+    this._wasCritical = false;         // for general-alarm rising edge (failed)
     this.playingAlarms = {};
 
     // Sound file paths
@@ -29,11 +32,15 @@ class SubmarineAudio {
       // Alarms
       alarmCritical: '/assets/sounds/alarm_critical.mp3',
       alarmWarning: '/assets/sounds/alarm_warning.mp3',
-      alarmDiving: '/assets/sounds/alarm_diving.mp3',
+      alarmDiving: '/assets/sounds/diving_alarm.wav',
+      surfaceAlert: '/assets/sounds/surface_alert.wav',
+      generalWarning: '/assets/sounds/general_warning.wav',
+      generalAlarm: '/assets/sounds/general_alarm.wav',
 
       // Effects
       depthCharge: '/assets/sounds/depth_charge.mp3',
       shipSinking: '/assets/sounds/ship_sinking.mp3',
+      torpedoFire: '/assets/sounds/torpedo_fire.wav',
       pingEnemy: '/assets/sounds/sonar_ping_enemy.mp3',
       pingFriendly: '/assets/sounds/sonar_ping_friendly.mp3',
       morseCode: '/assets/sounds/morse_code.mp3',
@@ -249,22 +256,30 @@ class SubmarineAudio {
     // === AMBIENT (all stations) ===
     this.startAmbient();
 
-    // === DIVING ALARM (all stations) ===
-    // Trigger when going from periscope depth (<=20m) to deeper
+    // === DIVING / SURFACE ALARMS (all stations) ===
+    // Diving: going from periscope depth (<=20m) to deeper.
+    // Surface: breaking the surface (depth <= 2m) after being submerged.
     const PERISCOPE_DEPTH = 20;
+    const SURFACE_DEPTH = 2;
     if (data.ownship && typeof data.ownship.depth === 'number') {
       const currentDepth = data.ownship.depth;
       const atPeriscope = currentDepth <= PERISCOPE_DEPTH;
+      const surfaced = currentDepth <= SURFACE_DEPTH;
 
       if (this.lastDepth !== null) {
-        // Was at periscope, now going deeper
+        // Was at periscope, now going deeper → diving alarm
         if (this.wasAtPeriscopeDepth && !atPeriscope && currentDepth > this.lastDepth) {
           this.play('alarmDiving', 0.8);
+        }
+        // Was submerged, now broken the surface → surface alert
+        if (!this.wasSurfaced && surfaced) {
+          this.play('surfaceAlert', 0.8);
         }
       }
 
       this.lastDepth = currentDepth;
       this.wasAtPeriscopeDepth = atPeriscope;
+      this.wasSurfaced = surfaced;
     }
 
     // === FRIENDLY PING (all stations) ===
@@ -326,6 +341,9 @@ class SubmarineAudio {
     // === TORPEDO DETONATIONS (all stations) - distance based ===
     this.processTorpedoEvents(data);
 
+    // === OWNSHIP TORPEDO LAUNCH (all stations) ===
+    this.processWeaponsFireEvents(data);
+
     // === CAPTAIN-ONLY ALARMS ===
     if (this.station === 'captain') {
       this.processCaptainAlarms(data);
@@ -373,6 +391,29 @@ class SubmarineAudio {
             }
           }
         }
+      }
+    }
+  }
+
+  /**
+   * Process ownship torpedo launches (heard ship-wide on all stations).
+   * The backend emits a one-shot 'weapons.fire' transient event when the
+   * player fires; we dedupe by its timestamp so it plays exactly once.
+   */
+  processWeaponsFireEvents(data) {
+    if (!data.events || !Array.isArray(data.events)) return;
+    for (const event of data.events) {
+      if (event.type !== 'weapons.fire') continue;
+      if (!this._playedTorpedoFires) this._playedTorpedoFires = new Set();
+      const fireId = event.at || `fire_${event.tube}_${Date.now()}`;
+      if (this._playedTorpedoFires.has(fireId)) continue;
+      this._playedTorpedoFires.add(fireId);
+      this.play('torpedoFire', 0.85);
+
+      // Cleanup old ids
+      if (this._playedTorpedoFires.size > 50) {
+        const arr = Array.from(this._playedTorpedoFires);
+        this._playedTorpedoFires = new Set(arr.slice(-25));
       }
     }
   }
@@ -429,6 +470,18 @@ class SubmarineAudio {
       this.stopAlarm('alarmCritical');
       this.stopAlarm('alarmWarning');
     }
+
+    // One-shot announcements on the rising edge of each fault tier: a system
+    // going degraded sounds the general warning; going critical/failed sounds
+    // the general alarm. Critical supersedes warning so a straight escalation
+    // doesn't double-announce. The looping klaxons above persist the state.
+    if (hasCritical) {
+      if (!this._wasCritical) this.play('generalAlarm', 0.8);
+    } else if (hasWarning) {
+      if (!this._wasWarning) this.play('generalWarning', 0.8);
+    }
+    this._wasCritical = hasCritical;
+    this._wasWarning = hasWarning;
   }
 
   /**

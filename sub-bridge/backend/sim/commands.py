@@ -197,6 +197,14 @@ class CommandDispatcher:
         tube = int(data.get("tube", 1))
         bearing = float(data.get("bearing", own.kin.heading))
         sim._log_action("WEAPONS", f"Fired torpedo from Tube {tube} at bearing {bearing:.0f}°", data)
+        # Surface a transient event so all-station audio can sound the launch.
+        from datetime import datetime, timezone
+        sim._transient_events.append({
+            "type": "weapons.fire",
+            "at": datetime.now(timezone.utc).isoformat(),
+            "tube": tube,
+            "bearing": bearing,
+        })
         return None
 
     async def _weapons_test_fire(self, data: Dict) -> Optional[str]:

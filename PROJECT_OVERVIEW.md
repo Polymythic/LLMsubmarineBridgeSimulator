@@ -22,12 +22,13 @@ ship-level tactics within their role's doctrine.**
   produces a `FleetIntent` of per-ship destinations, EMCON posture, and
   task-group coordination. Adapts pre-authored task groups; doesn't invent
   them.
-- **Ship captains** (small local LLMs via Ollama): one inference per ship
-  per cadence. Each captain receives a focused prompt: its role, its task
-  group context, threat alerts, a tactical briefing with pre-computed
-  geometry and a doctrine recommendation, plus its local sensor data.
-  Default: follow the recommendation. Deviate: prefix `summary` with
-  `deviate:` and state the reason.
+- **Ship captains** (a local LLM via Ollama, or a capable cloud model — the
+  model tier is a dial, not a fixed weakness): one inference per ship per
+  cadence. Each captain receives a focused prompt: its role, its task group
+  context, threat alerts, a tactical briefing with pre-computed geometry and
+  a doctrine recommendation, plus its local sensor data. The recommendation
+  is a **default to weigh, not a mandate** — the captain owns the decision.
+  Deviate: prefix `summary` with `deviate:` and state the reason.
 - **The architecture supports human-in-the-loop at any layer.** A human
   could replace the fleet commander, a single ship captain, or a specific
   role. The Hands/Controllers split was built specifically to make this
@@ -43,6 +44,44 @@ The two original litmus tests:
 2. **(Stretch) The submarine crewed by role-specialized LLMs vs. a human
    crew.** Architecture supports it (Phases 1–3 ready); the player-side
    role abstraction (Phase 5) is still pending.
+
+### 1.1 Captain-tier intent: reason about tactics under strategic intent
+
+The multi-tier test is specifically about **locally-running LLMs making
+tactical decisions while understanding strategic intent.** The captain must
+*comprehend* the fleet's intent and translate it into sound local action —
+that reasoning is the capability under test. Four principles govern all
+captain-tier work:
+
+- **The model tier is a dial.** Captains can run on a small local model
+  (Ollama) *or* a capable cloud model, over the same prompt and tool surface.
+  The question is "how far down the capability ladder does genuine tactical
+  reasoning survive?" — measured per model, not "compensate for a weak model."
+
+- **The captain is a reasoner, not a transcriber.** The tactical briefing
+  exists to remove the burden of *fact and geometry* (bearings, intercepts,
+  envelopes) so the model spends its capacity on judgment. It must never
+  pre-decide the action.
+
+- **The cardinal rule — inform, don't neuter.** Pre-computation may hand the
+  captain answers to questions of fact and geometry; it must never collapse
+  the *decision*. The LLM owns the choice of tool, its arguments, and the
+  `deviate:` path. Over-constraining (pre-filling the tool call, making
+  doctrine "non-negotiable") strips the reasoning depth that is the entire
+  point. When a captain underperforms, the first moves are to make its inputs
+  **coherent** (remove contradictory orders, dead boilerplate, buried rules)
+  and/or move up the model ladder — never to remove the decision.
+
+- **Success = a defensible decision that serves intent, with a sound
+  rationale** — *not* compliance with the doctrine recommendation. An escort
+  that evades an inbound torpedo with good reasoning is a success; one that
+  holds course into the torpedo is the failure, even though "hold course" is
+  a nav action. Decisions are judged on reasoning quality, not action label.
+
+**How we measure it.** Freeze real decision prompts across the doctrine ladder
+(TRANSIT / INVESTIGATE / ENGAGE / torpedo-in-water / friendly-hit) and replay
+them against the model ladder, scoring decision soundness + rationale. Prompt
+and doctrine changes are validated against this set, not asserted.
 
 ---
 

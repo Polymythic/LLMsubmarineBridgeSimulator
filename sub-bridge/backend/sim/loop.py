@@ -222,6 +222,12 @@ class Simulation:
         self._mission_outcome = MissionOutcome()
         self._delivered_comms_idx = -1
 
+        # Shared plotting board — collaborative tactical map state. Edited
+        # by all stations via the /plot page; broadcast to everyone each
+        # tick. Cleared on mission load.
+        from .plot import PlotBoard as _PlotBoard
+        self._plot_board = _PlotBoard()
+
         # Equipment toggles
         self._periscope_raised = False
         self._radio_raised = False
@@ -495,6 +501,14 @@ class Simulation:
                 self._init_scenario_subsystems(brief)
 
             apply_mission_to_world(mission, lambda: self.world, _set_mission)
+
+            # Wipe the shared plotting board on each mission load so old
+            # contacts/bearings/notes don't leak between scenarios.
+            try:
+                if hasattr(self, "_plot_board") and self._plot_board is not None:
+                    self._plot_board.clear()
+            except Exception:
+                pass
 
             # Update AI orchestrator mission brief
             if hasattr(self, "_ai_orch") and self._ai_orch is not None:
@@ -1626,7 +1640,7 @@ class Simulation:
 
         # Note: all_ai_ping_responses removed from pingResponses - enemy pings should appear as contacts, not ping responses
         all_contacts = contacts + proj_contacts + explosion_contacts_list + cm_contacts + enemy_ping_contacts
-        tel_sonar = {**base, "contacts": [c.dict() for c in all_contacts], "pingCooldown": max(0.0, self.active_ping_state.timer), "pingResponses": list(self._last_ping_responses), "lastPingAt": getattr(self, "_last_ping_at", None), "explosions": list(self._sonar_explosions), "tasks": [t.__dict__ for t in self._active_tasks['sonar']]}
+        tel_sonar = {**base, "contacts": [c.dict() for c in all_contacts], "pingCooldown": max(0.0, self.active_ping_state.timer), "pingResponses": list(self._last_ping_responses), "lastPingAt": getattr(self, "_last_ping_at", None), "explosions": list(self._sonar_explosions), "tasks": [t.__dict__ for t in self._active_tasks['sonar']], "thermocline": own.acoustics.thermocline_on, "thermoclineDepth": getattr(own.acoustics, 'thermocline_depth_m', 50.0)}
         tel_weapons = {
             **base,
             "tubes": [t.dict() for t in own.weapons.tubes],
@@ -1780,6 +1794,25 @@ class Simulation:
         await BUS.publish("tick:weapons", {"topic": "telemetry", "data": tel_weapons})
         await BUS.publish("tick:engineering", {"topic": "telemetry", "data": tel_engineering})
         await BUS.publish("tick:debug", {"topic": "telemetry", "data": debug_payload})
+        # Shared tactical plot — its own channel; payload is small and
+        # delta-friendly, but we also include ownship pos and the mission
+        # brief summary so the /plot page is fully self-contained.
+        try:
+            plot_payload = {
+                **base,
+                "plot": (self._plot_board.to_telemetry()
+                         if hasattr(self, "_plot_board") and self._plot_board is not None
+                         else {"version": 0, "bearings": [], "contacts": [], "notes": []}),
+                "missionBrief": {
+                    "title": (getattr(self, "mission_brief", {}) or {}).get("title"),
+                    "objective": (getattr(self, "mission_brief", {}) or {}).get("objective"),
+                    "blue_captain_summary": (getattr(self, "mission_brief", {}) or {}).get("blue_captain_summary"),
+                    "roe": (getattr(self, "mission_brief", {}) or {}).get("roe", []),
+                },
+            }
+            await BUS.publish("tick:plot", {"topic": "telemetry", "data": plot_payload})
+        except Exception:
+            pass
         # Fleet AI telemetry: intent and recent runs/tool calls
         from ..config import CONFIG as _CFG
         fleet_payload = {

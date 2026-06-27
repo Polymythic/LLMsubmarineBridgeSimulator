@@ -63,9 +63,16 @@
       <div class="col">
         <div class="label" title="Bearing axis centered at 0°; time flows downward">Passive Waterfall</div>
         <canvas id="legend" width="720" height="32" title="Sonar contact legend"></canvas>
-        <div id="waterfallWrap">
-          <canvas id="waterfall" width="720" height="220" title="Click to drop a bearing line; double-click to clear"></canvas>
-          <canvas id="bearingMarkers" width="720" height="220"></canvas>
+        <div style="display:flex; gap:8px; align-items:flex-start;">
+          <div id="waterfallWrap" style="flex:1;">
+            <canvas id="waterfall" width="720" height="220" title="Click to drop a bearing line; double-click to clear"></canvas>
+            <canvas id="bearingMarkers" width="720" height="220"></canvas>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:2px; align-items:center;">
+            <div class="label" style="font-size:10px;" title="Sound velocity layer; affects sonar propagation across the boundary">Layer</div>
+            <canvas id="thermoclineGraph" width="80" height="220" title="Thermocline depth profile + ownship position"></canvas>
+            <div class="label" style="font-size:10px;" id="thermoStatus">—</div>
+          </div>
         </div>
         <div id="markerHint">Click waterfall to drop a bearing line · double-click to clear all · <button id="clearMarkers">Clear</button></div>
         <div style="display:flex; align-items:flex-end; gap:8px; margin-top:8px;">
@@ -241,13 +248,18 @@
             }
           }
         } else {
-          // Regular ship contacts: orange/yellow
-          const glow = Math.floor(60 + strength * 180);
-          for (let dx = -1; dx <= 1; dx++){
-            const xi = Math.max(0, Math.min(W-1, x + dx));
-            const base = xi * 4;
-            data[base+0] = glow; data[base+1] = Math.floor(glow * 0.85); data[base+2] = Math.floor(glow * 0.4); data[base+3] = 255;
-          }
+          // Regular ship contacts: single-pixel orange/yellow line whose
+          // brightness scales aggressively with signal strength. Faint
+          // contacts read as barely-there dim threads; strong contacts
+          // glow bright. With many simultaneous ships in the lanes, the
+          // 3-pixel-wide bands previously bloomed into solid color blocks
+          // that hid the bearing-time texture sonar operators rely on.
+          const glow = Math.max(35, Math.min(255, Math.floor(35 + strength * 220)));
+          const base = x * 4;
+          data[base+0] = glow;
+          data[base+1] = Math.floor(glow * 0.85);
+          data[base+2] = Math.floor(glow * 0.4);
+          data[base+3] = 255;
         }
       });
       // Active ping dots: brighter by strength
@@ -285,7 +297,75 @@
     let _lastContactsRender = 0;
     const CONTACTS_REFRESH_MS = 500;
 
+    // Thermocline depth profile graph — shows the layer position and
+    // ownship's depth relative to it. Helps the operator reason about
+    // why a contact is loud or quiet (above vs. below the layer).
+    const thermoCanvas = document.getElementById('thermoclineGraph');
+    const thermoCtx = thermoCanvas.getContext('2d');
+    const thermoStatusEl = document.getElementById('thermoStatus');
+    const THERMO_MAX_DEPTH = 600.0;
+    function drawThermocline(ownDepth, layerOn, layerDepth) {
+      const W = thermoCanvas.width, H = thermoCanvas.height;
+      thermoCtx.clearRect(0, 0, W, H);
+      // Background — gradient lighter near surface, darker deep
+      const grad = thermoCtx.createLinearGradient(0, 0, 0, H);
+      grad.addColorStop(0, '#0F2540');
+      grad.addColorStop(1, '#040810');
+      thermoCtx.fillStyle = grad;
+      thermoCtx.fillRect(0, 0, W, H);
+      // Frame
+      thermoCtx.strokeStyle = '#1B2440';
+      thermoCtx.strokeRect(0.5, 0.5, W-1, H-1);
+      // Depth ticks every 100m
+      thermoCtx.fillStyle = '#4C5E9A';
+      thermoCtx.font = '9px ui-monospace, monospace';
+      thermoCtx.textAlign = 'left';
+      for (let d = 0; d <= THERMO_MAX_DEPTH; d += 100) {
+        const y = (d / THERMO_MAX_DEPTH) * H;
+        thermoCtx.strokeStyle = '#1B2440';
+        thermoCtx.beginPath(); thermoCtx.moveTo(0, y); thermoCtx.lineTo(8, y); thermoCtx.stroke();
+        if (d > 0 && d < THERMO_MAX_DEPTH) thermoCtx.fillText(d, 10, y - 1);
+      }
+      // Thermocline layer
+      if (layerOn && layerDepth != null) {
+        const ly = (layerDepth / THERMO_MAX_DEPTH) * H;
+        // Fuzzy band ±4 px
+        const grad2 = thermoCtx.createLinearGradient(0, ly - 4, 0, ly + 4);
+        grad2.addColorStop(0, 'rgba(0,229,255,0.0)');
+        grad2.addColorStop(0.5, 'rgba(0,229,255,0.6)');
+        grad2.addColorStop(1, 'rgba(0,229,255,0.0)');
+        thermoCtx.fillStyle = grad2;
+        thermoCtx.fillRect(0, ly - 4, W, 8);
+        // Solid line
+        thermoCtx.strokeStyle = 'rgba(0,229,255,0.85)';
+        thermoCtx.beginPath(); thermoCtx.moveTo(0, ly + 0.5); thermoCtx.lineTo(W, ly + 0.5); thermoCtx.stroke();
+        thermoCtx.fillStyle = '#00E5FF';
+        thermoCtx.textAlign = 'right';
+        thermoCtx.fillText(`${Math.round(layerDepth)}m`, W - 2, ly - 2);
+      }
+      // Ownship depth marker — green triangle on the left edge pointing right
+      if (ownDepth != null) {
+        const oy = Math.min(H - 1, (ownDepth / THERMO_MAX_DEPTH) * H);
+        thermoCtx.fillStyle = '#6EE7A7';
+        thermoCtx.beginPath();
+        thermoCtx.moveTo(0, oy - 5);
+        thermoCtx.lineTo(0, oy + 5);
+        thermoCtx.lineTo(8, oy);
+        thermoCtx.closePath();
+        thermoCtx.fill();
+      }
+    }
+
     station.onTelemetry = function(d) {
+      const own = d.ownship || {};
+      drawThermocline(own.depth, !!d.thermocline, d.thermoclineDepth);
+      if (d.thermocline) {
+        const ld = d.thermoclineDepth != null ? Math.round(d.thermoclineDepth) : 50;
+        const above = own.depth != null && own.depth < ld;
+        thermoStatusEl.textContent = `Layer ${ld}m · you ${above ? 'above' : 'below'}`;
+      } else {
+        thermoStatusEl.textContent = 'No layer';
+      }
       cd.textContent = (d.pingCooldown || 0).toFixed(1);
       if (d.acoustics) { emcon.textContent = (d.acoustics.emconRisk || 'low'); }
       if (d.ownship && d.ownship.damage) { station.updateDamageLEDs(d.ownship.damage); }

@@ -1,0 +1,497 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tactical Plot</title>
+  <style>
+    body { background:#0B1020; color:#D7E3FF; font-family: ui-sans-serif, system-ui, -apple-system; margin:0; }
+    .panel { background:#11172B; border:1px solid #1B2440; padding:12px; margin:8px; border-radius:8px; }
+    .row { display:flex; gap:8px; }
+    .pill { padding:4px 8px; border-radius:12px; background:#0F162A; border:1px solid #1B2440; font-size:12px; }
+    button { background:#26406E; border:none; color:#D7E3FF; padding:6px 10px; border-radius:6px; cursor:pointer; font-size:12px; }
+    button.active { background:#3B82F6; color:white; }
+    button:disabled { opacity:0.4; cursor:not-allowed; }
+    select, input { background:#0F162A; color:#D7E3FF; border:1px solid #1B2440; padding:5px 8px; border-radius:4px; font-size:12px; }
+    h2, h3 { margin:0 0 8px; }
+    .toolbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .toolbar .group { display:flex; gap:4px; align-items:center; padding:4px 8px; border-radius:6px; background:#0F162A; border:1px solid #1B2440; }
+    .toolbar .group label { font-size:11px; color:#6E84C8; text-transform:uppercase; letter-spacing:1px; }
+    #map { display:block; background:#040810; border:1px solid #1B2440; border-radius:6px; cursor:crosshair; }
+    .layout { display:grid; grid-template-columns: 280px 1fr 280px; gap:8px; padding:0 8px; }
+    .layout > div { min-height: 600px; }
+    .briefing p { color:#A8B8DA; font-size:12px; line-height:1.5; margin:0 0 6px; }
+    .briefing .roe { color:#FFB300; font-size:11px; margin-top:8px; padding-top:6px; border-top:1px solid #1B2440; }
+    #notes { list-style:none; padding:6px; margin:0; background:#0F162A; border:1px solid #1B2440; border-radius:6px; max-height:300px; overflow-y:auto; font-family: ui-monospace, monospace; font-size:11px; }
+    #notes li { padding:3px 0; border-bottom:1px solid #1B2440; }
+    #notes li:last-child { border-bottom:none; }
+    #notes .ts { color:#4C5E9A; margin-right:6px; }
+    #noteInput { width:100%; background:#0F162A; color:#D7E3FF; border:1px solid #1B2440; padding:6px; border-radius:4px; font-size:12px; box-sizing:border-box; margin-top:6px; }
+    .editor { background:#0F162A; border:1px solid #1B2440; border-radius:6px; padding:10px; margin-top:8px; font-size:12px; }
+    .editor.hidden { display:none; }
+    .editor label { display:block; margin-top:6px; color:#6E84C8; font-size:11px; }
+    .editor input, .editor select { width:100%; margin-top:2px; box-sizing:border-box; }
+    .editor .row { margin-top:8px; }
+    .legend { font-size:10px; color:#6E84C8; }
+    .legend .swatch { display:inline-block; width:10px; height:10px; border-radius:2px; vertical-align:middle; margin-right:4px; }
+    /* Mission state overlays */
+    .mission-overlay { display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.85); z-index:9999; justify-content:center; align-items:center; }
+    .mission-overlay.active { display:flex; }
+    .mission-overlay-box { background:#1B2440; border:2px solid #89B4FA; border-radius:12px; padding:30px; text-align:center; }
+    .mission-overlay-box button { padding:10px 24px; font-size:14px; }
+    .idle-banner { display:none; position:fixed; top:0; left:0; right:0; background:#1B3D2F; color:#4ADE80; text-align:center; padding:10px; z-index:9998; font-weight:600; }
+    .idle-banner.active { display:block; }
+  </style>
+  <link rel="stylesheet" href="/static/css/station-common.css">
+  <script src="/static/js/station-common.js"></script>
+</head>
+<body>
+  <div class="mission-overlay" id="missionOverlay">
+    <div class="mission-overlay-box"><h2>Mission Changed</h2><p>Refresh to sync.</p><button onclick="location.reload()">Refresh</button></div>
+  </div>
+  <div class="idle-banner" id="idleBanner">Awaiting Mission - <a href="/missions">Select a Mission</a></div>
+  <div class="mission-overlay" id="missionEndedOverlay">
+    <div class="mission-overlay-box"><h1 id="endedTitle">Mission Complete</h1><p id="endedReason"></p><button onclick="location.href='/missions'">Return</button></div>
+  </div>
+
+  <div class="panel" style="margin:8px;">
+    <h2>Tactical Plot <span class="pill" id="wsStatus">WebSocket: Connecting...</span></h2>
+    <div class="toolbar">
+      <div class="group">
+        <label>Tool</label>
+        <button id="toolSelect" class="active" title="Select / drag / edit existing items">Select</button>
+        <button id="toolBearing" title="Click on the map at the bearing direction to drop a bearing line from ownship">Bearing</button>
+        <button id="toolContact" title="Click on the map to drop a new contact">Contact</button>
+      </div>
+      <div class="group" id="contactTypeGroup" style="display:none;">
+        <label>Type</label>
+        <button data-ctype="unknown" class="active">Unknown</button>
+        <button data-ctype="enemy">Enemy</button>
+        <button data-ctype="neutral">Neutral</button>
+        <button data-ctype="friendly">Friendly</button>
+      </div>
+      <div class="group">
+        <label>Range</label>
+        <select id="rangeSelect" title="Half-side world range visible from ownship">
+          <option value="1000">1 km</option>
+          <option value="2500">2.5 km</option>
+          <option value="5000" selected>5 km</option>
+          <option value="10000">10 km</option>
+          <option value="25000">25 km</option>
+          <option value="50000">50 km</option>
+        </select>
+      </div>
+      <div class="group">
+        <button id="clearAll" title="Clear all bearings, contacts, and notes" style="background:#7F1D1D;">Clear All</button>
+      </div>
+      <div class="group legend">
+        <span><span class="swatch" style="background:#FACC15"></span>Unknown</span>
+        <span><span class="swatch" style="background:#EF4444"></span>Enemy</span>
+        <span><span class="swatch" style="background:#E5E7EB"></span>Neutral</span>
+        <span><span class="swatch" style="background:#4ADE80"></span>Friendly</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="layout">
+    <!-- Left: briefing -->
+    <div class="panel briefing">
+      <h3>Mission Briefing</h3>
+      <p id="briefTitle"></p>
+      <p id="briefObjective" style="font-style:italic;"></p>
+      <p id="briefSummary"></p>
+      <div class="roe" id="briefRoE"></div>
+    </div>
+
+    <!-- Center: map -->
+    <div class="panel" style="display:flex; flex-direction:column;">
+      <canvas id="map" width="900" height="700"></canvas>
+      <div style="margin-top:6px; font-size:11px; color:#6E84C8;">
+        Sub at center · click center to measure range · drag a contact to move · click contact to edit · right-click contact to delete
+      </div>
+      <!-- Selected contact editor -->
+      <div id="contactEditor" class="editor hidden">
+        <h3 style="font-size:13px;">Selected contact</h3>
+        <label>Name</label>
+        <input id="editLabel" type="text" maxlength="32" placeholder="e.g. Skunk Alpha">
+        <label>Type</label>
+        <select id="editType">
+          <option value="unknown">Unknown</option>
+          <option value="enemy">Enemy</option>
+          <option value="neutral">Neutral</option>
+          <option value="friendly">Friendly</option>
+        </select>
+        <label>Bearing the ship is heading (deg, 0=N, 90=E)</label>
+        <input id="editHeading" type="number" min="0" max="359" step="1">
+        <div class="row" style="gap:6px;">
+          <button id="editApply" style="flex:1;">Apply</button>
+          <button id="editDelete" style="background:#7F1D1D;">Delete</button>
+        </div>
+        <div style="margin-top:6px; font-size:10px; color:#6E84C8;" id="editPos"></div>
+      </div>
+    </div>
+
+    <!-- Right: captain notes -->
+    <div class="panel">
+      <h3>Captain's Notes</h3>
+      <ul id="notes"></ul>
+      <input id="noteInput" type="text" placeholder="Type a note and press Enter">
+    </div>
+  </div>
+
+  <script>
+    const station = new StationBase('plot');
+    const canvas = document.getElementById('map');
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+
+    // ---- State ----
+    let ownship = { x: 0, y: 0, heading: 0 };
+    let plot = { version: 0, bearings: [], contacts: [], notes: [] };
+    let mission = {};
+    let tool = 'select';            // 'select' | 'bearing' | 'contact'
+    let contactType = 'unknown';
+    let selectedId = null;
+    let dragId = null;
+    let dragOffset = null;          // {dx, dy} world meters
+    // Measurement (drag from ownship)
+    let measuring = null;           // {sx, sy} screen coords or null
+    // Range (half-extent in meters covered by min(W,H)/2 pixels)
+    let rangeM = parseFloat(document.getElementById('rangeSelect').value);
+
+    function scale() {
+      // pixels per meter such that the smallest half-axis = rangeM
+      return (Math.min(W, H) / 2) / rangeM;
+    }
+    function worldToScreen(wx, wy) {
+      const s = scale();
+      return [W/2 + (wx - ownship.x) * s, H/2 - (wy - ownship.y) * s];
+    }
+    function screenToWorld(sx, sy) {
+      const s = scale();
+      return [ownship.x + (sx - W/2) / s, ownship.y - (sy - H/2) / s];
+    }
+
+    // ---- Type → color ----
+    const TYPE_COLOR = {
+      unknown: '#FACC15', enemy: '#EF4444',
+      neutral: '#E5E7EB', friendly: '#4ADE80',
+    };
+
+    // ---- Drawing ----
+    function draw() {
+      // Background
+      ctx.fillStyle = '#040810';
+      ctx.fillRect(0, 0, W, H);
+
+      // Range rings (every 1km up to rangeM)
+      const ringStep = rangeM <= 5000 ? 1000 : rangeM <= 25000 ? 5000 : 10000;
+      ctx.strokeStyle = '#1B2440';
+      ctx.lineWidth = 1;
+      for (let r = ringStep; r <= rangeM; r += ringStep) {
+        const px = r * scale();
+        ctx.beginPath();
+        ctx.arc(W/2, H/2, px, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = '#3A4674';
+        ctx.font = '10px ui-monospace, monospace';
+        ctx.fillText(`${(r/1000).toFixed(r >= 1000 ? 0 : 1)}km`, W/2 + px + 4, H/2);
+      }
+      // Cardinal cross
+      ctx.strokeStyle = '#2A3559';
+      ctx.beginPath();
+      ctx.moveTo(0, H/2); ctx.lineTo(W, H/2);
+      ctx.moveTo(W/2, 0); ctx.lineTo(W/2, H);
+      ctx.stroke();
+      ctx.fillStyle = '#6E84C8';
+      ctx.font = '11px ui-monospace, monospace';
+      ctx.fillText('N', W/2 + 6, 14);
+      ctx.fillText('S', W/2 + 6, H - 6);
+      ctx.fillText('E', W - 14, H/2 - 4);
+      ctx.fillText('W', 6, H/2 - 4);
+
+      // Bearing lines
+      plot.bearings.forEach(b => {
+        const [ax, ay] = worldToScreen(b.anchor_x, b.anchor_y);
+        const ang = (b.bearing_deg - 90) * Math.PI / 180;
+        const length = Math.hypot(W, H) * 1.5;
+        const ex = ax + Math.cos(ang) * length;
+        const ey = ay + Math.sin(ang) * length;
+        ctx.strokeStyle = b.color || '#FACC15';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.moveTo(ax, ay); ctx.lineTo(ex, ey);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // Label
+        const lx = ax + Math.cos(ang) * 80;
+        const ly = ay + Math.sin(ang) * 80;
+        ctx.fillStyle = b.color || '#FACC15';
+        ctx.font = '11px ui-monospace, monospace';
+        ctx.fillText(`${Math.round(b.bearing_deg).toString().padStart(3,'0')}°${b.label ? ' ' + b.label : ''}`, lx, ly);
+      });
+
+      // Contacts (triangles oriented along heading_deg)
+      plot.contacts.forEach(c => {
+        const [cx, cy] = worldToScreen(c.x, c.y);
+        const color = TYPE_COLOR[c.type] || TYPE_COLOR.unknown;
+        const ang = (c.heading_deg - 90) * Math.PI / 180;
+        const size = 12;
+        const tipX = cx + Math.cos(ang) * size;
+        const tipY = cy + Math.sin(ang) * size;
+        const baseAngL = ang + Math.PI - 0.4;
+        const baseAngR = ang + Math.PI + 0.4;
+        const blX = cx + Math.cos(baseAngL) * size * 0.8;
+        const blY = cy + Math.sin(baseAngL) * size * 0.8;
+        const brX = cx + Math.cos(baseAngR) * size * 0.8;
+        const brY = cy + Math.sin(baseAngR) * size * 0.8;
+        ctx.fillStyle = color;
+        ctx.strokeStyle = (c.id === selectedId) ? '#FFFFFF' : '#000000';
+        ctx.lineWidth = (c.id === selectedId) ? 2 : 1;
+        ctx.beginPath();
+        ctx.moveTo(tipX, tipY); ctx.lineTo(blX, blY); ctx.lineTo(brX, brY); ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        if (c.label) {
+          ctx.fillStyle = '#D7E3FF';
+          ctx.font = '11px ui-sans-serif';
+          ctx.fillText(c.label, cx + 14, cy + 4);
+        }
+      });
+
+      // Ownship: green diamond at center, oriented to ownship.heading
+      const ang = (ownship.heading - 90) * Math.PI / 180;
+      const sz = 10;
+      ctx.fillStyle = '#6EE7A7';
+      ctx.strokeStyle = '#0B1020';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(W/2 + Math.cos(ang) * sz, H/2 + Math.sin(ang) * sz);
+      ctx.lineTo(W/2 + Math.cos(ang + Math.PI/2) * sz * 0.5, H/2 + Math.sin(ang + Math.PI/2) * sz * 0.5);
+      ctx.lineTo(W/2 + Math.cos(ang + Math.PI) * sz, H/2 + Math.sin(ang + Math.PI) * sz);
+      ctx.lineTo(W/2 + Math.cos(ang - Math.PI/2) * sz * 0.5, H/2 + Math.sin(ang - Math.PI/2) * sz * 0.5);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+
+      // Measurement rubber-band line + live distance
+      if (measuring) {
+        ctx.strokeStyle = '#00E5FF';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.moveTo(W/2, H/2); ctx.lineTo(measuring.sx, measuring.sy);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        const [wx, wy] = screenToWorld(measuring.sx, measuring.sy);
+        const distM = Math.hypot(wx - ownship.x, wy - ownship.y);
+        const brg = ((Math.atan2(wx - ownship.x, wy - ownship.y) * 180 / Math.PI) + 360) % 360;
+        const text = `${Math.round(distM)} m · brg ${Math.round(brg).toString().padStart(3,'0')}°`;
+        const tw = ctx.measureText(text).width;
+        ctx.fillStyle = 'rgba(0,0,0,0.75)';
+        ctx.fillRect(measuring.sx + 8, measuring.sy - 18, tw + 8, 16);
+        ctx.fillStyle = '#00E5FF';
+        ctx.font = '11px ui-monospace, monospace';
+        ctx.fillText(text, measuring.sx + 12, measuring.sy - 6);
+      }
+    }
+
+    // ---- Hit-testing ----
+    function contactAtScreen(sx, sy) {
+      // Walk in reverse so the topmost-rendered wins
+      for (let i = plot.contacts.length - 1; i >= 0; i--) {
+        const c = plot.contacts[i];
+        const [cx, cy] = worldToScreen(c.x, c.y);
+        if (Math.hypot(sx - cx, sy - cy) <= 14) return c;
+      }
+      return null;
+    }
+    function isOwnshipClick(sx, sy) {
+      return Math.hypot(sx - W/2, sy - H/2) <= 14;
+    }
+
+    // ---- Tool wiring ----
+    function setTool(t) {
+      tool = t;
+      document.getElementById('toolSelect').classList.toggle('active', t === 'select');
+      document.getElementById('toolBearing').classList.toggle('active', t === 'bearing');
+      document.getElementById('toolContact').classList.toggle('active', t === 'contact');
+      document.getElementById('contactTypeGroup').style.display = (t === 'contact') ? 'flex' : 'none';
+      canvas.style.cursor = (t === 'select') ? 'default' : 'crosshair';
+    }
+    document.getElementById('toolSelect').onclick = () => setTool('select');
+    document.getElementById('toolBearing').onclick = () => setTool('bearing');
+    document.getElementById('toolContact').onclick = () => setTool('contact');
+    document.querySelectorAll('#contactTypeGroup button').forEach(btn => {
+      btn.onclick = () => {
+        contactType = btn.dataset.ctype;
+        document.querySelectorAll('#contactTypeGroup button').forEach(b => b.classList.toggle('active', b === btn));
+      };
+    });
+    document.getElementById('rangeSelect').onchange = e => { rangeM = parseFloat(e.target.value); draw(); };
+    document.getElementById('clearAll').onclick = () => {
+      if (confirm('Clear ALL bearings, contacts, and notes?')) station.sendCommand('plot.clear', {});
+    };
+
+    // ---- Mouse events on canvas ----
+    function evToScreen(e) {
+      const r = canvas.getBoundingClientRect();
+      return [(e.clientX - r.left) * (W / r.width), (e.clientY - r.top) * (H / r.height)];
+    }
+    canvas.addEventListener('mousedown', e => {
+      const [sx, sy] = evToScreen(e);
+      // Right-click on a contact = delete
+      if (e.button === 2) {
+        const c = contactAtScreen(sx, sy);
+        if (c) station.sendCommand('plot.contact.remove', {id: c.id});
+        e.preventDefault();
+        return;
+      }
+      // Click on ownship → start measuring (always available regardless of tool)
+      if (isOwnshipClick(sx, sy)) {
+        measuring = {sx, sy};
+        return;
+      }
+      if (tool === 'select') {
+        const c = contactAtScreen(sx, sy);
+        if (c) {
+          // Begin drag
+          dragId = c.id;
+          const [cx, cy] = worldToScreen(c.x, c.y);
+          dragOffset = {dsx: sx - cx, dsy: sy - cy};
+          selectContact(c);
+        } else {
+          selectContact(null);
+        }
+      } else if (tool === 'bearing') {
+        // Compute the bearing FROM ownship TO the click point
+        const [wx, wy] = screenToWorld(sx, sy);
+        const brg = ((Math.atan2(wx - ownship.x, wy - ownship.y) * 180 / Math.PI) + 360) % 360;
+        station.sendCommand('plot.bearing.add', {bearing: brg});
+      } else if (tool === 'contact') {
+        const [wx, wy] = screenToWorld(sx, sy);
+        station.sendCommand('plot.contact.add', {x: wx, y: wy, type: contactType, heading_deg: 0, label: ''});
+      }
+    });
+    canvas.addEventListener('contextmenu', e => e.preventDefault());
+    canvas.addEventListener('mousemove', e => {
+      const [sx, sy] = evToScreen(e);
+      if (measuring) { measuring = {sx, sy}; draw(); return; }
+      if (dragId) {
+        // Move locally (optimistic) then publish
+        const c = plot.contacts.find(c => c.id === dragId);
+        if (c) {
+          const [wx, wy] = screenToWorld(sx - dragOffset.dsx, sy - dragOffset.dsy);
+          c.x = wx; c.y = wy;
+          draw();
+        }
+      }
+    });
+    canvas.addEventListener('mouseup', e => {
+      if (measuring) { measuring = null; draw(); }
+      if (dragId) {
+        const c = plot.contacts.find(c => c.id === dragId);
+        if (c) station.sendCommand('plot.contact.update', {id: c.id, x: c.x, y: c.y});
+        dragId = null;
+      }
+    });
+    canvas.addEventListener('mouseleave', () => { if (measuring) { measuring = null; draw(); } });
+
+    // ---- Editor wiring ----
+    const editor = document.getElementById('contactEditor');
+    const editLabel = document.getElementById('editLabel');
+    const editType = document.getElementById('editType');
+    const editHeading = document.getElementById('editHeading');
+    const editPos = document.getElementById('editPos');
+    function selectContact(c) {
+      selectedId = c ? c.id : null;
+      if (!c) { editor.classList.add('hidden'); draw(); return; }
+      editor.classList.remove('hidden');
+      editLabel.value = c.label || '';
+      editType.value = c.type || 'unknown';
+      editHeading.value = Math.round(c.heading_deg || 0);
+      editPos.textContent = `Position X ${Math.round(c.x)}  Y ${Math.round(c.y)} m`;
+      draw();
+    }
+    document.getElementById('editApply').onclick = () => {
+      if (!selectedId) return;
+      const updates = {
+        id: selectedId,
+        label: editLabel.value,
+        type: editType.value,
+        heading_deg: parseFloat(editHeading.value) || 0,
+      };
+      station.sendCommand('plot.contact.update', updates);
+    };
+    document.getElementById('editDelete').onclick = () => {
+      if (!selectedId) return;
+      station.sendCommand('plot.contact.remove', {id: selectedId});
+      selectContact(null);
+    };
+
+    // ---- Notes ----
+    const notesEl = document.getElementById('notes');
+    const noteInput = document.getElementById('noteInput');
+    let _lastNoteVer = -1;
+    function renderNotes(notes) {
+      // Replace if the count or last-id changed
+      notesEl.innerHTML = '';
+      notes.forEach(n => {
+        const li = document.createElement('li');
+        const ts = (n.at && n.at.length >= 19) ? n.at.substring(11, 19) : '';
+        li.innerHTML = `<span class="ts">${ts}</span>${n.text}`;
+        notesEl.appendChild(li);
+      });
+      notesEl.scrollTop = notesEl.scrollHeight;
+    }
+    noteInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && noteInput.value.trim()) {
+        station.sendCommand('plot.note.append', {text: noteInput.value.trim()});
+        noteInput.value = '';
+      }
+    });
+
+    // ---- Telemetry handler ----
+    station.onTelemetry = function(d) {
+      if (d.ownship) {
+        ownship.x = d.ownship.x ?? 0;
+        ownship.y = d.ownship.y ?? 0;
+        ownship.heading = d.ownship.heading ?? 0;
+      }
+      if (d.plot) {
+        const newPlot = d.plot;
+        // Only sync from server if version moved (avoids stomping in-progress drag)
+        if (!dragId && newPlot.version !== plot.version) {
+          plot = newPlot;
+          // Refresh editor in case selected contact got updated
+          if (selectedId) {
+            const c = plot.contacts.find(c => c.id === selectedId);
+            if (c) selectContact(c);
+            else selectContact(null);
+          }
+          renderNotes(plot.notes || []);
+          _lastNoteVer = newPlot.version;
+        } else if (newPlot.version !== _lastNoteVer) {
+          // Notes can update even mid-drag
+          plot.notes = newPlot.notes || [];
+          renderNotes(plot.notes);
+          _lastNoteVer = newPlot.version;
+        }
+      }
+      if (d.missionBrief) {
+        mission = d.missionBrief;
+        document.getElementById('briefTitle').textContent = mission.title || '';
+        document.getElementById('briefObjective').textContent = mission.objective || '';
+        document.getElementById('briefSummary').textContent = mission.blue_captain_summary || '';
+        const roe = mission.roe || [];
+        document.getElementById('briefRoE').innerHTML = roe.length
+          ? '<strong>ROE:</strong><br>' + roe.map(r => '• ' + r).join('<br>')
+          : '';
+      }
+      draw();
+    };
+    station.connect();
+    setTool('select');
+    draw();
+  </script>
+</body>
+</html>

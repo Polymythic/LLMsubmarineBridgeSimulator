@@ -91,6 +91,11 @@ async def debug() -> FileResponse:
     return FileResponse(station_file("debug"))
 
 
+@app.get("/plot")
+async def plot() -> FileResponse:
+    return FileResponse(station_file("plot"))
+
+
 @app.get("/fleet")
 async def fleet() -> FileResponse:
     return FileResponse(station_file("fleet"))
@@ -106,7 +111,7 @@ async def logs() -> FileResponse:
     return FileResponse(station_file("logs"))
 
 
-_station_clients: Dict[str, Set[WebSocket]] = {s: set() for s in ["captain", "helm", "sonar", "weapons", "engineering", "debug", "fleet", "logs"]}
+_station_clients: Dict[str, Set[WebSocket]] = {s: set() for s in ["captain", "helm", "sonar", "weapons", "engineering", "debug", "plot", "fleet", "logs"]}
 
 
 @app.websocket("/ws/{station}")
@@ -131,6 +136,7 @@ async def ws_station(ws: WebSocket, station: str) -> None:
         "weapons": "tick:weapons",
         "engineering": "tick:engineering",
         "debug": "tick:debug",
+        "plot": "tick:plot",
         "fleet": "tick:fleet",
         "logs": "tick:logs",
     }

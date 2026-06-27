@@ -39,6 +39,13 @@ class CommandDispatcher:
             "captain.periscope.raise": self._captain_periscope,
             "captain.radio.raise": self._captain_radio,
             "captain.identify_contact": self._captain_identify,
+            "plot.bearing.add": self._plot_bearing_add,
+            "plot.bearing.remove": self._plot_bearing_remove,
+            "plot.contact.add": self._plot_contact_add,
+            "plot.contact.update": self._plot_contact_update,
+            "plot.contact.remove": self._plot_contact_remove,
+            "plot.note.append": self._plot_note_append,
+            "plot.clear": self._plot_clear,
             "debug.restart": self._debug_restart,
             "debug.maintenance.spawns": self._debug_maint_spawns,
             "debug.visual.player_100": self._debug_visual_player,
@@ -410,6 +417,90 @@ class CommandDispatcher:
             return None
         except Exception as e:
             return f"Failed to identify contact: {e}"
+
+    # ------------------------------------------------------------------
+    # Plotting board (shared tactical map)
+    # ------------------------------------------------------------------
+
+    async def _plot_bearing_add(self, data: Dict) -> Optional[str]:
+        sim = self._sim
+        if not hasattr(sim, "_plot_board") or sim._plot_board is None:
+            return "Plot board not available"
+        own = sim.world.get_ship("ownship")
+        anchor_x = float(data.get("anchor_x")) if data.get("anchor_x") is not None else (own.kin.x if own else 0.0)
+        anchor_y = float(data.get("anchor_y")) if data.get("anchor_y") is not None else (own.kin.y if own else 0.0)
+        try:
+            bearing = float(data.get("bearing", 0.0))
+        except Exception:
+            return "Invalid bearing"
+        sim._plot_board.add_bearing(
+            anchor_x=anchor_x, anchor_y=anchor_y, bearing_deg=bearing,
+            label=str(data.get("label", "") or ""),
+            color=str(data.get("color", "#FACC15") or "#FACC15"),
+        )
+        return None
+
+    async def _plot_bearing_remove(self, data: Dict) -> Optional[str]:
+        sim = self._sim
+        bid = str(data.get("id", "") or "")
+        if not bid:
+            return "No bearing id"
+        sim._plot_board.remove_bearing(bid)
+        return None
+
+    async def _plot_contact_add(self, data: Dict) -> Optional[str]:
+        sim = self._sim
+        if not hasattr(sim, "_plot_board") or sim._plot_board is None:
+            return "Plot board not available"
+        try:
+            x = float(data.get("x", 0.0))
+            y = float(data.get("y", 0.0))
+        except Exception:
+            return "Invalid coordinates"
+        sim._plot_board.add_contact(
+            x=x, y=y,
+            type_=str(data.get("type", "unknown") or "unknown"),
+            heading_deg=float(data.get("heading_deg", 0.0) or 0.0),
+            label=str(data.get("label", "") or ""),
+        )
+        return None
+
+    async def _plot_contact_update(self, data: Dict) -> Optional[str]:
+        sim = self._sim
+        cid = str(data.get("id", "") or "")
+        if not cid:
+            return "No contact id"
+        # Pass through whichever fields the client sent
+        sim._plot_board.update_contact(
+            cid,
+            x=data.get("x"),
+            y=data.get("y"),
+            heading_deg=data.get("heading_deg"),
+            type=data.get("type"),
+            label=data.get("label"),
+        )
+        return None
+
+    async def _plot_contact_remove(self, data: Dict) -> Optional[str]:
+        sim = self._sim
+        cid = str(data.get("id", "") or "")
+        if not cid:
+            return "No contact id"
+        sim._plot_board.remove_contact(cid)
+        return None
+
+    async def _plot_note_append(self, data: Dict) -> Optional[str]:
+        sim = self._sim
+        text = str(data.get("text", "") or "").strip()
+        if not text:
+            return "Empty note"
+        sim._plot_board.append_note(text)
+        return None
+
+    async def _plot_clear(self, data: Dict) -> Optional[str]:
+        sim = self._sim
+        sim._plot_board.clear()
+        return None
 
     # ------------------------------------------------------------------
     # Debug

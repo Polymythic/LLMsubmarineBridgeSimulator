@@ -59,9 +59,10 @@
     <div class="toolbar">
       <div class="group">
         <label>Tool</label>
-        <button id="toolSelect" class="active" title="Select / drag / edit existing items">Select</button>
-        <button id="toolBearing" title="Click on the map to mark a single bearing & range from ownship (each click replaces the previous); use it to eyeball where to drop a contact">Bearing</button>
-        <button id="toolContact" title="Click on the map to drop a new contact">Contact</button>
+        <button id="toolMark" class="active" title="Default — click the map to mark a single bearing & range from ownship. Each click replaces the previous mark. Use it to eyeball where a reported contact sits, then switch to Contact to drop a ship there.">Mark</button>
+        <button id="toolBearings" title="Click the map to pin a persistent bearing & range circle from ownship. Each click adds another and they stay until cleared, so you can build up several reported bearings. Right-click a circle to delete it.">Bearings</button>
+        <button id="toolContact" title="Click the map to drop a new contact">Contact</button>
+        <button id="toolSelect" title="Select / drag / edit existing contacts">Select</button>
       </div>
       <div class="group" id="contactTypeGroup" style="display:none;">
         <label>Type</label>
@@ -82,8 +83,9 @@
         </select>
       </div>
       <div class="group">
-        <button id="clearBearing" title="Clear the current bearing & range line">Clear Bearing</button>
-        <button id="clearAll" title="Clear all bearings, contacts, and notes" style="background:#7F1D1D;">Clear All</button>
+        <button id="clearMark" title="Clear the current single bearing & range mark">Clear Mark</button>
+        <button id="clearBearings" title="Remove all persistent bearing & range circles">Clear Bearings</button>
+        <button id="clearAll" title="Clear all marks, contacts, and notes" style="background:#7F1D1D;">Clear All</button>
       </div>
       <div class="group legend">
         <span><span class="swatch" style="background:#FACC15"></span>Unknown</span>
@@ -108,7 +110,7 @@
     <div class="panel" style="display:flex; flex-direction:column;">
       <canvas id="map" width="900" height="700"></canvas>
       <div style="margin-top:6px; font-size:11px; color:#6E84C8;">
-        Sub at center · drag from center to measure · Bearing tool: click to mark a bearing &amp; range · drag a contact to move · click contact to edit · right-click contact to delete
+        Sub at center · drag from center to measure · Mark: click for a quick bearing &amp; range · Bearings: click to pin a persistent bearing &amp; range (right-click a circle to delete) · Contact: click to drop a ship · Select: drag a contact to move, click to edit, right-click to delete
       </div>
       <!-- Selected contact editor -->
       <div id="contactEditor" class="editor hidden">
@@ -150,17 +152,18 @@
     let ownship = { x: 0, y: 0, heading: 0 };
     let plot = { version: 0, bearings: [], contacts: [], notes: [] };
     let mission = {};
-    let tool = 'select';            // 'select' | 'bearing' | 'contact'
+    let tool = 'mark';              // 'mark' | 'bearings' | 'contact' | 'select'
     let contactType = 'unknown';
     let selectedId = null;
     let dragId = null;
     let dragOffset = null;          // {dx, dy} world meters
     // Measurement (drag from ownship)
     let measuring = null;           // {sx, sy} screen coords or null
-    // Single local bearing+range marker (placement aid). Stored as a world
-    // point so it stays pinned as ownship moves; each Bearing-tool click
-    // replaces it, the Clear Bearing button removes it. Not shared/synced —
-    // it's scratch geometry for eyeballing where to drop a contact.
+    // Single local bearing+range mark (placement aid). Stored as a world
+    // point so it stays pinned as ownship moves; each Mark-tool click replaces
+    // it, the Clear Mark button removes it. Not shared/synced — it's scratch
+    // geometry for eyeballing where to drop a contact. Persistent, shared
+    // bearing+range circles live in plot.bearings instead (the Bearings tool).
     let bearingMark = null;         // {wx, wy} world meters or null
     // Range (half-extent in meters covered by min(W,H)/2 pixels)
     let rangeM = parseFloat(document.getElementById('rangeSelect').value);
@@ -183,6 +186,13 @@
       unknown: '#FACC15', enemy: '#EF4444',
       neutral: '#E5E7EB', friendly: '#4ADE80',
     };
+
+    // Epoch seconds → local HH:MM:SS (for the time a bearing was marked)
+    function fmtClock(epochS) {
+      const d = new Date(epochS * 1000);
+      const p = n => String(n).padStart(2, '0');
+      return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+    }
 
     // ---- Drawing ----
     function draw() {
@@ -216,26 +226,51 @@
       ctx.fillText('E', W - 14, H/2 - 4);
       ctx.fillText('W', 6, H/2 - 4);
 
-      // Bearing lines
+      // Persistent bearing & range marks: a line from the anchor (ownship's
+      // position when the mark was dropped) out to the marked point, a circle
+      // at the point, and a bearing/range label. A mark with range_m <= 0 is a
+      // legacy open-ended bearing ray.
       plot.bearings.forEach(b => {
         const [ax, ay] = worldToScreen(b.anchor_x, b.anchor_y);
         const ang = (b.bearing_deg - 90) * Math.PI / 180;
-        const length = Math.hypot(W, H) * 1.5;
-        const ex = ax + Math.cos(ang) * length;
-        const ey = ay + Math.sin(ang) * length;
-        ctx.strokeStyle = b.color || '#FACC15';
-        ctx.lineWidth = 1;
+        const color = b.color || '#F472B6';
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
         ctx.setLineDash([6, 4]);
         ctx.beginPath();
-        ctx.moveTo(ax, ay); ctx.lineTo(ex, ey);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        // Label
-        const lx = ax + Math.cos(ang) * 80;
-        const ly = ay + Math.sin(ang) * 80;
-        ctx.fillStyle = b.color || '#FACC15';
-        ctx.font = '11px ui-monospace, monospace';
-        ctx.fillText(`${Math.round(b.bearing_deg).toString().padStart(3,'0')}°${b.label ? ' ' + b.label : ''}`, lx, ly);
+        ctx.moveTo(ax, ay);
+        if (b.range_m > 0) {
+          const px = b.range_m * scale();
+          const tx = ax + Math.cos(ang) * px;
+          const ty = ay + Math.sin(ang) * px;
+          ctx.lineTo(tx, ty);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          // Range circle at the marked point
+          ctx.fillStyle = color;
+          ctx.beginPath(); ctx.arc(tx, ty, 5, 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = '#0B1020'; ctx.lineWidth = 1; ctx.stroke();
+          // Bearing + range + mark-time label
+          const rngText = b.range_m >= 1000 ? `${(b.range_m/1000).toFixed(2)} km` : `${Math.round(b.range_m)} m`;
+          const tstamp = b.created_at_s > 0 ? ` · ${fmtClock(b.created_at_s)}` : '';
+          const text = `${Math.round(b.bearing_deg).toString().padStart(3,'0')}° · ${rngText}${tstamp}${b.label ? ' ' + b.label : ''}`;
+          ctx.font = '11px ui-monospace, monospace';
+          const tw = ctx.measureText(text).width;
+          ctx.fillStyle = 'rgba(0,0,0,0.7)';
+          ctx.fillRect(tx + 8, ty - 18, tw + 8, 16);
+          ctx.fillStyle = color;
+          ctx.fillText(text, tx + 12, ty - 6);
+        } else {
+          const length = Math.hypot(W, H) * 1.5;
+          ctx.lineTo(ax + Math.cos(ang) * length, ay + Math.sin(ang) * length);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          const lx = ax + Math.cos(ang) * 80;
+          const ly = ay + Math.sin(ang) * 80;
+          ctx.fillStyle = color;
+          ctx.font = '11px ui-monospace, monospace';
+          ctx.fillText(`${Math.round(b.bearing_deg).toString().padStart(3,'0')}°${b.label ? ' ' + b.label : ''}`, lx, ly);
+        }
       });
 
       // Contacts (triangles oriented along heading_deg)
@@ -279,8 +314,9 @@
       ctx.closePath();
       ctx.fill(); ctx.stroke();
 
-      // Persistent bearing+range marker: dashed line from ownship to the
-      // marked point, a range dot at the point, and a bearing/range label.
+      // Ephemeral single bearing+range mark (Mark tool): dashed line from
+      // ownship to the marked point, a range dot at the point, and a live
+      // bearing/range label. Replaced on the next Mark click.
       if (bearingMark) {
         const [mx, my] = worldToScreen(bearingMark.wx, bearingMark.wy);
         ctx.strokeStyle = '#FACC15';
@@ -342,19 +378,35 @@
     function isOwnshipClick(sx, sy) {
       return Math.hypot(sx - W/2, sy - H/2) <= 14;
     }
+    function bearingAtScreen(sx, sy) {
+      // Hit-test the range circle at the end of a persistent bearing mark
+      for (let i = plot.bearings.length - 1; i >= 0; i--) {
+        const b = plot.bearings[i];
+        if (!(b.range_m > 0)) continue;
+        const [ax, ay] = worldToScreen(b.anchor_x, b.anchor_y);
+        const ang = (b.bearing_deg - 90) * Math.PI / 180;
+        const px = b.range_m * scale();
+        const tx = ax + Math.cos(ang) * px;
+        const ty = ay + Math.sin(ang) * px;
+        if (Math.hypot(sx - tx, sy - ty) <= 10) return b;
+      }
+      return null;
+    }
 
     // ---- Tool wiring ----
     function setTool(t) {
       tool = t;
-      document.getElementById('toolSelect').classList.toggle('active', t === 'select');
-      document.getElementById('toolBearing').classList.toggle('active', t === 'bearing');
+      document.getElementById('toolMark').classList.toggle('active', t === 'mark');
+      document.getElementById('toolBearings').classList.toggle('active', t === 'bearings');
       document.getElementById('toolContact').classList.toggle('active', t === 'contact');
+      document.getElementById('toolSelect').classList.toggle('active', t === 'select');
       document.getElementById('contactTypeGroup').style.display = (t === 'contact') ? 'flex' : 'none';
       canvas.style.cursor = (t === 'select') ? 'default' : 'crosshair';
     }
-    document.getElementById('toolSelect').onclick = () => setTool('select');
-    document.getElementById('toolBearing').onclick = () => setTool('bearing');
+    document.getElementById('toolMark').onclick = () => setTool('mark');
+    document.getElementById('toolBearings').onclick = () => setTool('bearings');
     document.getElementById('toolContact').onclick = () => setTool('contact');
+    document.getElementById('toolSelect').onclick = () => setTool('select');
     document.querySelectorAll('#contactTypeGroup button').forEach(btn => {
       btn.onclick = () => {
         contactType = btn.dataset.ctype;
@@ -362,9 +414,12 @@
       };
     });
     document.getElementById('rangeSelect').onchange = e => { rangeM = parseFloat(e.target.value); draw(); };
-    document.getElementById('clearBearing').onclick = () => { bearingMark = null; draw(); };
+    document.getElementById('clearMark').onclick = () => { bearingMark = null; draw(); };
+    document.getElementById('clearBearings').onclick = () => {
+      plot.bearings.forEach(b => station.sendCommand('plot.bearing.remove', {id: b.id}));
+    };
     document.getElementById('clearAll').onclick = () => {
-      if (confirm('Clear ALL bearings, contacts, and notes?')) {
+      if (confirm('Clear ALL marks, contacts, and notes?')) {
         station.sendCommand('plot.clear', {});
         bearingMark = null;
         draw();
@@ -378,10 +433,15 @@
     }
     canvas.addEventListener('mousedown', e => {
       const [sx, sy] = evToScreen(e);
-      // Right-click on a contact = delete
+      // Right-click on a contact (or persistent bearing circle) = delete
       if (e.button === 2) {
         const c = contactAtScreen(sx, sy);
-        if (c) station.sendCommand('plot.contact.remove', {id: c.id});
+        if (c) {
+          station.sendCommand('plot.contact.remove', {id: c.id});
+        } else {
+          const b = bearingAtScreen(sx, sy);
+          if (b) station.sendCommand('plot.bearing.remove', {id: b.id});
+        }
         e.preventDefault();
         return;
       }
@@ -401,13 +461,25 @@
         } else {
           selectContact(null);
         }
-      } else if (tool === 'bearing') {
-        // Drop a single local bearing+range marker at the click point,
-        // replacing any previous one. Used to eyeball a spot before
-        // dropping a contact there; cleared via the Clear Bearing button.
+      } else if (tool === 'mark') {
+        // Drop a single local bearing+range mark at the click point, replacing
+        // any previous one. Used to eyeball a spot before dropping a contact
+        // there; cleared via the Clear Mark button.
         const [wx, wy] = screenToWorld(sx, sy);
         bearingMark = {wx, wy};
         draw();
+      } else if (tool === 'bearings') {
+        // Pin a persistent, shared bearing+range circle from ownship's current
+        // position. These accumulate (synced via plot.bearings) so the crew can
+        // build up several reported bearings and triangulate as ownship moves.
+        const [wx, wy] = screenToWorld(sx, sy);
+        const dx = wx - ownship.x, dy = wy - ownship.y;
+        const range_m = Math.hypot(dx, dy);
+        const bearing = ((Math.atan2(dx, dy) * 180 / Math.PI) + 360) % 360;
+        station.sendCommand('plot.bearing.add', {
+          anchor_x: ownship.x, anchor_y: ownship.y,
+          bearing, range_m, color: '#F472B6',
+        });
       } else if (tool === 'contact') {
         const [wx, wy] = screenToWorld(sx, sy);
         station.sendCommand('plot.contact.add', {x: wx, y: wy, type: contactType, heading_deg: 0, label: ''});
@@ -531,7 +603,7 @@
       draw();
     };
     station.connect();
-    setTool('select');
+    setTool('mark');
     draw();
   </script>
 </body>

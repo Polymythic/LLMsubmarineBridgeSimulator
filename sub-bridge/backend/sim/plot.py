@@ -26,17 +26,21 @@ def _new_id(prefix: str) -> str:
 
 @dataclass
 class PlotBearing:
-    """A true-bearing ray stamped at ownship's position-at-time-of-mark.
+    """A true-bearing-and-range mark stamped at ownship's position-at-time-of-mark.
 
-    The ray is anchored in WORLD coordinates — it does not slide with
-    ownship. Operators drop bearings as they hear them; the ray remains
-    where it was placed so the geometry of multiple bearings can be
-    triangulated visually.
+    Anchored in WORLD coordinates — it does not slide with ownship. Operators
+    drop a mark at the bearing & range a contact was reported at; the anchor
+    stays where ownship was when it was placed so the geometry of several marks
+    can be triangulated visually as ownship moves.
+
+    `range_m` is the distance from the anchor along `bearing_deg` to the marked
+    point. A mark with range_m <= 0 is an open-ended bearing ray (legacy).
     """
     id: str
     anchor_x: float
     anchor_y: float
     bearing_deg: float
+    range_m: float = 0.0
     label: str = ""
     color: str = "#FACC15"
     created_at_s: float = 0.0
@@ -77,11 +81,13 @@ class PlotBoard:
     # Mutators — each bumps version
     # ------------------------------------------------------------------
     def add_bearing(self, anchor_x: float, anchor_y: float, bearing_deg: float,
-                    label: str = "", color: str = "#FACC15") -> PlotBearing:
+                    range_m: float = 0.0, label: str = "",
+                    color: str = "#FACC15") -> PlotBearing:
         b = PlotBearing(
             id=_new_id("bearing"),
             anchor_x=float(anchor_x), anchor_y=float(anchor_y),
             bearing_deg=float(bearing_deg) % 360.0,
+            range_m=max(0.0, float(range_m)),
             label=label or "",
             color=color or "#FACC15",
             created_at_s=time.time(),

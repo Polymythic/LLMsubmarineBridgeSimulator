@@ -451,8 +451,13 @@ class CommandDispatcher:
             bearing = float(data.get("bearing", 0.0))
         except Exception:
             return "Invalid bearing"
+        try:
+            range_m = float(data.get("range_m", 0.0) or 0.0)
+        except Exception:
+            range_m = 0.0
         sim._plot_board.add_bearing(
             anchor_x=anchor_x, anchor_y=anchor_y, bearing_deg=bearing,
+            range_m=range_m,
             label=str(data.get("label", "") or ""),
             color=str(data.get("color", "#FACC15") or "#FACC15"),
         )

@@ -161,6 +161,17 @@ fraction computed server-side to "see" the filtered scope. Deferred.)*
 - **Selector cycles class cards, not live contacts.** Preserves no-leak ID.
 - **RESOLVED — broadband all-pass.** Noisemakers/explosions can't be
   narrowbanded out; short-lived, they clear on their own.
+- **RESOLVED — own units & decoys aren't auto-filtered (acoustic, not special-
+  case).** Driven entirely by what `sonar.py` emits in `tonalLines`, so the
+  client needs no per-type carve-out: **own torpedoes** emit `None` (all-pass —
+  never dim your own fish off your own scope; *enemy* torpedoes keep the card so
+  the 14.5 kHz seeker line still IDs an inbound). **Noisemakers** emit `None`
+  (full-spectrum broadband). **Decoys** emit the **submarine card**
+  (`SUB_TONAL_LINES`, mirror of the SSN catalog entry; falls back from the
+  observing sub's own `acoustics.tonal_lines`) so a decoy reads like a sub and
+  survives a sub-hunt passband instead of vanishing — the same deception it
+  plays on a torpedo seeker. No schema change: existing `tonalLines`/`None`
+  all-pass path carries all of it.
 - **Contacts table shows class when known:** the true type once captain-ID'd,
   the operator's `(sonar)` lock when set, plus in-band line count as a soft ID aid.
 - **Operator lock is unvalidated.** A wrong tag is allowed and persists — that's
@@ -199,8 +210,13 @@ fraction computed server-side to "see" the filtered scope. Deferred.)*
    served via `tel_sonar.tonalCards` (from catalog + torpedo); strip draws the
    selected card's lines + a draggable Min/Max passband (full-open default).
    No brightness effect yet. Suite green (255/6xf).
-3. Wire the fraction into `drawWaterfall()` brightness. Playtest the card set;
-   tune frequencies and `S` for feel.
+3. ~~Wire the fraction into `drawWaterfall()` brightness.~~ **DONE** —
+   `bandFraction()`/`lineWeight()` in `sonar.html` scale each contact's glow by
+   the smoothstep-weighted fraction of its `tonalLines` inside the band (skirt
+   `TONAL_SKIRT_KHZ = 0.4`). Display-only (local copy, never mutates the
+   contact); broadband/None = all-pass; wide-open band reproduces today's
+   waterfall. Still TODO: playtest the card set; tune frequencies and `S` for
+   feel.
 4. **Operator lock** (independent of 1–3): `sonar.classify` command +
    `operator_class` on the registry + `(sonar)` surfacing in `classifiedAs` +
    "assign card to selected contact" button in the UI. Confirm the table shows

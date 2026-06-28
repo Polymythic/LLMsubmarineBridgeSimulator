@@ -111,8 +111,8 @@
             <span class="tonal-readout" id="bandReadout">Min &mdash; &middot; Max &mdash;</span>
             <button id="bandReset" class="tiny" title="Open the band fully (all-pass)">Reset Band</button>
           </div>
-          <canvas id="tonalStrip" width="720" height="64" title="Orange = selected class's reference tonal lines. Drag the Min/Max handles to set the passband."></canvas>
-          <div class="label" style="font-size:10px;margin-top:3px;color:#5A6C9A;">Orange ticks = selected class's tonal lines &middot; drag &#9650; handles to set Min/Max &middot; axis is FREQUENCY (kHz), not bearing</div>
+          <canvas id="tonalStrip" width="720" height="64" title="Orange = selected class's reference tonal lines. Drag the Min/Max handles to set the passband — the waterfall dims each contact by the fraction of its tonal lines inside the band."></canvas>
+          <div class="label" style="font-size:10px;margin-top:3px;color:#5A6C9A;">Orange ticks = selected class's tonal lines &middot; drag &#9650; handles to set Min/Max &middot; narrowing dims contacts to the fraction of their lines in-band &middot; axis is FREQUENCY (kHz), not bearing</div>
         </div>
         <div style="display:flex; align-items:flex-end; gap:8px; margin-top:8px;">
           <div class="label">Sonar Noise: <span id="sonarNoise">0</span> dB</div>
@@ -251,12 +251,20 @@
         const bearing = ((c.bearing % 360) + 360) % 360;
         const x = xForBearing(bearing, W);
         const strength = Math.max(0, Math.min(1, (c.detectability != null ? c.detectability : c.strength) || 0));
+        // Tonal narrowband gate (display-only): 0..1 = the fraction of THIS
+        // contact's own tonal lines inside the Min/Max passband (1 = all-pass:
+        // broadband / no card / wide-open band). Multiplied into the FINAL glow
+        // of each branch below — NOT into strength — so it scales the whole
+        // signal, pedestal included, all the way to black: a fully out-of-band
+        // contact vanishes. Local only; never written back, so detection, the
+        // contacts table, and other stations still see the full contact.
+        const tonalGate = bandFraction(c.tonalLines);
         const cls = c.classifiedAs || '';
 
         // Different colors for different contact types
         if (cls === "ENEMY_ACTIVE_SONAR") {
           // Enemy ping: bright magenta
-          const glow = Math.floor(100 + strength * 155);
+          const glow = Math.floor((100 + strength * 155) * tonalGate);
           for (let dx = -1; dx <= 1; dx++){
             const xi = Math.max(0, Math.min(W-1, x + dx));
             const base = xi * 4;
@@ -264,15 +272,17 @@
           }
         } else if (cls === "Explosion") {
           // Explosion: bright red/orange, wider spread
-          const glow = Math.floor(120 + strength * 135);
+          const glow = Math.floor((120 + strength * 135) * tonalGate);
           for (let dx = -2; dx <= 2; dx++){
             const xi = Math.max(0, Math.min(W-1, x + dx));
             const base = xi * 4;
             data[base+0] = glow; data[base+1] = Math.floor(glow * 0.3); data[base+2] = Math.floor(glow * 0.1); data[base+3] = 255;
           }
         } else if (cls.includes('Torpedo')) {
-          // Torpedoes: green for own, red for enemy
-          const glow = Math.floor(80 + strength * 175);
+          // Torpedoes: green for own, red for enemy. Raised pedestal (80→110)
+          // so an in-band fish paints brightly — leaving range for the tonal
+          // gate to dim it when you narrow off its lines.
+          const glow = Math.floor((110 + strength * 145) * tonalGate);
           const isOwn = cls.includes('Own');
           for (let dx = -1; dx <= 1; dx++){
             const xi = Math.max(0, Math.min(W-1, x + dx));
@@ -287,7 +297,7 @@
           }
         } else if (cls.includes('Noisemaker') || cls.includes('Decoy')) {
           // Countermeasures: cyan for own, purple for enemy
-          const glow = Math.floor(70 + strength * 160);
+          const glow = Math.floor((70 + strength * 160) * tonalGate);
           const isOwn = cls.includes('Own');
           for (let dx = -1; dx <= 1; dx++){
             const xi = Math.max(0, Math.min(W-1, x + dx));
@@ -302,12 +312,15 @@
           }
         } else {
           // Regular ship contacts: single-pixel orange/yellow line whose
-          // brightness scales aggressively with signal strength. Faint
-          // contacts read as barely-there dim threads; strong contacts
-          // glow bright. With many simultaneous ships in the lanes, the
-          // 3-pixel-wide bands previously bloomed into solid color blocks
+          // brightness scales aggressively with signal strength. Strong
+          // contacts glow bright. With many simultaneous ships in the lanes,
+          // the 3-pixel-wide bands previously bloomed into solid color blocks
           // that hid the bearing-time texture sonar operators rely on.
-          const glow = Math.max(35, Math.min(255, Math.floor(35 + strength * 220)));
+          // Raised pedestal/floor (35→65) gives the tonal gate more headroom
+          // to dim across; the gate is applied AFTER the floor so a fully
+          // out-of-band contact still fades all the way to black.
+          const glowBase = Math.max(65, Math.min(255, Math.floor(65 + strength * 190)));
+          const glow = Math.floor(glowBase * tonalGate);
           const base = x * 4;
           data[base+0] = glow;
           data[base+1] = Math.floor(glow * 0.85);
@@ -410,9 +423,15 @@
     }
 
     // ---- Tonal narrowband filter (frequency-domain ID-card browser) ----
-    // Read-only for now: draws the selected class's reference lines and a
-    // draggable Min/Max passband. Brightness gating of the waterfall is step 3.
+    // Draws the selected class's reference lines and a draggable Min/Max
+    // passband, AND gates waterfall brightness: each contact's glow is scaled
+    // by the fraction of its own tonal lines that fall inside the band
+    // (display-only — never touches detection; see bandFraction()).
     const TONAL_MIN_KHZ = 0.0, TONAL_MAX_KHZ = 15.0;
+    // Soft skirt width (kHz) at each band edge: a line sitting dead-on an edge
+    // counts ~0.5 and fades smoothly as you drag past it. The single "analog
+    // softness" knob — bigger = mushier/more forgiving tuning. Tune in playtest.
+    const TONAL_SKIRT_KHZ = 0.4;
     const tonalStrip = document.getElementById('tonalStrip');
     const tsCtx = tonalStrip.getContext('2d');
     const TS_W = tonalStrip.width, TS_H = tonalStrip.height;
@@ -430,6 +449,30 @@
     const xToFreq = x => TONAL_MIN_KHZ + (x / TS_W) * (TONAL_MAX_KHZ - TONAL_MIN_KHZ);
     const currentCardName = () => cardNames[selectedCard] || null;
     const currentCardLines = () => { const n = currentCardName(); return n ? (tonalCards[n] || []) : []; };
+
+    // Smoothstep 0→1 with input clamped to [0,1].
+    const smoothstep = t => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); };
+    // Analog weight (0..1) of one tonal line against the current passband:
+    // ~1 comfortably inside, 0.5 dead-on an edge, 0 comfortably outside. Each
+    // edge is a smoothstep skirt of width TONAL_SKIRT_KHZ.
+    function lineWeight(fKHz){
+      const S = TONAL_SKIRT_KHZ;
+      const rise = smoothstep((fKHz - (bandMinKHz - S / 2)) / S);
+      const fall = 1 - smoothstep((fKHz - (bandMaxKHz - S / 2)) / S);
+      return rise * fall;
+    }
+    // Fraction (0..1) of a contact's own tonal lines that fall inside the band
+    // → brightness multiplier for its waterfall glow. All lines in → 1 (full
+    // distance-limited brightness); some in → proportionally dimmer; none in →
+    // 0 (vanishes). No lines (broadband / None sentinel) → 1 = all-pass: a
+    // broadband emitter can't be narrowbanded out. Wide-open band → ~1 for every
+    // real card line, so today's full waterfall is preserved (backward compat).
+    function bandFraction(lines){
+      if (!lines || !lines.length) return 1;
+      let sum = 0;
+      for (const f of lines) sum += lineWeight(f);
+      return sum / lines.length;
+    }
 
     function updateBandReadout(){
       document.getElementById('bandReadout').textContent =

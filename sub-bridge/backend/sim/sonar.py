@@ -15,6 +15,12 @@ BAFFLES_DEG = 60.0
 # Destroyer card by design (telling an inbound fish from its escort is hard);
 # 14.5 kHz is the unique seeker discriminator.
 TORPEDO_TONAL_LINES = [2.0, 5.0, 8.8, 12.0, 14.5]
+# Submarine tonal "ID card" (kHz) — a decoy mimics a sub's signature, so it
+# carries these lines and reads like a submarine on the narrowband filter (it
+# survives a sub-hunt passband rather than vanishing). Mirrors the SSN card in
+# assets/ships/catalog.json; used as a fallback when the observing sub carries
+# no card of its own.
+SUB_TONAL_LINES = [0.9, 2.1, 4.0, 6.3, 8.5]
 CONTACT_PERSISTENCE_SECONDS = 8.0  # How long contacts persist after dropping below threshold
 CONTACT_DECAY_RATE = 0.15  # Confidence decay per second when contact is fading
 ARRAY_GAIN_DB = 18.0  # Passive sonar array gain from beamforming (typical for spherical/cylindrical array)
@@ -269,9 +275,15 @@ def passive_projectiles(self_ship: Ship, torpedoes: List[dict] | None, depth_cha
             side = t.get("side", "unknown")
             if side == self_ship.side:
                 classified_as = "Own Torpedo" if detect > 0.6 else "Own Torpedo?"
+                # Own fish: emit no tonal card (None => all-pass) so the operator's
+                # narrowband filter can't dim their own weapon off their own scope.
+                torp_lines = None
             else:
                 classified_as = "Enemy Torpedo" if detect > 0.6 else "Enemy Torpedo?"
-            
+                # Enemy fish stays filterable — the 14.5 kHz seeker line is how you
+                # tell an inbound torpedo apart from its launching escort.
+                torp_lines = list(TORPEDO_TONAL_LINES)
+
             contacts.append(TelemetryContact(
                 id=str(tid),
                 bearing=noisy_bearing,
@@ -283,7 +295,7 @@ def passive_projectiles(self_ship: Ship, torpedoes: List[dict] | None, depth_cha
                 detectability=detect,
                 snrDb=snr_db,
                 bearingSigmaDeg=sigma,
-                tonalLines=list(TORPEDO_TONAL_LINES),
+                tonalLines=torp_lines,
             ))
         except Exception:
             continue
@@ -426,6 +438,17 @@ def countermeasure_contacts(self_ship: Ship, countermeasures: List[dict] | None)
                 else:
                     classified_as = "Enemy Decoy" if detect > 0.5 else "Enemy Decoy?"
 
+            # Tonal signature for the narrowband filter:
+            #  - Noisemakers are full-spectrum broadband -> None (all-pass): they
+            #    can't be narrowbanded out, and they clear on their own.
+            #  - Decoys mimic a submarine -> carry the sub card, so they read like
+            #    a sub on the filter and survive a sub-hunt passband instead of
+            #    vanishing (the same deception they play on a torpedo seeker).
+            if cm_type == "noisemaker":
+                cm_lines = None
+            else:
+                cm_lines = list(self_ship.acoustics.tonal_lines) or list(SUB_TONAL_LINES)
+
             contacts.append(TelemetryContact(
                 id=str(cm_id),
                 bearing=noisy_bearing,
@@ -437,6 +460,7 @@ def countermeasure_contacts(self_ship: Ship, countermeasures: List[dict] | None)
                 detectability=detect,
                 snrDb=snr_db,
                 bearingSigmaDeg=sigma,
+                tonalLines=cm_lines,
             ))
         except Exception:
             continue

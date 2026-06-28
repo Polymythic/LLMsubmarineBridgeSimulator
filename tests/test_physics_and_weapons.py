@@ -13,6 +13,7 @@ from backend.sim.physics import (
     BALLAST_FLOOR_RATE,
     BALLAST_BOOST_RATE,
     PLANES_REF_SPEED,
+    REVERSE_SPEED_FRACTION,
 )
 from backend.sim.weapons import _get_tube, try_load_tube, try_flood_tube, try_set_doors, try_fire, step_tubes
 from backend.models import Ship, Kinematics, Hull, Acoustics, WeaponsSuite, Reactor, DamageState
@@ -48,6 +49,30 @@ def test_planes_term_scales_with_speed_squared():
     assert math.isclose(r_high, 4.0 * r_low, rel_tol=1e-6)
     # Saturates at/above the reference speed
     assert planes_depth_rate(PLANES_REF_SPEED) == planes_depth_rate(PLANES_REF_SPEED * 2)
+
+
+def test_reverse_bell_makes_sternway_capped_at_reverse_fraction():
+    # An ordered astern bell drives negative speed, capped at a fraction of the
+    # forward reactor-limited max; planes give no depth authority astern.
+    ship = make_own()
+    cap = ship.hull.max_speed * (ship.reactor.output_mw / ship.reactor.max_mw)
+    floor = -cap * REVERSE_SPEED_FRACTION
+    ship.kin.speed = 0.0
+    for _ in range(60):  # plenty of ticks to settle against the cap
+        integrate_kinematics(ship, ship.kin.heading, -100.0, ship.kin.depth, dt=1.0)
+    assert ship.kin.speed < 0.0, "should be making sternway"
+    assert ship.kin.speed >= floor - 1e-6, "must not exceed the reverse cap"
+    assert math.isclose(ship.kin.speed, floor, abs_tol=0.2), "should settle at the reverse cap"
+
+
+def test_forward_speed_capped_by_reactor_level():
+    # Ordering well past the cap settles at the reactor-limited max, not hull max.
+    ship = make_own()
+    cap = ship.hull.max_speed * (ship.reactor.output_mw / ship.reactor.max_mw)
+    for _ in range(120):
+        integrate_kinematics(ship, ship.kin.heading, 999.0, ship.kin.depth, dt=1.0)
+    assert math.isclose(ship.kin.speed, cap, abs_tol=0.2)
+    assert ship.kin.speed < ship.hull.max_speed  # reactor at 60% holds it below hull max
 
 
 def test_depth_rate_increases_with_speed():

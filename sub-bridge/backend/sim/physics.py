@@ -26,6 +26,9 @@ BALLAST_BOOST_RATE = 1.8    # ballast floor when pumps are assigned (blow/flood)
 BALLAST_FAILED_RATE = 0.2   # residual authority when the ballast system is down
 PLANES_MAX_RATE = 5.0       # diving-planes contribution at/above the ref speed
 PLANES_REF_SPEED = 18.0     # knots at which the planes reach full effectiveness
+# Max astern (Reverse bell) speed as a fraction of the forward reactor-capped
+# max. Submarines back at limited speed; diving planes give no authority astern.
+REVERSE_SPEED_FRACTION = 0.33
 
 
 def planes_depth_rate(speed_kn: float) -> float:
@@ -55,7 +58,8 @@ def integrate_kinematics(
     damage_turn_factor = max(0.3, hull_damage_factor)  # Turning moderately affected
 
     reactor_cap_speed = hull.max_speed * (ship.reactor.output_mw / max(1.0, ship.reactor.max_mw)) * hull_damage_factor
-    target_speed = clamp(ordered_speed, 0.0, reactor_cap_speed)
+    # Allow an ordered astern bell down to a fraction of the forward cap.
+    target_speed = clamp(ordered_speed, -reactor_cap_speed * REVERSE_SPEED_FRACTION, reactor_cap_speed)
 
     if target_speed > kin.speed:
         kin.speed = min(target_speed, kin.speed + hull.accel_max * damage_accel_factor * dt)

@@ -26,6 +26,7 @@ from .conditions import ConditionEvaluator
 from .triggers import TriggerManager
 from .victory import VictoryEvaluator
 from .intercepts import InterceptSystem
+from .environment import EnvironmentConditions, periscope_modifiers, sub_visual_exposure, detection_falloff
 from .commands import CommandDispatcher
 from .control import (
     ActivePingAction,
@@ -72,6 +73,10 @@ class Simulation:
         self._periscope_contacts = []
         # Contact registry for anonymous sonar designations
         self._contact_registry = ContactRegistry()
+        # Persistent weather + time-of-day. Set once per mission from the
+        # mission's environment block; held constant. Defaults to clear day
+        # so the idle/no-mission boot state imposes no periscope penalty.
+        self.environment = EnvironmentConditions()
         # Lazily initialize asyncio.Event to avoid requiring an event loop during tests
         self._stop: Optional[asyncio.Event] = None
         self._last_snapshot = 0.0
@@ -234,6 +239,10 @@ class Simulation:
         self._captain_consent = False
         self._pump_assignments = {}
 
+        # Environment resets to clear day; the next mission load reapplies it
+        # from the mission brief in _init_scenario_subsystems().
+        self.environment = EnvironmentConditions()
+
         # Sonar / ping state
         self._last_ping_responses = []
         self._last_ping_at = None
@@ -355,6 +364,10 @@ class Simulation:
 
     def _init_scenario_subsystems(self, mission_brief: dict) -> None:
         """Initialize scenario subsystems with mission data."""
+        # Persistent environment (weather + time of day) for this mission.
+        self.environment = EnvironmentConditions.from_mission_env(
+            (mission_brief or {}).get("environment")
+        )
         # Initialize waypoint tracker
         if hasattr(self, "_waypoint_tracker"):
             self._waypoint_tracker.initialize(mission_brief)
@@ -1270,7 +1283,12 @@ class Simulation:
         try:
             if hasattr(self, "_ai_orch") and getattr(self, "_ai_orch", None) is not None:
                 visual_detection_map = {}
-                
+
+                # Same weather/time-of-day visibility that gates our periscope
+                # gates enemy lookouts too — fog and night hide us as much as
+                # they blind us. Symmetric, one shared environment.
+                enemy_vis_mods = periscope_modifiers(self.environment)
+
                 # Initialize enemy search timers if not exists
                 if not hasattr(self, "_enemy_search_timers"):
                     self._enemy_search_timers = {}
@@ -1304,18 +1322,31 @@ class Simulation:
                             dy = target.kin.y - observer.kin.y
                             dist_m = math.hypot(dx, dy)
                             
-                            # Visual detection range: 15km (same as periscope)
-                            if dist_m > 15000.0:
+                            # Visual detection range, gated by weather/time of day.
+                            if dist_m > enemy_vis_mods.max_range_m:
                                 continue
-                            
+
                             # Visual detection conditions:
-                            # 1. Target must be at or near surface (≤5m depth, same as periscope detection)
+                            # 1. Target must be exposed (see below)
                             # 2. Observer must be at surface or shallow depth (≤10m depth for surface ships)
-                            
-                            target_surface = target.kin.depth <= 5.0
+                            #
+                            # Ownship is exposed not only when surfaced but also
+                            # whenever a mast is raised: a periscope/radio mast
+                            # breaks the surface even at periscope depth. A thin
+                            # mast is far harder to spot than a surfaced hull, so
+                            # it carries a much lower base detectability.
+                            if target.id == "ownship":
+                                exposure = sub_visual_exposure(
+                                    target.kin.depth, self._periscope_raised, self._radio_raised
+                                )
+                                target_exposed = exposure.exposed
+                                exposure_factor = exposure.detectability
+                            else:
+                                target_exposed = target.kin.depth <= 5.0
+                                exposure_factor = 1.0
                             observer_surface = observer.kin.depth <= 10.0
-                            
-                            if target_surface and observer_surface:
+
+                            if target_exposed and observer_surface:
                                 # Initialize visual contact tracking for this observer
                                 if observer.id not in self._visual_contacts:
                                     self._visual_contacts[observer.id] = {}
@@ -1332,9 +1363,14 @@ class Simulation:
                                     detection_prob = 1.0
                                     detection_roll = 0.0  # Always pass
                                 else:
-                                    # Normal mode: probabilistic detection
-                                    # Base detection probability decreases with distance
-                                    base_prob = max(0.0, 1.0 - (dist_m / 15000.0))
+                                    # Normal mode: probabilistic detection.
+                                    # Exponential (Beer-Lambert/Koschmieder) range
+                                    # falloff: ~1.0 at point-blank, decaying toward
+                                    # the visibility-limited range. Weather/night
+                                    # shrinks that range, steepening the decay, so
+                                    # visibility is folded into range here (no
+                                    # separate flat multiplier below).
+                                    base_prob = detection_falloff(dist_m, enemy_vis_mods.max_range_m)
                                     
                                     # Surface vessels are easier to detect than submarines
                                     if target.ship_class == "Convoy":
@@ -1356,7 +1392,11 @@ class Simulation:
                                     
                                     # Cap at 95% maximum detection probability (never perfect, but very high for known targets)
                                     detection_prob = min(0.95, detection_prob)
-                                    
+
+                                    # Exposure (mast vs surfaced hull) scales the
+                                    # odds; visibility is already in the range decay.
+                                    detection_prob = max(0.0, detection_prob * exposure_factor)
+
                                     # Roll for detection
                                     detection_roll = random.random()
                                 
@@ -1370,7 +1410,7 @@ class Simulation:
                                 # Include contact if:
                                 # 1. We detected it this cycle, OR
                                 # 2. We saw it recently (within 30 seconds) and it's still in range
-                                if detected_this_cycle or (detection_count > 0 and time_since_last_seen <= 30.0 and dist_m <= 15000.0):
+                                if detected_this_cycle or (detection_count > 0 and time_since_last_seen <= 30.0 and dist_m <= enemy_vis_mods.max_range_m):
                                     # Determine detection mode based on target depth
                                     if target.kin.depth <= 1.0:
                                         mode = "surface"  # Fully surfaced
@@ -1515,7 +1555,11 @@ class Simulation:
             
             # Clear and rebuild contacts list every tick
             self._periscope_contacts = []
-            
+
+            # Environment visibility (weather + time of day) gates the scope:
+            # shrinks spotting range, lowers detection odds, widens heading sigma.
+            vis_mods = periscope_modifiers(self.environment)
+
             # Always check for contacts (both new detections and existing ones)
             for s in self.world.all_ships():
                 if s.id == own.id:
@@ -1524,7 +1568,7 @@ class Simulation:
                     dx = s.kin.x - own.kin.x
                     dy = s.kin.y - own.kin.y
                     rng = (dx*dx + dy*dy) ** 0.5
-                    if rng <= 15000.0:  # Within 15km range
+                    if rng <= vis_mods.max_range_m:  # Within visibility-gated range
                         # Check if we have previous contact history for this target
                         contact_history = self._visual_contacts["ownship"].get(s.id, {})
                         last_seen = contact_history.get("last_seen", 0.0)
@@ -1543,9 +1587,12 @@ class Simulation:
                                 detection_prob = 1.0
                                 detection_roll = 0.0  # Always pass
                             else:
-                                # Normal mode: probabilistic detection
-                                # Base probability decreases with distance
-                                base_prob = max(0.0, 1.0 - (rng / 15000.0))
+                                # Normal mode: probabilistic detection.
+                                # Exponential (Beer-Lambert/Koschmieder) range
+                                # falloff anchored to the visibility-limited range;
+                                # weather/night is folded into that range, so no
+                                # separate flat visibility multiplier below.
+                                base_prob = detection_falloff(rng, vis_mods.max_range_m)
                                 
                                 # Apply maintenance penalty if periscope system is degraded
                                 maintenance_factor = getattr(own.maintenance.levels, "periscope", 1.0) if hasattr(own, "maintenance") else 1.0
@@ -1586,6 +1633,7 @@ class Simulation:
                                     + rng / 750.0
                                     + (1.0 - periscope_health) * 8.0
                                     + max(0.0, own.kin.speed - 8.0) * 0.5
+                                    + vis_mods.heading_sigma_add
                                     - min(detection_count + 1, 5) * 0.6
                                 )
                                 sigma_hdg = max(1.5, min(30.0, sigma_hdg))
@@ -1602,7 +1650,7 @@ class Simulation:
                         # Include contact if:
                         # 1. We detected it this cycle, OR
                         # 2. We saw it recently (within 2 minutes) and it's still in range
-                        if detected_this_cycle or (detection_count > 0 and time_since_last_seen <= 120.0 and rng <= 15000.0):
+                        if detected_this_cycle or (detection_count > 0 and time_since_last_seen <= 120.0 and rng <= vis_mods.max_range_m):
                             # Use current detection confidence or last known confidence
                             current_confidence = last_confidence if not detected_this_cycle else last_confidence
                             
@@ -1672,6 +1720,7 @@ class Simulation:
             },
             "comms": getattr(self, "_captain_comms", []),
             "stationStatus": station_statuses,
+            "environment": self.environment.to_dict(),
             "periscopeContacts": self._periscope_contacts,
             # New scenario system fields
             "intercepts": getattr(self, "_captain_intercepts", []),

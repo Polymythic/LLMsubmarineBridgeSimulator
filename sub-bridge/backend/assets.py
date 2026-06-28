@@ -253,6 +253,8 @@ def apply_mission_to_world(mission: MissionConfig, world_getter, set_mission_bri
         "scenario_context": mission.scenario_context,
         "task_groups": mission.task_groups,
         "ship_roles": mission.ship_roles,
+        # Persistent weather + time-of-day; consumed by Simulation.environment
+        "environment": mission.environment,
     }
     set_mission_brief(brief)
 

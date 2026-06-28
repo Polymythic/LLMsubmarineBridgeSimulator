@@ -110,6 +110,7 @@
     </div>
     <div class="panel">
       <h3>Periscope Contacts</h3>
+      <div class="label" id="conditions" title="Weather and time of day degrade visual spotting range and identification">Conditions: —</div>
       <ul id="scope"></ul>
     </div>
   </div>
@@ -176,6 +177,19 @@
       setStatus(document.getElementById('stSonar'), `Sonar: ${ss.sonar || 'OK'}`);
       setStatus(document.getElementById('stWeapons'), `Weapons: ${ss.weapons || 'OK'}`);
       setStatus(document.getElementById('stEng'), `Engineering: ${ss.engineering || 'OK'}`);
+      // Environment conditions: degrade visual spotting range + ID accuracy.
+      const env = d.environment;
+      const condEl = document.getElementById('conditions');
+      if (env) {
+        const visPct = Math.round((env.visibility != null ? env.visibility : 1) * 100);
+        const spotKm = ((env.visibility != null ? env.visibility : 1) * 15).toFixed(1);
+        condEl.textContent = `Conditions: ${env.label || '—'} · visibility ${visPct}% · spotting ~${spotKm} km`;
+        // Warn when poor visibility meaningfully hurts the scope.
+        condEl.style.color = visPct >= 80 ? '#8DEB8D' : (visPct >= 45 ? '#FACC15' : '#F87171');
+      } else {
+        condEl.textContent = 'Conditions: —';
+        condEl.style.color = '';
+      }
       const scope = document.getElementById('scope'); scope.innerHTML = '';
       (d.periscopeContacts||[]).forEach(c => {
         const km = (c.range_m / 1000).toFixed(2);

@@ -1,5 +1,33 @@
 ## Project Context and Objectives
 
+### Design Intent: A Test of Intelligence (Fair-Physics Doctrine)
+This simulator is fundamentally **a test of intelligence** — the human crew's
+coordinated decision-making under imperfect information, and the LLM fleet/ship
+commanders' ability to do the same. It is **not a milsim**; the goal is
+*interesting decisions*, not historical fidelity.
+
+The fairness lives in the **physics, not the interface**:
+
+- **Abstractions may differ between the two sides — by design.** *How* a side
+  issues an action can be completely different. Ownship fires a torpedo through a
+  multi-step human workflow (load → flood → open doors → captain consent → fire);
+  the enemy AI just makes one `fire_torpedo` call. Different abstractions,
+  reflecting human crew vs. AI commander — and that's fine.
+- **But the underlying physics must be fair both ways.** Once that torpedo is in
+  the water it obeys the *same* model regardless of who launched it — same speed,
+  seeker, damage, run dynamics. Likewise detection, visibility, kinematics, and
+  noise resolve through the same math for whoever is observer and whoever is
+  observed. Neither side gets a *physical* advantage the other wouldn't have
+  under identical conditions. (Worked example: weather/time-of-day visibility and
+  the exponential range falloff run through the **same** `environment.py`
+  functions for the captain's periscope and the enemy lookouts.)
+- This is the physics-layer complement to the **Strict Information Boundaries**
+  below (no agent sees hidden ground truth).
+
+When adding or tuning a mechanic, separate the two layers: the *command
+abstraction* can be asymmetric, but the *physics it resolves to* must hold
+bidirectionally.
+
 ### Current Implementation Status
 - Backend server: FastAPI with 20 Hz loop; WebSockets `/ws/{station}` live.
 - Ownship kinematics: accel/turn/depth clamp; cavitation flag; reactor caps speed.

@@ -228,6 +228,15 @@ class CommandDispatcher:
         insert_event(sim.engine, sim.run_id, "weapons.test_fire", json.dumps(data))
         bearing = float(data.get("bearing", own.kin.heading))
         sim._log_action("WEAPONS", f"Test fired torpedo at bearing {bearing:.0f}°", data)
+        # Surface the same all-station launch audio event as a real fire so the
+        # test button is a faithful audio check too.
+        from datetime import datetime, timezone
+        sim._transient_events.append({
+            "type": "weapons.fire",
+            "at": datetime.now(timezone.utc).isoformat(),
+            "tube": int(data.get("tube", 1)),
+            "bearing": bearing,
+        })
         return None
 
     async def _weapons_countermeasure(self, data: Dict) -> Optional[str]:

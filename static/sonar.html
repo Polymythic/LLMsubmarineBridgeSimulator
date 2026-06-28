@@ -12,7 +12,7 @@
     li { margin:4px 0; }
     .row { display:flex; gap:16px; }
     .col { flex:1; }
-    #legend { width:100%; height:32px; background:#0B1020; border:1px solid #1B2440; border-radius:6px; margin-bottom:6px; }
+    #legend { width:100%; height:16px; background:#0B1020; border:1px solid #1B2440; border-radius:6px; margin-bottom:6px; }
     #waterfall { width:100%; height:220px; background:#050814; border:1px solid #1B2440; border-radius:6px; }
     #waterfallWrap { position:relative; cursor:crosshair; }
     #bearingMarkers { position:absolute; top:0; left:0; width:100%; height:220px; pointer-events:none; }
@@ -87,7 +87,7 @@
       </div>
       <div class="col">
         <div class="label" title="Bearing axis centered at 0°; time flows downward">Passive Waterfall</div>
-        <canvas id="legend" width="720" height="32" title="Sonar contact legend"></canvas>
+        <canvas id="legend" width="720" height="16" title="Bearing scale — 0° centered, 180° at both edges"></canvas>
         <div style="display:flex; gap:8px; align-items:flex-start;">
           <div id="waterfallWrap" style="flex:1;">
             <canvas id="waterfall" width="720" height="220" title="Click to drop a bearing line; double-click to clear"></canvas>
@@ -214,27 +214,30 @@
     }
     document.getElementById('clearWaterfall').onclick = clearWaterfall;
 
+    // Bearing scale only. The old color-key legend was removed: two of its keys
+    // (cyan "Ping", dashed "Enemy") documented ping overlays that were never
+    // built, the rest duplicated the contacts table, and color-coding contacts
+    // by type spoonfed the classification the tonal filter is meant to make the
+    // operator earn. The contacts table is now the legend; the waterfall just
+    // shows acoustic reality (bearing + brightness, plus loud transients).
     function drawLegend(){
       lctx.clearRect(0,0,lW,lH);
       lctx.fillStyle = '#0B1020';
       lctx.fillRect(0,0,lW,lH);
       lctx.strokeStyle = '#1B2440';
       lctx.beginPath(); lctx.moveTo(0, lH-0.5); lctx.lineTo(lW, lH-0.5); lctx.stroke();
-      lctx.fillStyle = '#8593B8'; lctx.font = '10px ui-sans-serif';
-      // Bearing ticks at the bottom
-      const majors = [270, 0, 90];
+      lctx.font = '10px ui-monospace, monospace';
+      lctx.fillStyle = '#8593B8';
       lctx.strokeStyle = '#4C5E9A';
-      majors.forEach(b => { const x = xForBearing(b, lW); lctx.beginPath(); lctx.moveTo(x+0.5, lH-8); lctx.lineTo(x+0.5, lH-2); lctx.stroke(); lctx.textAlign='center'; lctx.fillText(String(b)+'°', x, lH-10); });
-      // Legend keys - Row 1 (top)
-      lctx.textAlign='left';
-      lctx.fillStyle = '#00E5FF'; lctx.fillRect(6, 4, 14, 3); lctx.fillStyle = '#D7E3FF'; lctx.fillText('Ping', 24, 10);
-      lctx.strokeStyle = '#FF4DFF'; lctx.setLineDash([3,2]); lctx.beginPath(); lctx.moveTo(60, 5.5); lctx.lineTo(74, 5.5); lctx.stroke(); lctx.setLineDash([]); lctx.fillStyle = '#D7E3FF'; lctx.fillText('Enemy', 78, 10);
-      lctx.fillStyle = '#FF7A00'; lctx.fillRect(120, 4, 14, 4); lctx.fillStyle = '#D7E3FF'; lctx.fillText('Explsn', 138, 10);
-      lctx.fillStyle = '#55FF55'; lctx.fillRect(185, 4, 14, 3); lctx.fillStyle = '#D7E3FF'; lctx.fillText('Own Torp', 203, 10);
-      lctx.fillStyle = '#FF4444'; lctx.fillRect(270, 4, 14, 3); lctx.fillStyle = '#D7E3FF'; lctx.fillText('Enem Torp', 288, 10);
-      lctx.fillStyle = '#55FFFF'; lctx.fillRect(365, 4, 14, 3); lctx.fillStyle = '#D7E3FF'; lctx.fillText('Own CM', 383, 10);
-      lctx.fillStyle = '#BB77FF'; lctx.fillRect(440, 4, 14, 3); lctx.fillStyle = '#D7E3FF'; lctx.fillText('Enem CM', 458, 10);
-      lctx.fillStyle = '#FFAA44'; lctx.fillRect(525, 4, 14, 3); lctx.fillStyle = '#D7E3FF'; lctx.fillText('Ship', 543, 10);
+      // Interior majors: 270 (left quarter), 0 (center), 90 (right quarter).
+      [270, 0, 90].forEach(b => {
+        const x = xForBearing(b, lW);
+        lctx.beginPath(); lctx.moveTo(x+0.5, lH-6); lctx.lineTo(x+0.5, lH-1); lctx.stroke();
+        lctx.textAlign='center'; lctx.fillText(String(b)+'°', x, lH-7);
+      });
+      // Both edges are bearing 180° (the waterfall wraps 180→0→180).
+      lctx.textAlign='left';  lctx.fillText('180°', 2, lH-7);
+      lctx.textAlign='right'; lctx.fillText('180°', lW-2, lH-7);
     }
 
     drawLegend();

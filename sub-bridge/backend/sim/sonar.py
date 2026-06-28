@@ -380,7 +380,10 @@ def countermeasure_contacts(self_ship: Ship, countermeasures: List[dict] | None)
 
     - Countermeasures are very loud (160-165 dB) to attract torpedo seekers
     - Own countermeasures classified as "Own Noisemaker" / "Own Decoy"
-    - Enemy countermeasures (rare) classified accordingly
+    - Enemy noisemakers classified as "Enemy Noisemaker"
+    - Enemy decoys are intentionally NOT labeled as decoys: they carry the sub
+      tonal card and present as a generic "Submerged Contact" so the deception
+      survives on the operator's scope (see the classification block below).
     """
     if getattr(self_ship, "systems", None) is not None and not self_ship.systems.sonar_ok:
         return []
@@ -436,7 +439,15 @@ def countermeasure_contacts(self_ship: Ship, countermeasures: List[dict] | None)
                 if cm_type == "noisemaker":
                     classified_as = "Enemy Noisemaker" if detect > 0.5 else "Enemy Noisemaker?"
                 else:
-                    classified_as = "Enemy Decoy" if detect > 0.5 else "Enemy Decoy?"
+                    # Enemy decoy: deliberately NOT labeled "Decoy". It emits the
+                    # submarine tonal card (cm_lines below) so it reads like a sub
+                    # on the narrowband filter; revealing "Enemy Decoy" in the
+                    # contacts table / waterfall color would blow that deception
+                    # for free and defeat the whole mechanic. Present it as a
+                    # generic submerged contact — indistinguishable from a real,
+                    # unidentified sub until the operator works the tonals or the
+                    # captain gets a visual. (See SONAR_TONAL_FILTER_PLAN.md §6.)
+                    classified_as = "Submerged Contact" if detect >= 0.4 else "Unknown Contact"
 
             # Tonal signature for the narrowband filter:
             #  - Noisemakers are full-spectrum broadband -> None (all-pass): they

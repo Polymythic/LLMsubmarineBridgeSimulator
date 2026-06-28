@@ -1167,7 +1167,7 @@ class Simulation:
             enemy_static=CONFIG.enemy_static and not CONFIG.use_ai_orchestrator,
         )
         if core_result.cavitation:
-            self._noise.add_impulse("helm", 82.0, 0.5)
+            self._noise.add_impulse("helm", 82.0, 0.5, "Cavitation")
         self._dispatch_core_events(core_result)
         self._apply_system_failures(own, core_result.system_failures)
         # Local aliases used by downstream telemetry / snapshot code below.
@@ -1222,8 +1222,10 @@ class Simulation:
             if ship.side != "ownship" and ship.active_sonar_cooldown > 0.0:
                 ship.active_sonar_cooldown = max(0.0, ship.active_sonar_cooldown - dt)
         
-        # Acoustic noise budget and detectability
-        noise_from_speed = min(100.0, (speed / max(1.0, own.hull.max_speed)) * 70.0)
+        # Acoustic noise budget and detectability. Use speed magnitude so an
+        # astern (Reverse) bell still contributes flow/propulsor noise.
+        speed_mag = abs(speed)
+        noise_from_speed = min(100.0, (speed_mag / max(1.0, own.hull.max_speed)) * 70.0)
         noise_cav = 30.0 if cav else 0.0
         # Each active pump adds noise
         noise_pumps = 10.0 * len(self._pump_assignments)
@@ -1236,14 +1238,17 @@ class Simulation:
         # Update submarine's dynamic source level based on comprehensive noise budget
         # Convert noise budget (0-100) to dB source level (110-140 dB range)
         # Base source level from speed, then add noise contributions
-        base_src_lvl = 110.0 + (speed / max(1.0, own.hull.max_speed)) * 20.0  # 110-130 dB range
+        base_src_lvl = 110.0 + (speed_mag / max(1.0, own.hull.max_speed)) * 20.0  # 110-130 dB range
         noise_contributions = noise_cav + noise_pumps + noise_masts  # Additional noise from operations
         
         # Add per-station noise contributions to source level
         # Convert dB noise levels to source level contributions (scale factor 0.1)
         station_noise_contrib = 0.0
-        for station, db_level in noise_levels.items():
-            if station != "total" and db_level > 0:
+        for station, entry in noise_levels.items():
+            if station == "total":
+                continue
+            db_level = entry.get("dB", 0.0) if isinstance(entry, dict) else 0.0
+            if db_level > 0:
                 station_noise_contrib += db_level * 0.1  # Scale station noise to source level
         
         dynamic_src_lvl = base_src_lvl + (noise_contributions * 0.3) + station_noise_contrib
@@ -1251,7 +1256,7 @@ class Simulation:
         # Update submarine's acoustics with dynamic source level
         # This makes the submarine more detectable to enemies based on its noise
         own.acoustics.source_level_by_speed = {
-            int(speed): dynamic_src_lvl
+            int(speed_mag): dynamic_src_lvl
         }
         
         # EMCON pressure: sustained high noise raises alert
@@ -1464,6 +1469,9 @@ class Simulation:
                 "orderedHeading": self.ordered["heading"],
                 "orderedSpeed": self.ordered["speed"],
                 "orderedDepth": self.ordered["depth"],
+                # Reactor- and damage-limited top speed right now; the helm
+                # engine-order telegraph sets ordered speed as a fraction of this.
+                "maxSpeedNow": own.hull.max_speed * (own.reactor.output_mw / max(1.0, own.reactor.max_mw)) * max(0.1, 1.0 - own.damage.hull),
                 "speed": speed,
                 "depth": depth,
                 "cavitation": cav,
@@ -1486,11 +1494,15 @@ class Simulation:
             },
             "events": list(self._transient_events),
             "noise": {
-                "helm_dB": noise_levels.get("helm", 0.0),
-                "sonar_dB": noise_levels.get("sonar", 0.0),
-                "weapons_dB": noise_levels.get("weapons", 0.0),
-                "engineering_dB": noise_levels.get("engineering", 0.0),
-                "total_dB": noise_levels.get("total", 0.0),
+                # Flat dB fields kept for backward-compat with stations not yet
+                # migrated to the per-station panel.
+                "helm_dB": noise_levels.get("helm", {}).get("dB", 0.0),
+                "sonar_dB": noise_levels.get("sonar", {}).get("dB", 0.0),
+                "weapons_dB": noise_levels.get("weapons", {}).get("dB", 0.0),
+                "engineering_dB": noise_levels.get("engineering", {}).get("dB", 0.0),
+                "total_dB": noise_levels.get("total", {}).get("dB", 0.0),
+                # Rich per-station data: {station: {dB, band, fill, contributors}}
+                "stations": noise_levels,
             },
             # Audio events - for client-side sound playback
             "lastPingAt": getattr(self, "_last_ping_at", None),

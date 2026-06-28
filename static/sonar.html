@@ -114,11 +114,32 @@
           <canvas id="tonalStrip" width="720" height="64" title="Orange = selected class's reference tonal lines. Drag the Min/Max handles to set the passband — the waterfall dims each contact by the fraction of its tonal lines inside the band."></canvas>
           <div class="label" style="font-size:10px;margin-top:3px;color:#5A6C9A;">Orange ticks = selected class's tonal lines &middot; drag &#9650; handles to set Min/Max &middot; narrowing dims contacts to the fraction of their lines in-band &middot; axis is FREQUENCY (kHz), not bearing</div>
         </div>
-        <div style="display:flex; align-items:flex-end; gap:8px; margin-top:8px;">
-          <div class="label">Sonar Noise: <span id="sonarNoise">0</span> dB</div>
-          <div id="dbWrap" style="width:30px;height:120px;border:1px solid #1B2440;background:#0B1020;position:relative;border-radius:4px;">
-            <div id="dbFill" style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(180deg,#8DEB8D 0%, #FACC15 60%, #EF4444 100%);height:0px;"></div>
-            <div id="dbPeak" style="position:absolute;left:0;right:0;height:3px;background:#FF6B6B;box-shadow:0 0 6px rgba(255,107,107,0.8);bottom:0px;"></div>
+        <div class="panel noise-panel" style="margin-top:8px;">
+          <h3>NOISE — SONAR <span style="font-weight:400;color:#5E6E97;font-size:11px;">(relative to this station)</span></h3>
+          <div class="noise-body">
+            <div class="noise-meter">
+              <div class="noise-bands">
+                <div class="nb nb-extreme">EXTREME</div>
+                <div class="nb nb-high">HIGH</div>
+                <div class="nb nb-medium">MED</div>
+                <div class="nb nb-low">LOW</div>
+                <div class="nb nb-minimal">MINIMAL</div>
+              </div>
+              <div id="dbWrap" title="Sonar noise — relative to this station's own quiet/loud range">
+                <div id="dbFill" style="height:0px;"></div>
+                <div class="band-div" style="bottom:80%"></div>
+                <div class="band-div" style="bottom:60%"></div>
+                <div class="band-div" style="bottom:40%"></div>
+                <div class="band-div" style="bottom:20%"></div>
+                <div id="dbPeak" style="bottom:0px;"></div>
+              </div>
+            </div>
+            <div class="noise-readout">
+              <div class="noise-band-now" id="noiseBandNow">MINIMAL</div>
+              <div class="noise-db" id="noiseDb">0 dB</div>
+              <div class="noise-contrib-title">What's making noise</div>
+              <ul class="noise-contrib" id="noiseContrib"><li class="noise-quiet">— silent —</li></ul>
+            </div>
           </div>
         </div>
       </div>
@@ -130,7 +151,6 @@
     const list = document.getElementById('contactsBody');
     const prList = document.getElementById('pingResponsesBody');
     const emcon = document.getElementById('emcon');
-    const sonarNoise = document.getElementById('sonarNoise');
 
     // Build a <td> cell; `cls` ('num' = right-aligned tabular, 'mono' =
     // left-aligned monospace) keeps columns vertically aligned across rows.
@@ -585,7 +605,7 @@
       cd.textContent = (d.pingCooldown || 0).toFixed(1);
       if (d.acoustics) { emcon.textContent = (d.acoustics.emconRisk || 'low'); }
       if (d.ownship && d.ownship.damage) { station.updateDamageLEDs(d.ownship.damage); }
-      const nz = (d.noise && d.noise.sonar_dB) || 0; sonarNoise.textContent = nz.toFixed(0); station.setDbMeter(nz);
+      station.updateNoisePanel(d.noise && d.noise.stations && d.noise.stations.sonar);
       station.updateTasks(d.tasks || []);
 
       // Always update the waterfall (scrolling) — it's the high-rate signal.

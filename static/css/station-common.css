@@ -2,8 +2,35 @@
 
 /* dB Meter */
 #dbWrap { width: 30px; height: 160px; border:1px solid #1B2440; background:#0B1020; position: relative; border-radius:4px; }
-#dbFill { position:absolute; bottom:0; left:0; right:0; background: linear-gradient(180deg, #8DEB8D 0%, #FACC15 60%, #EF4444 100%); }
+#dbFill { position:absolute; bottom:0; left:0; right:0; background: linear-gradient(180deg, #8DEB8D 0%, #FACC15 60%, #EF4444 100%); transition: height 0.12s linear, background 0.2s linear; }
 #dbPeak { position:absolute; left:0; right:0; height:3px; background:#FF6B6B; box-shadow:0 0 6px rgba(255,107,107,0.8); }
+/* Band divider lines drawn across the bar at each 20% boundary */
+#dbWrap .band-div { position:absolute; left:0; right:0; height:1px; background:rgba(123,143,191,0.25); }
+
+/* ---- Per-station noise panel ---- */
+.noise-panel h3 { margin:0 0 10px; font-size:13px; letter-spacing:0.04em; color:#89B4FA; }
+.noise-body { display:flex; gap:16px; align-items:flex-start; }
+/* bands column + bar, kept the same height so labels line up with zones */
+.noise-meter { display:flex; gap:6px; height:160px; }
+.noise-bands { display:flex; flex-direction:column; justify-content:space-between; height:160px; text-align:right; }
+.noise-bands .nb { flex:1 1 0; display:flex; align-items:center; justify-content:flex-end; font-size:9px; letter-spacing:0.04em; opacity:0.75; padding-right:2px; }
+.noise-bands .nb-extreme { color:#EF4444; }
+.noise-bands .nb-high    { color:#F59E0B; }
+.noise-bands .nb-medium  { color:#FACC15; }
+.noise-bands .nb-low     { color:#84CC16; }
+.noise-bands .nb-minimal { color:#22C55E; }
+
+.noise-readout { flex:1 1 auto; min-width:0; }
+.noise-band-now { font-size:20px; font-weight:700; letter-spacing:0.06em; line-height:1; }
+.noise-db { font-size:12px; color:#7B8FBF; margin:2px 0 10px; }
+.noise-contrib-title { font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:#5E6E97; margin-bottom:4px; }
+ul.noise-contrib { list-style:none; margin:0; padding:0; }
+ul.noise-contrib li { display:flex; align-items:center; gap:8px; font-size:12px; padding:2px 0; }
+ul.noise-contrib .cl { flex:0 0 46%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#D7E3FF; }
+ul.noise-contrib .cbar { flex:1 1 auto; height:8px; background:#0B1020; border:1px solid #1B2440; border-radius:4px; overflow:hidden; }
+ul.noise-contrib .cbar i { display:block; height:100%; background:linear-gradient(90deg,#3B82F6,#60A5FA); }
+ul.noise-contrib .cdb { flex:0 0 auto; width:28px; text-align:right; color:#9FB3DD; font-variant-numeric:tabular-nums; }
+ul.noise-contrib .noise-quiet { color:#5E6E97; font-style:italic; }
 
 /* Damage LEDs */
 .damage-led { width:12px; height:12px; border-radius:50%; display:inline-block; margin-left:8px; border:2px solid #333; }

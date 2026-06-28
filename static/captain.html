@@ -80,12 +80,36 @@
     </div>
     <div class="row">
       <div class="pill">EMCON: <span id="emcon">low</span></div>
-      <div class="pill">Noise: <span id="noise">0</span> dB</div>
-      <div id="dbWrap" title="Aggregate ship noise">
-        <div id="dbFill" style="height:0px;"></div>
-        <div id="dbPeak" style="bottom:0px;"></div>
-      </div>
       <div class="pill">Damage: <span id="hullDamage" class="damage-led normal" title="Hull Damage"></span><span id="flooding" class="damage-led normal" title="Flooding"></span></div>
+    </div>
+
+    <div class="panel noise-panel">
+      <h3>SHIP NOISE <span style="font-weight:400;color:#5E6E97;font-size:11px;">(combined signature — absolute)</span></h3>
+      <div class="noise-body">
+        <div class="noise-meter">
+          <div class="noise-bands">
+            <div class="nb nb-extreme">EXTREME</div>
+            <div class="nb nb-high">HIGH</div>
+            <div class="nb nb-medium">MED</div>
+            <div class="nb nb-low">LOW</div>
+            <div class="nb nb-minimal">MINIMAL</div>
+          </div>
+          <div id="dbWrap" title="Total radiated ship noise — the combined signature the enemy hears">
+            <div id="dbFill" style="height:0px;"></div>
+            <div class="band-div" style="bottom:80%"></div>
+            <div class="band-div" style="bottom:60%"></div>
+            <div class="band-div" style="bottom:40%"></div>
+            <div class="band-div" style="bottom:20%"></div>
+            <div id="dbPeak" style="bottom:0px;"></div>
+          </div>
+        </div>
+        <div class="noise-readout">
+          <div class="noise-band-now" id="noiseBandNow">MINIMAL</div>
+          <div class="noise-db" id="noiseDb">0 dB</div>
+          <div class="noise-contrib-title">Loudest stations</div>
+          <ul class="noise-contrib" id="noiseContrib"><li class="noise-quiet">— silent —</li></ul>
+        </div>
+      </div>
     </div>
     <div class="panel">
       <h3>Mission Brief</h3>
@@ -119,7 +143,6 @@
     const per = document.getElementById('periscope');
     const rad = document.getElementById('radio');
     const emcon = document.getElementById('emcon');
-    const noise = document.getElementById('noise');
     function setPip(el, val){ el.className = 'pip ' + (val ? 'on' : 'off'); }
     function setStatus(el, label){
       el.textContent = label;
@@ -131,7 +154,7 @@
       setPip(per, !!d.periscopeRaised);
       setPip(rad, !!d.radioRaised);
       if (d.acoustics){ emcon.textContent = d.acoustics.emconRisk || 'low'; }
-      const nz = (d.noise && d.noise.total_dB) || 0; noise.textContent = nz.toFixed(0); station.setDbMeter(nz);
+      station.updateNoisePanel(d.noise && d.noise.stations && d.noise.stations.total);
       if (d.ownship && d.ownship.damage) { station.updateDamageLEDs(d.ownship.damage); }
       const mission = d.mission || {};
       document.getElementById('briefTitle').textContent = mission.title || '';

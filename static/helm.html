@@ -10,6 +10,16 @@
     label { display:block; margin-top:8px; }
     input { width:100%; background:#0F162A; color:#D7E3FF; border:1px solid #1B2440; padding:8px; }
     button { margin-top:12px; padding:8px 12px; background:#26406E; border:none; color:#D7E3FF; border-radius:6px; }
+    /* Engine-order telegraph */
+    .telegraph { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-top:6px; }
+    .telegraph .bell { margin-top:0; flex:1; min-width:62px; padding:10px 6px; font-weight:600; cursor:pointer;
+      background:#1B2440; border:1px solid #3A4674; color:#D7E3FF; border-radius:6px; }
+    .telegraph .bell:hover { background:#26406E; }
+    .telegraph .bell.rev { background:#3A1F1F; border-color:#6B3A3A; }
+    .telegraph .bell.rev:hover { background:#5A2E2E; }
+    .telegraph .bell.flank { background:#1F3A24; border-color:#3A6B45; }
+    .telegraph .bell.flank:hover { background:#2E5A38; }
+    .telegraph-max { font-family: ui-monospace, monospace; font-size:12px; color:#9DB0E0; margin-top:4px; }
     .row { display:flex; gap:12px; flex-wrap:wrap; }
     .col { flex:1; min-width:260px; }
     .pill { padding:4px 8px; border-radius:12px; background:#0F162A; border:1px solid #1B2440; }
@@ -93,17 +103,49 @@
           <div class="row"><span class="lbl">Ordered</span><span class="ord" id="speedOrd">---</span></div>
         </div>
       </div>
-      <div class="col">
-        <div class="pill">Helm Noise: <span id="helmNoise">0</span> dB</div>
-        <div id="dbWrap" title="Helm noise">
-          <div id="dbFill" style="height:0px;"></div>
-          <div id="dbPeak" style="bottom:0px;"></div>
+    </div>
+
+    <div class="panel noise-panel">
+      <h3>NOISE — HELM <span style="font-weight:400;color:#5E6E97;font-size:11px;">(relative to this station)</span></h3>
+      <div class="noise-body">
+        <div class="noise-meter">
+          <div class="noise-bands">
+            <div class="nb nb-extreme">EXTREME</div>
+            <div class="nb nb-high">HIGH</div>
+            <div class="nb nb-medium">MED</div>
+            <div class="nb nb-low">LOW</div>
+            <div class="nb nb-minimal">MINIMAL</div>
+          </div>
+          <div id="dbWrap" title="Helm noise — relative to this station's own quiet/loud range">
+            <div id="dbFill" style="height:0px;"></div>
+            <div class="band-div" style="bottom:80%"></div>
+            <div class="band-div" style="bottom:60%"></div>
+            <div class="band-div" style="bottom:40%"></div>
+            <div class="band-div" style="bottom:20%"></div>
+            <div id="dbPeak" style="bottom:0px;"></div>
+          </div>
+        </div>
+        <div class="noise-readout">
+          <div class="noise-band-now" id="noiseBandNow">MINIMAL</div>
+          <div class="noise-db" id="noiseDb">0 dB</div>
+          <div class="noise-contrib-title">What's making noise</div>
+          <ul class="noise-contrib" id="noiseContrib"><li class="noise-quiet">— silent —</li></ul>
         </div>
       </div>
     </div>
+    <label style="margin-top:14px;" title="Engine-order telegraph — one click sets ordered speed as a fraction of the current reactor-limited max">Engine Order Telegraph</label>
+    <div class="telegraph" id="telegraph">
+      <button class="bell rev"   data-frac="-0.33" title="Back at one third of max">Reverse</button>
+      <button class="bell"       data-frac="0"     title="All stop">Stop</button>
+      <button class="bell"       data-frac="0.25"  title="Ahead one quarter">1/4</button>
+      <button class="bell"       data-frac="0.5"   title="Ahead one half">1/2</button>
+      <button class="bell"       data-frac="0.75"  title="Ahead full">Full</button>
+      <button class="bell flank" data-frac="1"     title="Ahead flank — current reactor-limited max">Flank</button>
+    </div>
+    <div class="telegraph-max" id="telegraphMax">Max (reactor): --- kn</div>
     <div class="row">
       <div class="col"><label title="Ordered heading in degrees (0=North)">Heading (deg)<input id="heading" type="number" min="0" max="359" value="270"></label></div>
-      <div class="col"><label title="Ordered speed in knots">Speed (kn)<input id="speed" type="number" min="0" max="30" value="8"></label></div>
+      <div class="col"><label title="Ordered speed in knots (negative = astern)">Speed (kn)<input id="speed" type="number" min="-15" max="30" value="8"></label></div>
       <div class="col"><label title="Ordered keel depth in meters">Depth (m)<input id="depth" type="number" min="0" max="600" value="100"></label></div>
     </div>
     <button id="send" title="Send helm order to the sim loop">Order</button>
@@ -117,7 +159,6 @@
     const hdgDial = document.getElementById('hdgDial');
     const depthLadder = document.getElementById('depthLadder');
     const speedTele = document.getElementById('speedTele');
-    const helmNoise = document.getElementById('helmNoise');
     const posXY = document.getElementById('posXY');
 
     function drawDial(svg, hdg, ordered){
@@ -210,6 +251,19 @@
     const fmtDepth = v => (v == null) ? '---' : String(Math.round(v)).padStart(3, '0');
     const fmtSpeed = v => (v == null) ? '---' : v.toFixed(1).padStart(4, '0');
 
+    // Engine-order telegraph state: latest reactor-limited max + last-ordered
+    // heading/depth, so a speed bell changes ONLY speed.
+    const telegraphMax = document.getElementById('telegraphMax');
+    let maxSpeedNow = 30, lastOrderedHeading = 270, lastOrderedDepth = 100;
+    function orderBell(frac) {
+      const speed = Math.round(maxSpeedNow * frac * 10) / 10;
+      document.getElementById('speed').value = speed;
+      station.sendCommand('helm.order', { heading: lastOrderedHeading, speed, depth: lastOrderedDepth });
+    }
+    document.querySelectorAll('#telegraph .bell').forEach(b => {
+      b.onclick = () => orderBell(parseFloat(b.dataset.frac));
+    });
+
     station.onTelemetry = function(d) {
         cav.textContent = 'Cavitation: ' + (d.ownship?.cavitation ? 'YES' : 'NO');
         const ox = (d.ownship && d.ownship.x != null) ? Math.round(d.ownship.x) : null;
@@ -225,8 +279,14 @@
         depthOrd.textContent = fmtDepth(d.ownship.orderedDepth);
         speedVal.textContent = fmtSpeed(d.ownship.speed);
         speedOrd.textContent = fmtSpeed(d.ownship.orderedSpeed);
+        if (d.ownship.maxSpeedNow != null) {
+          maxSpeedNow = d.ownship.maxSpeedNow;
+          telegraphMax.textContent = 'Max (reactor): ' + maxSpeedNow.toFixed(1) + ' kn';
+        }
+        if (d.ownship.orderedHeading != null) lastOrderedHeading = d.ownship.orderedHeading;
+        if (d.ownship.orderedDepth != null) lastOrderedDepth = d.ownship.orderedDepth;
         if (d.ownship && d.ownship.damage) { station.updateDamageLEDs(d.ownship.damage); }
-        const nz = (d.noise && d.noise.helm_dB) || 0; helmNoise.textContent = nz.toFixed(0); station.setDbMeter(nz);
+        station.updateNoisePanel(d.noise && d.noise.stations && d.noise.stations.helm);
         station.updateTasks(d.tasks || []);
         if (station.audio) station.audio.processTelemetry(d);
     };

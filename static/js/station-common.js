@@ -207,6 +207,65 @@ class StationBase {
     dbPeak.style.bottom = (this.peakHold - 2) + 'px';
   }
 
+  // ---- Per-station noise panel (normalized bands + contributors) ----
+  //
+  // Drives the fluttering bar from the backend `fill` fraction (0..1, already
+  // normalized to THIS station's own loud/quiet range) and colors it by band.
+  // Expects a noise entry: { dB, band, fill, contributors:[{label,dB}] } and the
+  // standard markup (dbWrap/dbFill/dbPeak + noiseBandNow/noiseDb/noiseContrib).
+
+  /** Update the vertical bar + decaying peak from a noise entry. Returns the band. */
+  setNoiseMeter(entry) {
+    const dbWrap = document.getElementById('dbWrap');
+    const dbFill = document.getElementById('dbFill');
+    const dbPeak = document.getElementById('dbPeak');
+    if (!dbWrap || !dbFill || !dbPeak) return null;
+    const e = entry || {};
+    const band = e.band || 'minimal';
+    const fill = Math.max(0, Math.min(1, e.fill || 0));
+    const h = dbWrap.clientHeight || 160;
+    const px = Math.round(fill * h);
+    dbFill.style.height = px + 'px';
+    dbFill.style.background = StationBase.BAND_COLORS[band] || StationBase.BAND_COLORS.minimal;
+    // Peak holds at the high-water mark, decaying slowly back down.
+    this.peakHold = Math.max(this.peakHold - 1, px);
+    dbPeak.style.bottom = Math.max(0, this.peakHold - 2) + 'px';
+    return band;
+  }
+
+  /** Update the whole panel: bar, big band label, dB readout, contributor list. */
+  updateNoisePanel(entry) {
+    const e = entry || {};
+    this.setNoiseMeter(e);
+    const band = e.band || 'minimal';
+    const color = StationBase.BAND_COLORS[band] || StationBase.BAND_COLORS.minimal;
+
+    const bandEl = document.getElementById('noiseBandNow');
+    if (bandEl) { bandEl.textContent = band.toUpperCase(); bandEl.style.color = color; }
+
+    const dbEl = document.getElementById('noiseDb');
+    if (dbEl) dbEl.textContent = (e.dB || 0).toFixed(0) + ' dB';
+
+    const listEl = document.getElementById('noiseContrib');
+    if (listEl) {
+      const items = e.contributors || [];
+      if (!items.length) {
+        listEl.innerHTML = '<li class="noise-quiet">— silent —</li>';
+      } else {
+        listEl.innerHTML = items.map((it) => {
+          // Relative bar width across a plausible operating span (40..95 dB),
+          // purely for glanceability; the dB number is the precise fact.
+          const w = Math.max(6, Math.min(100, (((it.dB || 0) - 40) / 55) * 100));
+          const lbl = String(it.label == null ? '' : it.label)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          return `<li><span class="cl">${lbl}</span>` +
+                 `<span class="cbar"><i style="width:${w.toFixed(0)}%"></i></span>` +
+                 `<span class="cdb">${(it.dB || 0).toFixed(0)}</span></li>`;
+        }).join('');
+      }
+    }
+  }
+
   // ---- Task management ----
 
   updateTasks(tasks, containerSelector) {
@@ -293,3 +352,13 @@ class StationBase {
     this.audio.autoInit();
   }
 }
+
+// Band → fill color, shared by the noise meter and the big band label.
+// Green (quiet) → red (extreme); keep in sync with the .nb-* CSS colors.
+StationBase.BAND_COLORS = {
+  minimal: '#22C55E',
+  low:     '#84CC16',
+  medium:  '#FACC15',
+  high:    '#F59E0B',
+  extreme: '#EF4444',
+};

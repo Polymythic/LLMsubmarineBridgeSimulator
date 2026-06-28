@@ -127,10 +127,34 @@
       <div class="pill">Radio: <span id="radioOk">OK</span></div>
       <div class="pill">Periscope: <span id="periscopeOk">OK</span></div>
       <div class="pill">Tubes: <span id="tubesOk">OK</span></div>
-      <div class="pill">Eng Noise: <span id="engNoise">0</span> dB</div>
-      <div id="dbWrap" title="Engineering noise">
-        <div id="dbFill" style="height:0px;"></div>
-        <div id="dbPeak" style="bottom:0px;"></div>
+    </div>
+
+    <div class="panel noise-panel">
+      <h3>NOISE — ENGINEERING <span style="font-weight:400;color:#5E6E97;font-size:11px;">(relative to this station)</span></h3>
+      <div class="noise-body">
+        <div class="noise-meter">
+          <div class="noise-bands">
+            <div class="nb nb-extreme">EXTREME</div>
+            <div class="nb nb-high">HIGH</div>
+            <div class="nb nb-medium">MED</div>
+            <div class="nb nb-low">LOW</div>
+            <div class="nb nb-minimal">MINIMAL</div>
+          </div>
+          <div id="dbWrap" title="Engineering noise — relative to this station's own quiet/loud range">
+            <div id="dbFill" style="height:0px;"></div>
+            <div class="band-div" style="bottom:80%"></div>
+            <div class="band-div" style="bottom:60%"></div>
+            <div class="band-div" style="bottom:40%"></div>
+            <div class="band-div" style="bottom:20%"></div>
+            <div id="dbPeak" style="bottom:0px;"></div>
+          </div>
+        </div>
+        <div class="noise-readout">
+          <div class="noise-band-now" id="noiseBandNow">MINIMAL</div>
+          <div class="noise-db" id="noiseDb">0 dB</div>
+          <div class="noise-contrib-title">What's making noise</div>
+          <ul class="noise-contrib" id="noiseContrib"><li class="noise-quiet">— silent —</li></ul>
+        </div>
       </div>
     </div>
     <div class="row">
@@ -314,7 +338,6 @@
     const radioOk = document.getElementById('radioOk');
     const periscopeOk = document.getElementById('periscopeOk');
     const tubesOk = document.getElementById('tubesOk');
-    const engNoise = document.getElementById('engNoise');
 
     mw.oninput = () => {
         mwv.textContent = mw.value;
@@ -371,7 +394,7 @@
       if (!pSonar.dataset.userSet) pSonar.value = (p.sonar ?? 0.25).toFixed(2);
       if (!pEng.dataset.userSet) pEng.value = (p.engineering ?? 0.25).toFixed(2);
       updateAllocLabels();
-      const nz = (d.noise && d.noise.engineering_dB) || 0; engNoise.textContent = nz.toFixed(0); station.setDbMeter(nz);
+      station.updateNoisePanel(d.noise && d.noise.stations && d.noise.stations.engineering);
       const sys = d.systems || {};
       const setOk = (el, ok) => { el.textContent = ok ? 'OK' : 'FAIL'; el.style.color = ok ? '#8DEB8D' : '#FF6B6B'; };
       setOk(rudderOk, !!sys.rudder_ok); setOk(ballastOk, !!sys.ballast_ok); setOk(sonarOk, !!sys.sonar_ok);

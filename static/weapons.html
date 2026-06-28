@@ -61,12 +61,36 @@
     <div id="consent" title="Captain consent requirement before firing"></div>
     <div class="tubes" id="tubes" title="Tube state machine: Empty→Flooded→DoorsOpen; timers show progress."></div>
     <div class="row" style="align-items: flex-end;">
-      <div class="small">Weapons Noise: <span id="weapNoise">0</span> dB</div>
-      <div id="dbWrap" title="Weapons noise">
-        <div id="dbFill" style="height:0px;"></div>
-        <div id="dbPeak" style="bottom:0px;"></div>
-      </div>
       <div class="small">Damage: <span id="hullDamage" class="damage-led normal" title="Hull Damage"></span><span id="flooding" class="damage-led normal" title="Flooding"></span></div>
+    </div>
+
+    <div class="panel noise-panel">
+      <h3>NOISE — WEAPONS <span style="font-weight:400;color:#5E6E97;font-size:11px;">(relative to this station)</span></h3>
+      <div class="noise-body">
+        <div class="noise-meter">
+          <div class="noise-bands">
+            <div class="nb nb-extreme">EXTREME</div>
+            <div class="nb nb-high">HIGH</div>
+            <div class="nb nb-medium">MED</div>
+            <div class="nb nb-low">LOW</div>
+            <div class="nb nb-minimal">MINIMAL</div>
+          </div>
+          <div id="dbWrap" title="Weapons noise — relative to this station's own quiet/loud range">
+            <div id="dbFill" style="height:0px;"></div>
+            <div class="band-div" style="bottom:80%"></div>
+            <div class="band-div" style="bottom:60%"></div>
+            <div class="band-div" style="bottom:40%"></div>
+            <div class="band-div" style="bottom:20%"></div>
+            <div id="dbPeak" style="bottom:0px;"></div>
+          </div>
+        </div>
+        <div class="noise-readout">
+          <div class="noise-band-now" id="noiseBandNow">MINIMAL</div>
+          <div class="noise-db" id="noiseDb">0 dB</div>
+          <div class="noise-contrib-title">What's making noise</div>
+          <ul class="noise-contrib" id="noiseContrib"><li class="noise-quiet">— silent —</li></ul>
+        </div>
+      </div>
     </div>
     <div style="margin-top: 20px; padding: 16px; border: 2px solid #FF4444; border-radius: 8px; background: rgba(255, 68, 68, 0.1);">
       <h4 style="color: #FF4444; margin: 0 0 12px 0;">🧪 TEST MODE - BYPASS ALL INTERLOCKS</h4>
@@ -81,7 +105,6 @@
     const station = new StationBase('weapons');
     const tubesEl = document.getElementById('tubes');
     const consentEl = document.getElementById('consent');
-    const weapNoise = document.getElementById('weapNoise');
 
     // Cache of rendered tube card elements, keyed by tube idx — preserves
     // input values across telemetry updates instead of rebuilding each tick.
@@ -201,7 +224,7 @@
         tubesEl.appendChild(cmCards.noisemaker);
         tubesEl.appendChild(cmCards.decoy);
       }
-      const nz = (d.noise && d.noise.weapons_dB) || 0; weapNoise.textContent = nz.toFixed(0); station.setDbMeter(nz);
+      station.updateNoisePanel(d.noise && d.noise.stations && d.noise.stations.weapons);
       if (d.ownship && d.ownship.damage) { station.updateDamageLEDs(d.ownship.damage); }
 
       const cm = d.countermeasures || {};

@@ -1,0 +1,108 @@
+{
+  "id": "sonar_training",
+  "title": "Lone Contact",
+  "subtitle": "Passive Sonar Operations Trainer",
+  "difficulty": "Tutorial",
+  "duration_estimate": "15-25 minutes",
+  "tags": ["training", "sonar", "passive", "tma", "tutorial"],
+  "briefing": {
+    "situation": "A single unescorted RED merchant is transiting sector ECHO-4 on a steady easterly course at roughly 6 knots. There is nothing else in the water. Conditions are calm with no surface-duct or layer effects — a clean acoustic picture for training.",
+    "mission": "Learn the fundamentals of passive sonar operation: detect, classify, track a bearing, and — without going active — solve the contact's range using Target Motion Analysis (TMA).",
+    "execution": "Rig for passive. Active sonar is secured for the duration (EMCON). Find the contact on the broadband display, designate it, and keep a bearing log. The contact's bearing will draw across your bow — that bearing rate is your raw material. Run one tracking leg, then maneuver own-ship and run a second leg; the change in bearing rate gives you range. When your solution is stable you may close for a firing solution.",
+    "threats": "None. The merchant is unarmed, unescorted, and unaware of you. There is no time pressure and no penalty for taking your time — the only objective is to learn the sensor.",
+    "notes": "This is a pure sonar trainer. Do not use active sonar — the whole point is to range the contact passively. Follow the SONAR coaching messages as they arrive; they walk you through detect → classify → track → TMA → solution."
+  },
+  "red_mission_summary": "A lone RED cargo vessel transits east to its waypoint at a steady course and speed. It has no weapons, no escort, and no awareness of the submarine. It does not evade.",
+  "blue_mission_summary": "BLUE submarine practices passive sonar fundamentals against a single clean contact: detection, classification, bearing tracking, and passive ranging via Target Motion Analysis. EMCON is enforced as a training discipline.",
+  "objective": "Detect, track, and passively range the lone contact using TMA without using active sonar.",
+  "blue_captain_summary": "Sonar training mission. BLUE will detect the single RED merchant (red-01), classify it, maintain a bearing log, and solve its range by TMA — running a tracking leg, maneuvering own-ship, and running a second leg. Maintain EMCON (no active sonar). Optional capstone: once a stable solution exists, a single passive-launched torpedo on red-01 completes the exercise.",
+  "roe": [
+    "EMCON: active sonar is secured for the entire exercise.",
+    "Weapons release authorized only after a stable passive range solution exists.",
+    "No time pressure — prioritize a clean solution over speed."
+  ],
+  "target_wp": [8000, 3000],
+  "side_objectives": {
+    "RED": "transit_to_waypoint",
+    "BLUE": "passively_range_contact"
+  },
+  "protected_assets": [],
+  "emcon": {
+    "RED": {"active_ping_allowed": false, "radio_discipline": "normal"},
+    "BLUE": {"active_ping_allowed": false, "radio_discipline": "restricted"}
+  },
+  "speed_limits": {"merchant": {"min_kn": 5, "max_kn": 7}},
+  "navigation_constraints": {"no_go_zones": [], "transit_lanes": []},
+  "threat_hints": [],
+  "success_criteria": {
+    "timeout_s": 1800,
+    "BLUE": {
+      "ships_destroyed": {"targets": ["red-01"], "min_count": 1}
+    }
+  },
+  "scenario_context": {
+    "BLUE": {
+      "narrative": "A single unescorted merchant is crossing the bow on a steady easterly course. The water is otherwise empty and the acoustic picture is clean — ideal conditions to learn the passive sonar workflow end to end.",
+      "primary_objective": "Passively range the contact via TMA without going active",
+      "win_condition": "Establish a stable range solution; optionally engage to confirm it",
+      "lose_condition": "None — this is a training exercise",
+      "intelligence": "One contact only. Unarmed merchant, ~6 knots, no escort, unaware of own-ship.",
+      "constraints": ["Maintain EMCON — no active sonar", "Run a tracking leg, then maneuver, then a second leg"],
+      "doctrine_emphasis": "passive_sonar_training"
+    },
+    "RED": {
+      "narrative": "Single cargo vessel in routine transit toward waypoint [8000, 3000]. No escort, no threat awareness. Hold course and speed.",
+      "primary_objective": "Reach waypoint [8000, 3000]",
+      "win_condition": "Arrive at the waypoint",
+      "lose_condition": "Vessel destroyed",
+      "intelligence": "No reported submarine activity in this sector.",
+      "constraints": ["Maintain steady course 090 and 6 knots", "Do not evade"],
+      "doctrine_emphasis": "convoy_transit"
+    }
+  },
+  "task_groups": {
+    "RED": {
+      "LONE_MERCHANT": {
+        "doctrine": "convoy_transit",
+        "lead": "red-01",
+        "members": ["red-01"],
+        "protected": ["red-01"],
+        "formation": "single",
+        "primary_route": null,
+        "destination": [8000, 3000]
+      }
+    }
+  },
+  "ship_roles": {
+    "red-01": { "role": "convoy_cargo", "task_group": "LONE_MERCHANT" }
+  },
+  "environment": { "timeOfDay": "dawn", "weather": "calm", "thermocline_on": false, "thermocline_depth_m": 60.0 },
+  "ship_behaviors": {
+    "red-01": "You are red-01, a lone unarmed cargo vessel in routine transit. Hold a steady course of 090 and a steady speed of 6 knots toward your waypoint at X:8000, Y:3000. You have no weapons, no escort, and no awareness of any submarine. Do NOT evade, zig-zag, or change speed — maintain a predictable steady track. Predictability is correct for this transit."
+  },
+  "ships": [
+    {
+      "id": "ownship",
+      "side": "BLUE",
+      "class": "SSN",
+      "spawn": { "x": 0, "y": 0, "depth": 100, "heading": 0, "speed": 3 }
+    },
+    {
+      "id": "red-01",
+      "side": "RED",
+      "class": "Convoy",
+      "spawn": { "x": -3000, "y": 3000, "depth": 3, "heading": 90, "speed": 6 }
+    }
+  ],
+  "triggers": [
+    { "at_s": 15.0,  "comms": "SONAR TRAINER: Rig for passive. Active sonar is secured for this exercise (EMCON). Watch the broadband display and report any contact by bearing." },
+    { "at_s": 45.0,  "comms": "Conn, Sonar: new broadband contact bearing ~315, designate Sierra-1. Start a bearing log and mark a bearing every 30 seconds." },
+    { "at_s": 120.0, "comms": "Sonar: Sierra-1 holds a slow, steady blade rate — single screw. Classify probable merchant, roughly 6 knots." },
+    { "at_s": 240.0, "comms": "Conn: Sierra-1's bearing is drawing right. A steady bearing means closing; a drawing bearing means it will pass. One bearing alone gives you direction, not range." },
+    { "at_s": 300.0, "comms": "TMA STEP 1: You're on your first leg. Hold this course and keep logging bearings — this leg establishes a baseline bearing rate." },
+    { "at_s": 420.0, "comms": "TMA STEP 2: Now maneuver to change the geometry. Recommend come right to course 090, ahead two-thirds, and steady for three minutes." },
+    { "at_s": 600.0, "comms": "TMA STEP 3: Second leg established. Compare the bearing rate before and after your turn — the change in rate is what resolves range (Ekelund solution)." },
+    { "at_s": 780.0, "comms": "Sonar: solution converging. Cross-check your range estimate against the contact's behavior; refine your course to slowly close the range." },
+    { "at_s": 960.0, "comms": "Conn: when your range solution is stable and you hold a clean bearing on Sierra-1, you are weapons-free. Passive launch only — do NOT go active." }
+  ]
+}

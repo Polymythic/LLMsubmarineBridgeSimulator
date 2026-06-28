@@ -232,6 +232,23 @@ def test_torpedo_homes_in_depth_and_hits_deep_target():
     assert tgt.damage.hull > 0.0
 
 
+def test_coarse_run_depth_still_acquires_deeper_target():
+    # Fire with a deliberately-wrong run_depth (50 m) at a target 250 m deeper.
+    # At 700 m horizontal that is ~20° elevation — outside the horizontal cone
+    # half-angle (17.5°) but inside the wider vertical acquisition envelope, so
+    # the torpedo must still acquire, home in depth, and hit.
+    from backend.sim.weapons import step_torpedo
+    world, own, tgt = _world_with_target(0.0, 700.0, 300.0)
+    t = _make_torp(x=0.0, y=0.0, depth=50.0, heading=0.0, run_depth=50.0)
+    for _ in range(2000):
+        step_torpedo(t, world, dt=0.1)
+        if t["run_time"] > t["max_run_time"]:
+            break
+    assert t["depth"] > 250.0           # homed down toward the deep target
+    assert t["run_time"] > t["max_run_time"]
+    assert tgt.damage.hull > 0.0
+
+
 def test_depth_separation_prevents_2d_aligned_detonation():
     # Target shares the torpedo's x/y but is 380 m away in depth. The old 2D
     # fuze (hypot of x/y only) would have detonated immediately; the 3D fuze

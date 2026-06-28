@@ -34,6 +34,11 @@ def _jitter(value: float, frac: float = TORPEDO_DAMAGE_JITTER) -> float:
 TORPEDO_MAX_PITCH_DEG = 25.0   # max up/down pitch angle -> caps depth rate
 TORPEDO_MAX_DEPTH_M = 800.0    # operating floor for a running torpedo
 KNOTS_TO_MPS = 0.514444
+# Vertical acquisition is deliberately more forgiving than the horizontal cone:
+# the shooter rarely knows a contact's exact depth, so the seeker searches a wide
+# depth band and lets terminal homing close the gap. Detonation stays tight (3D
+# 30 m), so depth separation still protects a target at the terminal moment.
+TORPEDO_SEEKER_VERTICAL_DEG = 70.0  # full vertical acquisition angle (±35°)
 
 
 def _clamp(v: float, lo: float, hi: float) -> float:
@@ -399,7 +404,7 @@ def _nearest_target(t: dict, world, countermeasures: list = None):
         bearing = (math.degrees(math.atan2(dx, dy)) % 360.0)
         off = abs(((bearing - t["heading"] + 540) % 360) - 180)
         elev = abs(math.degrees(math.atan2(dz, max(1e-6, horiz))))  # look up/down angle
-        if off <= seeker_cone / 2 and elev <= seeker_cone / 2:
+        if off <= seeker_cone / 2 and elev <= TORPEDO_SEEKER_VERTICAL_DEG / 2:
             # Ship source level approximated by speed (louder = more attractive)
             sl = 120.0 + ship.kin.speed * 1.5  # ~120-165 dB depending on speed
             candidates.append({"type": "ship", "obj": ship, "range": rng, "sl": sl})
@@ -422,7 +427,7 @@ def _nearest_target(t: dict, world, countermeasures: list = None):
             bearing = (math.degrees(math.atan2(dx, dy)) % 360.0)
             off = abs(((bearing - t["heading"] + 540) % 360) - 180)
             elev = abs(math.degrees(math.atan2(dz, max(1e-6, horiz))))
-            if off <= seeker_cone / 2 and elev <= seeker_cone / 2:
+            if off <= seeker_cone / 2 and elev <= TORPEDO_SEEKER_VERTICAL_DEG / 2:
                 sl = cm.get("source_level_db", 160.0)  # Very loud!
                 candidates.append({"type": "countermeasure", "obj": cm, "range": rng, "sl": sl})
 

@@ -632,7 +632,10 @@ def try_launch_torpedo_quick(
         return {"ok": False, "error": "No torpedoes remaining"}
     if getattr(ws, "torpedo_quick_cooldown_timer_s", 0.0) > 0.0:
         return {"ok": False, "error": "Torpedo system cooling down"}
-    td = TorpedoDef()
+    # Fire the platform's own torpedo model so the fish carries the right tonal
+    # signature (Soviet 53-65/SET-65, RN Tigerfish, ...). Performance fields stay
+    # at TorpedoDef defaults — only the model name (→ sonar card) varies for now.
+    td = TorpedoDef(name=getattr(ws, "torpedo_type", "Mk48"))
     import time
     torp = {
         "id": f"torpedo_{ship.id}_quick_{int(time.time() * 1000)}",  # Unique ID for sonar tracking

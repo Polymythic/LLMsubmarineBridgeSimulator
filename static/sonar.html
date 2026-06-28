@@ -439,8 +439,10 @@
     const tsCtx = tonalStrip.getContext('2d');
     const TS_W = tonalStrip.width, TS_H = tonalStrip.height;
     const TICK_BOT = 17, LANE_TOP = 21, LANE_BOT = 50; // vertical layout (px)
-    // Preferred browse order (mockup: Destroyer → Torpedo → Convoy → SSN → Neutral)
-    const CARD_ORDER = ['Destroyer', 'Torpedo', 'Convoy', 'SSN', 'Neutral'];
+    // Preferred browse order: lead with the four generic archetypes + the Mk48
+    // reference fish; the specific vessel types and other torpedo models follow
+    // as "extras" in catalog order (see ingestTonalCards()).
+    const CARD_ORDER = ['SSN', 'Destroyer', 'Convoy', 'Neutral', 'Mk48 torpedo'];
     let tonalCards = {};            // {className: [kHz,...]} from telemetry
     let cardNames = [];             // ordered class names present in the library
     let selectedCard = 0;

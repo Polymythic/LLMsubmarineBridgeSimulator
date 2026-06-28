@@ -223,3 +223,70 @@ fraction computed server-side to "see" the filtered scope. Deferred.)*
    captain-ID truth, sonar locks, and in-band line count.
 5. Tests (§7). Then revisit the two OPEN items (visual-conflict, plot
    propagation) with real play data.
+
+---
+
+## 9. Roster expansion — many more signatures (DONE 2026-06-28)
+
+Enriched `assets/ships/catalog.json` from 4 generic entries to **22**: the four
+generic archetypes (kept for back-compat — existing scenarios reference them, and
+they serve as "unknown <category>" reference cards) plus **18 specific
+late-1960s–early-1980s types**, Soviet + European. Each carries its own 5-line
+tonal card. Categories are unchanged — every entry's `ship_class` is still one of
+`SSN / Convoy / Destroyer / Neutral`; the *type* (catalog key + `name`) is what
+specifies the tonals (no new category, no Literal change).
+
+- **Subs (SSN category):** Victor, Charlie, Alfa, November, Foxtrot (USSR);
+  Oberon (RN), Daphne (FR). Diesel boats live under the SSN category since it's
+  the only sub category — acceptable per "don't mess with categories."
+- **Surface (Destroyer category):** Kashin, Kresta II, Krivak, Kotlin, Petya
+  (USSR); Leander, Type 42 (RN), Georges Leygues (FR), Köln (FRG), Lupo (IT).
+- **Auxiliary (Convoy category):** Boris Chilikin AOR — a deliberate
+  merchant-mimic (no discriminator; hides among the Convoy card).
+
+Tonal content honors §3: every card shares ≥1 line (no perfectly-clean band) and
+every *identifiable* type owns ≥1 discriminator. The generic archetypes and the
+AOR mimic are intentionally non-discriminable. Asserted in
+`tests/test_ship_tonals.py`.
+
+**Per-type torpedoes.** Torpedoes now carry distinct cards by model
+(`sonar.TORPEDO_TONAL_CARDS`: Mk48, 53-65, SET-65, Tigerfish). `WeaponsSuite`
+gained `torpedo_type` (loaded from catalog `weapons.torpedo_type`); NPC
+quick-launch fires the platform's own model (Soviet hulls → 53-65/SET-65, RN →
+Tigerfish), so an inbound fish reads its type on the filter. Own fish stay
+all-pass (§6 own-units decision); enemy fish look up their card by name (unknown
+→ Mk48 fallback). The reference library serves one card per torpedo model.
+
+**Merchant/neutral variety (for the scenario refresh).** Added Poltava + Krym
+(Convoy) and Trawler + Coaster (Neutral) so convoys/neutrals diversify too —
+roster now **26** entries.
+
+## 10. Exact-type identification — foundation + captain (DONE 2026-06-28)
+
+The richer roster only pays off if stations can resolve a contact to the exact
+hull, not just the category. Done so far:
+
+- **Foundation:** `Ship.ship_type` (the catalog key, e.g. `"Krivak"`) is now
+  persisted at spawn (`apply_mission_to_world`), alongside the broad
+  `ship_class` category. Previously the specific type was discarded at spawn, so
+  nothing in the world knew a hull "was a Krivak."
+- **Captain:** periscope visual ID (`captain.identify_contact`) is authoritative
+  and now names the exact hull as **"Category - Class"** (e.g.
+  "Destroyer - Krivak-class", "SSN - Victor-class"). Catalog `name` fields are the
+  short class label only (no hull-code/project-number/nation cruft). A generic
+  archetype (catalog key == category) or an ad-hoc ship with no catalog type
+  shows just the category. Flows to all stations via the existing
+  `classifiedAs`/registry path.
+- **Plot:** already supports it — `PlotContact.label` is free text, so the
+  plotter writes whatever type is relayed; `type` stays the color enum.
+- **Scenarios refreshed:** all 7 missions remapped from generic classes to
+  specific Soviet (RED) / civilian (NEUTRAL) types, with per-scenario rotation
+  for variety. Only `class` values changed (ids/routes/triggers untouched).
+  No RED submarines exist in current scenarios, so the sub cards enrich the
+  reference library but don't yet appear in play.
+
+**Still open — sonar operator exact-type lock (plan step 4, deferred):** the
+sonar operator can't yet *select* an exact type from the tonals (a fallible
+`operator_class`). The registry already stores free-string classes, so it's
+ready; it needs the `sonar.classify` command + an "assign card" affordance in the
+tonal browser.

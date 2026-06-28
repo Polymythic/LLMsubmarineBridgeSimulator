@@ -100,6 +100,11 @@ class Tube(BaseModel):
 class WeaponsSuite(BaseModel):
     tube_count: int = 6
     torpedoes_stored: int = 6
+    # Torpedo model this platform carries (drives the fish's tonal signature on
+    # the sonar narrowband filter). Maps to a card in sonar.TORPEDO_TONAL_CARDS;
+    # NPC quick-launch and the default tube load use it. Soviet hulls carry
+    # 53-65/SET-65, RN carry Tigerfish, etc.
+    torpedo_type: str = "Mk48"
     reload_time_s: float = 45.0
     flood_time_s: float = 8.0
     doors_time_s: float = 3.0
@@ -231,6 +236,12 @@ class Ship(BaseModel):
     ai_profile: Optional[AIProfile] = None
     # Classification & capabilities for AI and UI
     ship_class: Optional[Literal["SSN", "Convoy", "Destroyer", "Neutral"]] = None
+    # Specific vessel type — the catalog key it was spawned from (e.g. "Krivak",
+    # "Victor"). The broad ship_class is the category; this is the exact hull.
+    # Used by the captain's authoritative visual ID to name the precise type;
+    # resolve its display name via SHIP_CATALOG[ship_type].name. None for ad-hoc
+    # ships (tests) that weren't spawned from the catalog.
+    ship_type: Optional[str] = None
     capabilities: Optional[ShipCapabilities] = None
     # Contact tracking for intercept calculations
     contact_tracks: List[ContactTrack] = Field(default_factory=list)

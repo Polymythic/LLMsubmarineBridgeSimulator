@@ -425,11 +425,17 @@ class CommandDispatcher:
             return "Contact not visible in periscope"
         try:
             actual_ship = sim.world.get_ship(actual_id)
-            ship_class = getattr(actual_ship, "ship_class", None) or "Unknown Vessel"
-            class_display = {
-                "SSN": "Submarine", "Convoy": "Merchant Vessel",
-                "Destroyer": "Destroyer", "Cruiser": "Cruiser", "Frigate": "Frigate",
-            }.get(ship_class, ship_class)
+            # Captain visual ID is authoritative. Name a specific hull as
+            # "Category - Class" (e.g. "Destroyer - Krivak-class"); a generic
+            # archetype (catalog key == category) or an ad-hoc ship with no
+            # catalog type shows just the category.
+            ship_type = getattr(actual_ship, "ship_type", None)
+            category = getattr(actual_ship, "ship_class", None) or "Unknown Vessel"
+            type_def = SHIP_CATALOG.get(ship_type) if ship_type else None
+            if type_def is not None and ship_type != category:
+                class_display = f"{category} - {type_def.name}"
+            else:
+                class_display = category
             sim._contact_registry.identify_contact(designation, class_display)
             sim._log_action("CAPTAIN", f"Identified {designation} as {class_display}", data)
             return None

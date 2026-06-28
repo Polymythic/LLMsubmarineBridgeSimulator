@@ -15,6 +15,18 @@ BAFFLES_DEG = 60.0
 # Destroyer card by design (telling an inbound fish from its escort is hard);
 # 14.5 kHz is the unique seeker discriminator.
 TORPEDO_TONAL_LINES = [2.0, 5.0, 8.8, 12.0, 14.5]
+# Per-type torpedo tonal "ID cards" (kHz), keyed by the torpedo's `name`. A fish
+# carries the card of its model so the operator can tell, e.g., an inbound
+# Soviet 53-65 from a Western Mk48. Deliberate cross-collisions (5.0 with the
+# Destroyer card; 8.8/12.0 shared among Western/Soviet fish) keep narrow bands
+# ambiguous; each model keeps one high discriminator. Unknown names fall back to
+# the Mk48 reference card.
+TORPEDO_TONAL_CARDS = {
+    "Mk48": TORPEDO_TONAL_LINES,                # Western heavyweight (reference)
+    "53-65": [2.4, 5.0, 7.6, 11.2, 14.8],       # Soviet wake-homing 53 cm
+    "SET-65": [1.8, 4.2, 8.8, 12.0, 13.0],      # Soviet ASW homing
+    "Tigerfish": [2.0, 4.8, 9.0, 11.8, 14.2],   # RN Mk24 Tigerfish
+}
 # Submarine tonal "ID card" (kHz) — a decoy mimics a sub's signature, so it
 # carries these lines and reads like a submarine on the narrowband filter (it
 # survives a sub-hunt passband rather than vanishing). Mirrors the SSN card in
@@ -280,9 +292,11 @@ def passive_projectiles(self_ship: Ship, torpedoes: List[dict] | None, depth_cha
                 torp_lines = None
             else:
                 classified_as = "Enemy Torpedo" if detect > 0.6 else "Enemy Torpedo?"
-                # Enemy fish stays filterable — the 14.5 kHz seeker line is how you
-                # tell an inbound torpedo apart from its launching escort.
-                torp_lines = list(TORPEDO_TONAL_LINES)
+                # Enemy fish stays filterable, with the card of its own model so
+                # the operator can tell an inbound 53-65 from a Mk48 (and the
+                # seeker discriminator line from its launching escort). Unknown
+                # models fall back to the Mk48 reference card.
+                torp_lines = list(TORPEDO_TONAL_CARDS.get(t.get("name", "Mk48"), TORPEDO_TONAL_LINES))
 
             contacts.append(TelemetryContact(
                 id=str(tid),

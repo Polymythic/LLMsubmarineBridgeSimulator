@@ -87,19 +87,19 @@
     {
       "id": "red-01",
       "side": "RED",
-      "class": "Convoy",
+      "class": "Poltava",
       "spawn": { "x": 3000, "y": 0, "depth": 3, "heading": 90, "speed": 5 }
     },
     {
       "id": "red-02",
       "side": "RED",
-      "class": "Convoy",
+      "class": "Krym",
       "spawn": { "x":2800, "y": 10, "depth": 3, "heading": 90, "speed": 5 }
     },
     {
       "id": "red-03",
       "side": "RED",
-      "class": "Convoy",
+      "class": "BorisChilikin",
       "spawn": { "x":3200, "y": 20, "depth": 3, "heading": 90, "speed": 5 }
     }
 

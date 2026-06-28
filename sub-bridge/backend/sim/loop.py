@@ -14,7 +14,7 @@ from ..assets import load_ship_catalog, load_mission_by_id, apply_mission_to_wor
 from ..storage import init_engine, create_run, insert_snapshot, insert_event
 from .ecs import World
 from .physics import integrate_kinematics
-from .sonar import passive_contacts, ActivePingState, active_ping, passive_projectiles, explosion_contacts, countermeasure_contacts, normalize_angle_deg, clear_contact_memory, TORPEDO_TONAL_LINES
+from .sonar import passive_contacts, ActivePingState, active_ping, passive_projectiles, explosion_contacts, countermeasure_contacts, normalize_angle_deg, clear_contact_memory, TORPEDO_TONAL_LINES, TORPEDO_TONAL_CARDS
 from .contact_registry import ContactRegistry
 from .weapons import step_torpedo, step_tubes, try_drop_depth_charges, step_depth_charge, try_launch_torpedo_quick, step_countermeasure
 from .ai_tools import LocalAIStub
@@ -1759,7 +1759,10 @@ class Simulation:
             for cls, cat in SHIP_CATALOG.items()
             if getattr(cat.default_acoustics, "tonal_lines", None)
         }
-        tonal_cards["Torpedo"] = list(TORPEDO_TONAL_LINES)
+        # One reference card per torpedo model so the operator can match an
+        # inbound fish to its type (Mk48 / 53-65 / SET-65 / Tigerfish).
+        for _tname, _tlines in TORPEDO_TONAL_CARDS.items():
+            tonal_cards[f"{_tname} torpedo"] = list(_tlines)
         tel_sonar = {**base, "contacts": [c.dict() for c in all_contacts], "pingCooldown": max(0.0, self.active_ping_state.timer), "pingResponses": list(self._last_ping_responses), "lastPingAt": getattr(self, "_last_ping_at", None), "explosions": list(self._sonar_explosions), "tasks": [t.__dict__ for t in self._active_tasks['sonar']], "thermocline": own.acoustics.thermocline_on, "thermoclineDepth": getattr(own.acoustics, 'thermocline_depth_m', 50.0), "tonalCards": tonal_cards}
         tel_weapons = {
             **base,

@@ -99,21 +99,21 @@
   "ships": [
     { "id": "ownship", "side": "BLUE", "class": "SSN", "spawn": { "x": 0, "y": 0, "depth": 120, "heading": 0, "speed": 5 } },
 
-    { "id": "red-tor-01", "side": "RED", "class": "Destroyer", "spawn": { "x": 0,    "y": 13500, "depth": 0, "heading": 180, "speed": 8 } },
-    { "id": "red-dc-01",  "side": "RED", "class": "Destroyer", "spawn": { "x": -1000, "y": 12000, "depth": 0, "heading": 180, "speed": 8 } },
-    { "id": "red-dc-02",  "side": "RED", "class": "Destroyer", "spawn": { "x":  1000, "y": 12000, "depth": 0, "heading": 180, "speed": 8 } },
-    { "id": "red-dc-03",  "side": "RED", "class": "Destroyer", "spawn": { "x": 0,    "y": 10500, "depth": 0, "heading": 180, "speed": 8 } },
+    { "id": "red-tor-01", "side": "RED", "class": "Kashin", "spawn": { "x": 0,    "y": 13500, "depth": 0, "heading": 180, "speed": 8 } },
+    { "id": "red-dc-01",  "side": "RED", "class": "Krivak", "spawn": { "x": -1000, "y": 12000, "depth": 0, "heading": 180, "speed": 8 } },
+    { "id": "red-dc-02",  "side": "RED", "class": "Kotlin", "spawn": { "x":  1000, "y": 12000, "depth": 0, "heading": 180, "speed": 8 } },
+    { "id": "red-dc-03",  "side": "RED", "class": "Petya", "spawn": { "x": 0,    "y": 10500, "depth": 0, "heading": 180, "speed": 8 } },
 
-    { "id": "red-cv-01",  "side": "RED", "class": "Convoy",    "spawn": { "x": -300,  "y": 12300, "depth": 0, "heading": 180, "speed": 8 } },
-    { "id": "red-cv-02",  "side": "RED", "class": "Convoy",    "spawn": { "x":  300,  "y": 12300, "depth": 0, "heading": 180, "speed": 8 } },
-    { "id": "red-cv-03",  "side": "RED", "class": "Convoy",    "spawn": { "x": -300,  "y": 11800, "depth": 0, "heading": 180, "speed": 8 } },
-    { "id": "red-cv-04",  "side": "RED", "class": "Convoy",    "spawn": { "x":  300,  "y": 11800, "depth": 0, "heading": 180, "speed": 8 } },
+    { "id": "red-cv-01",  "side": "RED", "class": "Poltava",    "spawn": { "x": -300,  "y": 12300, "depth": 0, "heading": 180, "speed": 8 } },
+    { "id": "red-cv-02",  "side": "RED", "class": "Krym",    "spawn": { "x":  300,  "y": 12300, "depth": 0, "heading": 180, "speed": 8 } },
+    { "id": "red-cv-03",  "side": "RED", "class": "BorisChilikin",    "spawn": { "x": -300,  "y": 11800, "depth": 0, "heading": 180, "speed": 8 } },
+    { "id": "red-cv-04",  "side": "RED", "class": "Poltava",    "spawn": { "x":  300,  "y": 11800, "depth": 0, "heading": 180, "speed": 8 } },
 
-    { "id": "neutral-01", "side": "NEUTRAL", "class": "Neutral", "spawn": { "x": -6500, "y":  4000, "depth": 0, "heading":  90, "speed": 6 } },
-    { "id": "neutral-02", "side": "NEUTRAL", "class": "Neutral", "spawn": { "x":  5500, "y":  6500, "depth": 0, "heading": 270, "speed": 5 } },
+    { "id": "neutral-01", "side": "NEUTRAL", "class": "Trawler", "spawn": { "x": -6500, "y":  4000, "depth": 0, "heading":  90, "speed": 6 } },
+    { "id": "neutral-02", "side": "NEUTRAL", "class": "Coaster", "spawn": { "x":  5500, "y":  6500, "depth": 0, "heading": 270, "speed": 5 } },
     { "id": "neutral-03", "side": "NEUTRAL", "class": "Neutral", "spawn": { "x": -3500, "y":  9500, "depth": 0, "heading": 135, "speed": 7 } },
-    { "id": "neutral-04", "side": "NEUTRAL", "class": "Neutral", "spawn": { "x":  4500, "y":  2500, "depth": 0, "heading": 200, "speed": 6 } },
-    { "id": "neutral-05", "side": "NEUTRAL", "class": "Neutral", "spawn": { "x":  -800, "y":  7500, "depth": 0, "heading":  45, "speed": 4 } },
+    { "id": "neutral-04", "side": "NEUTRAL", "class": "Trawler", "spawn": { "x":  4500, "y":  2500, "depth": 0, "heading": 200, "speed": 6 } },
+    { "id": "neutral-05", "side": "NEUTRAL", "class": "Coaster", "spawn": { "x":  -800, "y":  7500, "depth": 0, "heading":  45, "speed": 4 } },
     { "id": "neutral-06", "side": "NEUTRAL", "class": "Neutral", "spawn": { "x":  2500, "y":  9000, "depth": 0, "heading": 225, "speed": 5 } }
   ],
   "triggers": [

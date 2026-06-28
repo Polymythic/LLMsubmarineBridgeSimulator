@@ -104,6 +104,7 @@ def load_ship_catalog(path: Path = SHIPS_CATALOG_PATH) -> None:
             ws = models.WeaponsSuite(
                 tube_count=w.get("tube_count", 6),
                 torpedoes_stored=w.get("torpedoes_stored", 6),
+                torpedo_type=w.get("torpedo_type", "Mk48"),
                 reload_time_s=w.get("reload_time_s", 45.0),
                 flood_time_s=w.get("flood_time_s", 8.0),
                 doors_time_s=w.get("doors_time_s", 3.0),
@@ -218,6 +219,9 @@ def apply_mission_to_world(mission: MissionConfig, world_getter, set_mission_bri
             reactor=models.Reactor(output_mw=50.0, max_mw=100.0),
             damage=models.DamageState(),
             ship_class=cat.ship_class,
+            # Remember the exact catalog type (e.g. "Krivak"), not just the
+            # category, so the captain's visual ID can name the precise hull.
+            ship_type=s.class_name,
             capabilities=cat.capabilities.model_copy(deep=True),
             route=ship_route,
         )

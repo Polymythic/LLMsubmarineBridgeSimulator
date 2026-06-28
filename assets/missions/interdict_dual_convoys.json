@@ -86,13 +86,13 @@
   "ships": [
     { "id": "ownship", "side": "BLUE", "class": "SSN", "spawn": { "x": 0, "y": 0, "depth": 120, "heading": 0, "speed": 5 } },
 
-    { "id": "red-a-dd-01", "side": "RED", "class": "Destroyer", "spawn": { "x": -2000, "y": 15000, "depth": 0, "heading": 180, "speed": 8 } },
-    { "id": "red-a-cv-01", "side": "RED", "class": "Convoy",     "spawn": { "x": -2000, "y": 14650, "depth": 0, "heading": 180, "speed": 8 } },
-    { "id": "red-a-cv-02", "side": "RED", "class": "Convoy",     "spawn": { "x": -2000, "y": 14300, "depth": 0, "heading": 180, "speed": 8 } },
+    { "id": "red-a-dd-01", "side": "RED", "class": "Kashin", "spawn": { "x": -2000, "y": 15000, "depth": 0, "heading": 180, "speed": 8 } },
+    { "id": "red-a-cv-01", "side": "RED", "class": "Poltava",     "spawn": { "x": -2000, "y": 14650, "depth": 0, "heading": 180, "speed": 8 } },
+    { "id": "red-a-cv-02", "side": "RED", "class": "Krym",     "spawn": { "x": -2000, "y": 14300, "depth": 0, "heading": 180, "speed": 8 } },
 
-    { "id": "red-b-dd-01", "side": "RED", "class": "Destroyer", "spawn": { "x": 2000, "y": 15000, "depth": 0, "heading": 180, "speed": 8 } },
-    { "id": "red-b-cv-01", "side": "RED", "class": "Convoy",     "spawn": { "x": 2000, "y": 14650, "depth": 0, "heading": 180, "speed": 8 } },
-    { "id": "red-b-cv-02", "side": "RED", "class": "Convoy",     "spawn": { "x": 2000, "y": 14300, "depth": 0, "heading": 180, "speed": 8 } }
+    { "id": "red-b-dd-01", "side": "RED", "class": "Krivak", "spawn": { "x": 2000, "y": 15000, "depth": 0, "heading": 180, "speed": 8 } },
+    { "id": "red-b-cv-01", "side": "RED", "class": "BorisChilikin",     "spawn": { "x": 2000, "y": 14650, "depth": 0, "heading": 180, "speed": 8 } },
+    { "id": "red-b-cv-02", "side": "RED", "class": "Poltava",     "spawn": { "x": 2000, "y": 14300, "depth": 0, "heading": 180, "speed": 8 } }
   ],
   "triggers": [
     { "at_s": 30.0, "comms": "INTEL: Convoys report maintaining southbound transit at 8 knots; escorts holding EMCON discipline." },

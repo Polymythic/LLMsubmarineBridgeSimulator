@@ -63,11 +63,11 @@
   "ships": [
     { "id": "ownship", "side": "BLUE", "class": "SSN", "spawn": { "x": 0, "y": 0, "depth": 3, "heading": 0, "speed": 5 } },
 
-    { "id": "red-dd-torp-01", "side": "RED", "class": "Destroyer", "spawn": { "x": 3500, "y": 500, "depth": 0, "heading": 200, "speed": 10 } },
-    { "id": "red-dd-torp-02", "side": "RED", "class": "Destroyer", "spawn": { "x": -4000, "y": -700, "depth": 0, "heading": 20, "speed": 10 } },
+    { "id": "red-dd-torp-01", "side": "RED", "class": "Kashin", "spawn": { "x": 3500, "y": 500, "depth": 0, "heading": 200, "speed": 10 } },
+    { "id": "red-dd-torp-02", "side": "RED", "class": "Krivak", "spawn": { "x": -4000, "y": -700, "depth": 0, "heading": 20, "speed": 10 } },
 
-    { "id": "red-dd-dc-01", "side": "RED", "class": "Destroyer", "spawn": { "x": 600, "y": 0, "depth": 0, "heading": 270, "speed": 8 } },
-    { "id": "red-dd-dc-02", "side": "RED", "class": "Destroyer", "spawn": { "x": 0, "y": -800, "depth": 0, "heading": 0, "speed": 8 } }
+    { "id": "red-dd-dc-01", "side": "RED", "class": "Kotlin", "spawn": { "x": 600, "y": 0, "depth": 0, "heading": 270, "speed": 8 } },
+    { "id": "red-dd-dc-02", "side": "RED", "class": "Petya", "spawn": { "x": 0, "y": -800, "depth": 0, "heading": 0, "speed": 8 } }
   ],
   "triggers": [
     { "at_s": 15.0, "comms": "INFO: Weapons validation commencing. Torpedo units proceed to test coordinates." },

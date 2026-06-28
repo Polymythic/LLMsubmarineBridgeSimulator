@@ -71,19 +71,19 @@
     {
       "id": "red-dd-01",
       "side": "RED",
-      "class": "Destroyer",
+      "class": "Kashin",
       "spawn": { "x": 1500, "y": 1000, "depth": 0, "heading": 210, "speed": 10 }
     },
     {
       "id": "red-dd-02",
       "side": "RED",
-      "class": "Destroyer",
+      "class": "Krivak",
       "spawn": { "x": -500, "y": 1800, "depth": 0, "heading": 240, "speed": 10 }
     },
     {
       "id": "red-dd-03",
       "side": "RED",
-      "class": "Destroyer",
+      "class": "Kotlin",
       "spawn": { "x": 2200, "y": -300, "depth": 0, "heading": 180, "speed": 10 }
     }
   ],

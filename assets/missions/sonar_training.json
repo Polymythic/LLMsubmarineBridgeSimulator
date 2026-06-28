@@ -90,7 +90,7 @@
     {
       "id": "red-01",
       "side": "RED",
-      "class": "Convoy",
+      "class": "Poltava",
       "spawn": { "x": -3000, "y": 3000, "depth": 3, "heading": 90, "speed": 6 }
     }
   ],

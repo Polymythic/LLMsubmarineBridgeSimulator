@@ -4,7 +4,7 @@
     "ship_class": "SSN",
     "capabilities": {"can_set_nav": true, "has_active_sonar": true, "has_torpedoes": true, "has_guns": false, "has_depth_charges": false, "countermeasures": ["noisemaker", "decoy"]},
     "hull": {"max_depth": 300.0, "max_speed": 30.0, "quiet_speed": 5.0, "turn_rate_max": 7.0},
-    "weapons": {"tube_count": 6, "torpedoes_stored": 15, "noisemakers_stored": 6, "decoys_stored": 4},
+    "weapons": {"tube_count": 6, "torpedoes_stored": 15, "noisemakers_stored": 6, "decoys_stored": 4, "torpedo_type": "Mk48"},
     "acoustics": {"thermocline_on": true, "source_level_by_speed": {"5": 110.0, "10": 118.0, "15": 130.0}, "tonal_lines": [0.9, 2.1, 4.0, 6.3, 8.5]}
   },
   "Convoy": {
@@ -20,7 +20,7 @@
     "ship_class": "Destroyer",
     "capabilities": {"can_set_nav": true, "has_active_sonar": true, "has_torpedoes": true, "has_guns": true, "has_depth_charges": true, "countermeasures": []},
     "hull": {"max_depth": 0.0, "max_speed": 32.0, "quiet_speed": 8.0, "turn_rate_max": 5.0},
-    "weapons": {"tube_count": 2, "torpedoes_stored": 10, "tubes": [], "depth_charges_stored": 30},
+    "weapons": {"tube_count": 2, "torpedoes_stored": 10, "tubes": [], "depth_charges_stored": 30, "torpedo_type": "Mk48"},
     "acoustics": {"thermocline_on": false, "source_level_by_speed": {"5": 125.0, "15": 140.0, "25": 150.0}, "tonal_lines": [2.0, 3.8, 5.0, 9.2, 12.0]}
   },
   "Neutral": {
@@ -30,7 +30,186 @@
     "hull": {"max_depth": 0.0, "max_speed": 14.0, "quiet_speed": 4.0, "turn_rate_max": 1.5},
     "weapons": {"tube_count": 0, "torpedoes_stored": 0, "tubes": []},
     "acoustics": {"thermocline_on": false, "source_level_by_speed": {"5": 115.0, "10": 125.0, "15": 132.0}, "tonal_lines": [1.1, 4.1, 6.0, 9.0, 13.5]}
+  },
+
+  "Victor": {
+    "name": "Victor-class",
+    "ship_class": "SSN",
+    "capabilities": {"can_set_nav": true, "has_active_sonar": true, "has_torpedoes": true, "has_guns": false, "has_depth_charges": false, "countermeasures": ["noisemaker", "decoy"]},
+    "hull": {"max_depth": 400.0, "max_speed": 32.0, "quiet_speed": 6.0, "turn_rate_max": 6.0},
+    "weapons": {"tube_count": 6, "torpedoes_stored": 18, "noisemakers_stored": 6, "decoys_stored": 4, "torpedo_type": "SET-65"},
+    "acoustics": {"thermocline_on": true, "source_level_by_speed": {"5": 108.0, "10": 116.0, "15": 128.0}, "tonal_lines": [0.8, 2.0, 3.7, 5.9, 7.2]}
+  },
+  "Charlie": {
+    "name": "Charlie-class",
+    "ship_class": "SSN",
+    "capabilities": {"can_set_nav": true, "has_active_sonar": true, "has_torpedoes": true, "has_guns": false, "has_depth_charges": false, "countermeasures": ["noisemaker", "decoy"]},
+    "hull": {"max_depth": 300.0, "max_speed": 26.0, "quiet_speed": 5.0, "turn_rate_max": 5.0},
+    "weapons": {"tube_count": 6, "torpedoes_stored": 12, "noisemakers_stored": 6, "decoys_stored": 4, "torpedo_type": "SET-65"},
+    "acoustics": {"thermocline_on": true, "source_level_by_speed": {"5": 110.0, "10": 119.0, "15": 131.0}, "tonal_lines": [1.2, 2.4, 4.0, 6.6, 9.8]}
+  },
+  "Alfa": {
+    "name": "Alfa-class",
+    "ship_class": "SSN",
+    "capabilities": {"can_set_nav": true, "has_active_sonar": true, "has_torpedoes": true, "has_guns": false, "has_depth_charges": false, "countermeasures": ["noisemaker", "decoy"]},
+    "hull": {"max_depth": 700.0, "max_speed": 41.0, "quiet_speed": 6.0, "turn_rate_max": 8.0},
+    "weapons": {"tube_count": 6, "torpedoes_stored": 12, "noisemakers_stored": 6, "decoys_stored": 4, "torpedo_type": "SET-65"},
+    "acoustics": {"thermocline_on": true, "source_level_by_speed": {"5": 115.0, "15": 132.0, "30": 148.0}, "tonal_lines": [1.6, 3.2, 6.4, 10.5, 13.2]}
+  },
+  "November": {
+    "name": "November-class",
+    "ship_class": "SSN",
+    "capabilities": {"can_set_nav": true, "has_active_sonar": true, "has_torpedoes": true, "has_guns": false, "has_depth_charges": false, "countermeasures": ["noisemaker", "decoy"]},
+    "hull": {"max_depth": 300.0, "max_speed": 30.0, "quiet_speed": 6.0, "turn_rate_max": 5.0},
+    "weapons": {"tube_count": 8, "torpedoes_stored": 20, "noisemakers_stored": 4, "decoys_stored": 2, "torpedo_type": "53-65"},
+    "acoustics": {"thermocline_on": true, "source_level_by_speed": {"5": 118.0, "10": 128.0, "15": 140.0}, "tonal_lines": [0.7, 1.9, 3.5, 5.0, 8.0]}
+  },
+  "Foxtrot": {
+    "name": "Foxtrot-class",
+    "ship_class": "SSN",
+    "capabilities": {"can_set_nav": true, "has_active_sonar": true, "has_torpedoes": true, "has_guns": false, "has_depth_charges": false, "countermeasures": ["noisemaker", "decoy"]},
+    "hull": {"max_depth": 280.0, "max_speed": 16.0, "quiet_speed": 4.0, "turn_rate_max": 4.0},
+    "weapons": {"tube_count": 6, "torpedoes_stored": 12, "noisemakers_stored": 4, "decoys_stored": 2, "torpedo_type": "53-65"},
+    "acoustics": {"thermocline_on": true, "source_level_by_speed": {"4": 95.0, "8": 108.0, "15": 124.0}, "tonal_lines": [0.6, 1.6, 3.0, 4.4, 7.8]}
+  },
+
+  "Oberon": {
+    "name": "Oberon-class",
+    "ship_class": "SSN",
+    "capabilities": {"can_set_nav": true, "has_active_sonar": true, "has_torpedoes": true, "has_guns": false, "has_depth_charges": false, "countermeasures": ["noisemaker", "decoy"]},
+    "hull": {"max_depth": 200.0, "max_speed": 17.0, "quiet_speed": 4.0, "turn_rate_max": 4.0},
+    "weapons": {"tube_count": 6, "torpedoes_stored": 14, "noisemakers_stored": 4, "decoys_stored": 2, "torpedo_type": "Tigerfish"},
+    "acoustics": {"thermocline_on": true, "source_level_by_speed": {"4": 92.0, "8": 104.0, "15": 120.0}, "tonal_lines": [0.5, 1.4, 2.8, 5.2, 6.8]}
+  },
+  "Daphne": {
+    "name": "Daphne-class",
+    "ship_class": "SSN",
+    "capabilities": {"can_set_nav": true, "has_active_sonar": true, "has_torpedoes": true, "has_guns": false, "has_depth_charges": false, "countermeasures": ["noisemaker", "decoy"]},
+    "hull": {"max_depth": 300.0, "max_speed": 16.0, "quiet_speed": 4.0, "turn_rate_max": 4.0},
+    "weapons": {"tube_count": 8, "torpedoes_stored": 12, "noisemakers_stored": 4, "decoys_stored": 2, "torpedo_type": "Mk48"},
+    "acoustics": {"thermocline_on": true, "source_level_by_speed": {"4": 94.0, "8": 106.0, "15": 122.0}, "tonal_lines": [1.3, 2.6, 3.4, 5.6, 8.2]}
+  },
+
+  "Kashin": {
+    "name": "Kashin-class",
+    "ship_class": "Destroyer",
+    "capabilities": {"can_set_nav": true, "has_active_sonar": true, "has_torpedoes": true, "has_guns": true, "has_depth_charges": true, "countermeasures": []},
+    "hull": {"max_depth": 0.0, "max_speed": 35.0, "quiet_speed": 8.0, "turn_rate_max": 5.0},
+    "weapons": {"tube_count": 5, "torpedoes_stored": 10, "tubes": [], "depth_charges_stored": 20, "torpedo_type": "53-65"},
+    "acoustics": {"thermocline_on": false, "source_level_by_speed": {"5": 126.0, "15": 142.0, "25": 152.0}, "tonal_lines": [2.0, 4.5, 7.0, 11.5, 14.0]}
+  },
+  "KrestaII": {
+    "name": "Kresta II-class",
+    "ship_class": "Destroyer",
+    "capabilities": {"can_set_nav": true, "has_active_sonar": true, "has_torpedoes": true, "has_guns": true, "has_depth_charges": false, "countermeasures": []},
+    "hull": {"max_depth": 0.0, "max_speed": 33.0, "quiet_speed": 8.0, "turn_rate_max": 4.0},
+    "weapons": {"tube_count": 10, "torpedoes_stored": 10, "tubes": [], "torpedo_type": "53-65"},
+    "acoustics": {"thermocline_on": false, "source_level_by_speed": {"5": 124.0, "15": 139.0, "25": 149.0}, "tonal_lines": [1.8, 3.6, 5.4, 9.2, 12.0]}
+  },
+  "Krivak": {
+    "name": "Krivak-class",
+    "ship_class": "Destroyer",
+    "capabilities": {"can_set_nav": true, "has_active_sonar": true, "has_torpedoes": true, "has_guns": true, "has_depth_charges": false, "countermeasures": []},
+    "hull": {"max_depth": 0.0, "max_speed": 32.0, "quiet_speed": 8.0, "turn_rate_max": 5.0},
+    "weapons": {"tube_count": 8, "torpedoes_stored": 8, "tubes": [], "torpedo_type": "53-65"},
+    "acoustics": {"thermocline_on": false, "source_level_by_speed": {"5": 123.0, "15": 138.0, "25": 150.0}, "tonal_lines": [2.2, 4.8, 6.0, 10.0, 13.0]}
+  },
+  "Kotlin": {
+    "name": "Kotlin-class",
+    "ship_class": "Destroyer",
+    "capabilities": {"can_set_nav": true, "has_active_sonar": true, "has_torpedoes": true, "has_guns": true, "has_depth_charges": true, "countermeasures": []},
+    "hull": {"max_depth": 0.0, "max_speed": 38.0, "quiet_speed": 8.0, "turn_rate_max": 5.0},
+    "weapons": {"tube_count": 5, "torpedoes_stored": 10, "tubes": [], "depth_charges_stored": 24, "torpedo_type": "53-65"},
+    "acoustics": {"thermocline_on": false, "source_level_by_speed": {"5": 125.0, "15": 141.0, "25": 151.0}, "tonal_lines": [1.6, 3.0, 5.0, 8.4, 11.0]}
+  },
+  "Petya": {
+    "name": "Petya-class",
+    "ship_class": "Destroyer",
+    "capabilities": {"can_set_nav": true, "has_active_sonar": true, "has_torpedoes": true, "has_guns": true, "has_depth_charges": true, "countermeasures": []},
+    "hull": {"max_depth": 0.0, "max_speed": 30.0, "quiet_speed": 7.0, "turn_rate_max": 5.0},
+    "weapons": {"tube_count": 5, "torpedoes_stored": 8, "tubes": [], "depth_charges_stored": 24, "torpedo_type": "53-65"},
+    "acoustics": {"thermocline_on": false, "source_level_by_speed": {"5": 122.0, "15": 137.0, "25": 148.0}, "tonal_lines": [2.4, 4.0, 6.6, 9.6, 12.6]}
+  },
+
+  "Leander": {
+    "name": "Leander-class",
+    "ship_class": "Destroyer",
+    "capabilities": {"can_set_nav": true, "has_active_sonar": true, "has_torpedoes": true, "has_guns": true, "has_depth_charges": false, "countermeasures": []},
+    "hull": {"max_depth": 0.0, "max_speed": 28.0, "quiet_speed": 8.0, "turn_rate_max": 4.0},
+    "weapons": {"tube_count": 6, "torpedoes_stored": 8, "tubes": [], "torpedo_type": "Tigerfish"},
+    "acoustics": {"thermocline_on": false, "source_level_by_speed": {"5": 121.0, "15": 136.0, "25": 147.0}, "tonal_lines": [1.9, 3.8, 5.8, 8.6, 11.8]}
+  },
+  "Type42": {
+    "name": "Type 42",
+    "ship_class": "Destroyer",
+    "capabilities": {"can_set_nav": true, "has_active_sonar": true, "has_torpedoes": true, "has_guns": true, "has_depth_charges": false, "countermeasures": []},
+    "hull": {"max_depth": 0.0, "max_speed": 30.0, "quiet_speed": 8.0, "turn_rate_max": 5.0},
+    "weapons": {"tube_count": 6, "torpedoes_stored": 8, "tubes": [], "torpedo_type": "Tigerfish"},
+    "acoustics": {"thermocline_on": false, "source_level_by_speed": {"5": 123.0, "15": 139.0, "25": 150.0}, "tonal_lines": [2.4, 4.6, 7.4, 10.8, 13.8]}
+  },
+  "GeorgesLeygues": {
+    "name": "Georges Leygues-class",
+    "ship_class": "Destroyer",
+    "capabilities": {"can_set_nav": true, "has_active_sonar": true, "has_torpedoes": true, "has_guns": true, "has_depth_charges": false, "countermeasures": []},
+    "hull": {"max_depth": 0.0, "max_speed": 30.0, "quiet_speed": 8.0, "turn_rate_max": 5.0},
+    "weapons": {"tube_count": 4, "torpedoes_stored": 8, "tubes": [], "torpedo_type": "Mk48"},
+    "acoustics": {"thermocline_on": false, "source_level_by_speed": {"5": 122.0, "15": 137.0, "25": 148.0}, "tonal_lines": [2.1, 4.2, 6.2, 9.4, 12.4]}
+  },
+  "Koln": {
+    "name": "Koln-class",
+    "ship_class": "Destroyer",
+    "capabilities": {"can_set_nav": true, "has_active_sonar": true, "has_torpedoes": true, "has_guns": true, "has_depth_charges": true, "countermeasures": []},
+    "hull": {"max_depth": 0.0, "max_speed": 30.0, "quiet_speed": 8.0, "turn_rate_max": 4.0},
+    "weapons": {"tube_count": 4, "torpedoes_stored": 8, "tubes": [], "depth_charges_stored": 20, "torpedo_type": "Mk48"},
+    "acoustics": {"thermocline_on": false, "source_level_by_speed": {"5": 122.0, "15": 138.0, "25": 149.0}, "tonal_lines": [1.7, 3.3, 5.6, 8.8, 11.4]}
+  },
+  "Lupo": {
+    "name": "Lupo-class",
+    "ship_class": "Destroyer",
+    "capabilities": {"can_set_nav": true, "has_active_sonar": true, "has_torpedoes": true, "has_guns": true, "has_depth_charges": false, "countermeasures": []},
+    "hull": {"max_depth": 0.0, "max_speed": 35.0, "quiet_speed": 8.0, "turn_rate_max": 5.0},
+    "weapons": {"tube_count": 6, "torpedoes_stored": 8, "tubes": [], "torpedo_type": "Mk48"},
+    "acoustics": {"thermocline_on": false, "source_level_by_speed": {"5": 123.0, "15": 139.0, "25": 151.0}, "tonal_lines": [2.3, 4.7, 6.8, 10.2, 13.6]}
+  },
+
+  "BorisChilikin": {
+    "name": "Boris Chilikin-class",
+    "ship_class": "Convoy",
+    "capabilities": {"can_set_nav": true, "has_active_sonar": false, "has_torpedoes": false, "has_guns": false, "has_depth_charges": false, "countermeasures": []},
+    "hull": {"max_depth": 0.0, "max_speed": 18.0, "quiet_speed": 5.0, "turn_rate_max": 2.0},
+    "weapons": {"tube_count": 0, "torpedoes_stored": 0, "tubes": []},
+    "acoustics": {"thermocline_on": false, "source_level_by_speed": {"5": 125.0, "10": 135.0, "15": 145.0}, "tonal_lines": [1.0, 2.2, 3.9, 6.0, 9.0]}
+  },
+  "Poltava": {
+    "name": "Poltava-class",
+    "ship_class": "Convoy",
+    "capabilities": {"can_set_nav": true, "has_active_sonar": false, "has_torpedoes": false, "has_guns": false, "has_depth_charges": false, "countermeasures": []},
+    "hull": {"max_depth": 0.0, "max_speed": 18.0, "quiet_speed": 5.0, "turn_rate_max": 2.0},
+    "weapons": {"tube_count": 0, "torpedoes_stored": 0, "tubes": []},
+    "acoustics": {"thermocline_on": false, "source_level_by_speed": {"5": 120.0, "10": 131.0, "15": 141.0}, "tonal_lines": [1.0, 2.6, 4.4, 7.0, 10.6]}
+  },
+  "Krym": {
+    "name": "Krym-class",
+    "ship_class": "Convoy",
+    "capabilities": {"can_set_nav": true, "has_active_sonar": false, "has_torpedoes": false, "has_guns": false, "has_depth_charges": false, "countermeasures": []},
+    "hull": {"max_depth": 0.0, "max_speed": 16.0, "quiet_speed": 5.0, "turn_rate_max": 1.5},
+    "weapons": {"tube_count": 0, "torpedoes_stored": 0, "tubes": []},
+    "acoustics": {"thermocline_on": false, "source_level_by_speed": {"5": 124.0, "10": 134.0, "15": 143.0}, "tonal_lines": [0.9, 2.2, 3.9, 5.5, 8.3]}
+  },
+  "Trawler": {
+    "name": "Trawler",
+    "ship_class": "Neutral",
+    "capabilities": {"can_set_nav": true, "has_active_sonar": false, "has_torpedoes": false, "has_guns": false, "has_depth_charges": false, "countermeasures": []},
+    "hull": {"max_depth": 0.0, "max_speed": 12.0, "quiet_speed": 4.0, "turn_rate_max": 2.0},
+    "weapons": {"tube_count": 0, "torpedoes_stored": 0, "tubes": []},
+    "acoustics": {"thermocline_on": false, "source_level_by_speed": {"5": 110.0, "10": 120.0, "15": 128.0}, "tonal_lines": [1.1, 3.5, 6.0, 9.5, 12.8]}
+  },
+  "Coaster": {
+    "name": "Coastal freighter",
+    "ship_class": "Neutral",
+    "capabilities": {"can_set_nav": true, "has_active_sonar": false, "has_torpedoes": false, "has_guns": false, "has_depth_charges": false, "countermeasures": []},
+    "hull": {"max_depth": 0.0, "max_speed": 14.0, "quiet_speed": 4.0, "turn_rate_max": 2.0},
+    "weapons": {"tube_count": 0, "torpedoes_stored": 0, "tubes": []},
+    "acoustics": {"thermocline_on": false, "source_level_by_speed": {"5": 113.0, "10": 123.0, "15": 131.0}, "tonal_lines": [1.3, 2.8, 4.1, 7.5, 11.6]}
   }
 }
-
-

@@ -179,3 +179,78 @@ def test_torpedo_arming_and_pn_guidance_and_safety():
             turned = True
         run2 += 0.5
     assert turned
+
+
+# -------------------- 3D torpedo physics --------------------
+
+def _world_with_target(tx, ty, tdepth, tspeed=0.0):
+    """World containing a far-away ownship (so its safety/detonation logic is
+    inert) plus a single RED target at the given 3D position."""
+    from backend.sim.ecs import World
+    from backend.models import Ship as MShip
+    own = make_own()
+    own.kin.x = -10000.0
+    own.kin.y = -10000.0
+    world = World()
+    world.add_ship(own)
+    tgt = MShip(
+        id="red-01", side="RED",
+        kin=Kinematics(x=tx, y=ty, depth=tdepth, heading=0.0, speed=tspeed),
+        hull=Hull(), acoustics=Acoustics(), weapons=WeaponsSuite(), reactor=Reactor(), damage=DamageState(),
+    )
+    world.add_ship(tgt)
+    return world, own, tgt
+
+
+def _make_torp(x=0.0, y=0.0, depth=50.0, heading=0.0, run_depth=50.0, side="BLUE", armed=True):
+    return {
+        "id": "t-test",
+        "shooter_id": "ownship",
+        "x": x, "y": y, "depth": depth,
+        "heading": heading, "speed": 45.0,
+        "armed": armed, "enable_range_m": 800.0,
+        "seeker_range_m": 4000.0, "run_time": 5.0, "max_run_time": 600.0,
+        "target_id": None, "name": "Mk48", "seeker_cone": 35.0,
+        "side": side, "spoofed_timer": 0.0, "run_depth": run_depth,
+        "doctrine": "passive_then_active", "pn_nav_const": 3.0, "los_prev": None,
+    }
+
+
+def test_torpedo_homes_in_depth_and_hits_deep_target():
+    # Target dead ahead (North) at 1500 m, but 200 m deeper than the torpedo.
+    from backend.sim.weapons import step_torpedo
+    world, own, tgt = _world_with_target(0.0, 1500.0, 250.0)
+    t = _make_torp(x=0.0, y=0.0, depth=50.0, heading=0.0, run_depth=50.0)
+    for _ in range(2000):
+        step_torpedo(t, world, dt=0.1)
+        if t["run_time"] > t["max_run_time"]:
+            break
+    # Terminal vertical homing closed the depth gap ...
+    assert t["depth"] > 200.0
+    # ... and the 3D proximity fuze detonated on the target.
+    assert t["run_time"] > t["max_run_time"]
+    assert tgt.damage.hull > 0.0
+
+
+def test_depth_separation_prevents_2d_aligned_detonation():
+    # Target shares the torpedo's x/y but is 380 m away in depth. The old 2D
+    # fuze (hypot of x/y only) would have detonated immediately; the 3D fuze
+    # must not.
+    from backend.sim.weapons import step_torpedo
+    world, own, tgt = _world_with_target(0.0, 0.0, 400.0)
+    t = _make_torp(x=0.0, y=0.0, depth=20.0, heading=0.0, run_depth=20.0)
+    step_torpedo(t, world, dt=0.1)
+    assert t["run_time"] < t["max_run_time"]  # did not detonate
+    assert tgt.damage.hull == 0.0
+
+
+def test_torpedo_transits_to_run_depth_when_no_target():
+    # No target within seeker range: the torpedo should drive toward its ordered
+    # run depth and not overshoot it.
+    from backend.sim.weapons import step_torpedo
+    world, own, tgt = _world_with_target(0.0, 50000.0, 100.0)  # target far out of range
+    t = _make_torp(x=0.0, y=0.0, depth=100.0, heading=0.0, run_depth=30.0, armed=False)
+    for _ in range(50):
+        step_torpedo(t, world, dt=0.1)
+    assert t["depth"] < 100.0   # descended toward run depth
+    assert t["depth"] >= 30.0   # but did not pass below it

@@ -25,6 +25,21 @@ def _jitter(value: float, frac: float = TORPEDO_DAMAGE_JITTER) -> float:
     appearance — hits in the same place now vary by ±20%."""
     return value * random.uniform(1.0 - frac, 1.0 + frac)
 
+
+# --- 3D torpedo motion -------------------------------------------------------
+# Torpedoes run at their ordered `run_depth`, then pitch toward the target's
+# depth once they acquire and arm (terminal vertical homing). Vertical authority
+# is capped by a pitch limit, so a torpedo can only dive/climb as fast as its
+# forward speed allows (depth_rate <= speed * sin(max_pitch)).
+TORPEDO_MAX_PITCH_DEG = 25.0   # max up/down pitch angle -> caps depth rate
+TORPEDO_MAX_DEPTH_M = 800.0    # operating floor for a running torpedo
+KNOTS_TO_MPS = 0.514444
+
+
+def _clamp(v: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, v))
+
+
 # Depth charges are cumulative — a single near-miss is painful but rarely
 # fatal; saturating spreads kill. Less per-hit than a torpedo.
 DEPTH_CHARGE_DIRECT_PRIMARY_INTEGRITY_LOSS = 0.45
@@ -151,7 +166,8 @@ def step_torpedo(t: dict, world, dt: float, on_event: Optional[Callable[[str, di
     if shooter is not None:
         dx_s = t["x"] - shooter.kin.x
         dy_s = t["y"] - shooter.kin.y
-        dist_from_shooter = math.hypot(dx_s, dy_s)
+        dz_s = t.get("depth", 0.0) - shooter.kin.depth
+        dist_from_shooter = math.sqrt(dx_s * dx_s + dy_s * dy_s + dz_s * dz_s)
     else:
         dist_from_shooter = float("inf")
     if not t["armed"] and dist_from_shooter >= t["enable_range_m"]:
@@ -171,7 +187,11 @@ def step_torpedo(t: dict, world, dt: float, on_event: Optional[Callable[[str, di
         shooter_id is None and t.get("side") == "BLUE"
     )
     if is_own_torp and own is not None:
-        own_rng = math.hypot(own.kin.x - t["x"], own.kin.y - t["y"])
+        own_rng = math.sqrt(
+            (own.kin.x - t["x"]) ** 2
+            + (own.kin.y - t["y"]) ** 2
+            + (own.kin.depth - t.get("depth", 0.0)) ** 2
+        )
         if not t["armed"]:
             # If ownship is within 300 m and ahead within 60°, bias heading away pre-arm
             if own_rng < 300.0:
@@ -195,8 +215,12 @@ def step_torpedo(t: dict, world, dt: float, on_event: Optional[Callable[[str, di
     for ship in world.all_ships():
         if ship.side == t.get("side"):
             continue
-        rng = math.hypot(ship.kin.x - t["x"], ship.kin.y - t["y"])
-        if t["armed"] and rng < 30.0:  # proximity fuze
+        rng = math.sqrt(
+            (ship.kin.x - t["x"]) ** 2
+            + (ship.kin.y - t["y"]) ** 2
+            + (ship.kin.depth - t.get("depth", 0.0)) ** 2
+        )
+        if t["armed"] and rng < 30.0:  # 3D proximity fuze
             # Determine hit location based on torpedo approach angle
             approach_angle = t.get("heading", 0.0)
             ship_heading = ship.kin.heading
@@ -255,8 +279,12 @@ def step_torpedo(t: dict, world, dt: float, on_event: Optional[Callable[[str, di
                 continue
             if cm.get("side") == t.get("side"):
                 continue
-            rng = math.hypot(cm["x"] - t["x"], cm["y"] - t["y"])
-            if t["armed"] and rng < 20.0:  # tighter proximity for small CM
+            rng = math.sqrt(
+                (cm["x"] - t["x"]) ** 2
+                + (cm["y"] - t["y"]) ** 2
+                + (cm.get("depth", 0.0) - t.get("depth", 0.0)) ** 2
+            )
+            if t["armed"] and rng < 20.0:  # tighter 3D proximity for small CM
                 cm["active"] = False  # Destroy the countermeasure
                 if on_event:
                     on_event("torpedo.detonated_on_countermeasure", {
@@ -318,10 +346,27 @@ def step_torpedo(t: dict, world, dt: float, on_event: Optional[Callable[[str, di
             t["heading"] = (t["heading"] + applied_turn) % 360
 
     # Move torpedo using compass convention (0°=N, 90°=E)
-    mps = t["speed"] * 0.514444
+    mps = t["speed"] * KNOTS_TO_MPS
     heading_rad = math.radians(t["heading"])
     t["x"] += math.sin(heading_rad) * mps * dt
     t["y"] += math.cos(heading_rad) * mps * dt
+
+    # Vertical channel (terminal homing): once armed and tracking a target the
+    # torpedo pitches toward the target's depth; otherwise it transits to its
+    # ordered run depth. Depth rate is bounded by the pitch limit at this speed.
+    if target is not None and t["armed"]:
+        target_kin = getattr(target, "kin", None)
+        desired_depth = float(getattr(target_kin, "depth", t.get("run_depth", t.get("depth", 0.0))))
+    else:
+        desired_depth = float(t.get("run_depth", t.get("depth", 0.0)))
+    max_depth_step = mps * math.sin(math.radians(TORPEDO_MAX_PITCH_DEG)) * dt
+    cur_depth = t.get("depth", 0.0)
+    t["depth"] = _clamp(
+        cur_depth + _clamp(desired_depth - cur_depth, -max_depth_step, max_depth_step),
+        0.0,
+        TORPEDO_MAX_DEPTH_M,
+    )
+
     t["run_time"] += dt
 
 
@@ -346,12 +391,15 @@ def _nearest_target(t: dict, world, countermeasures: list = None):
             continue
         dx = ship.kin.x - t["x"]
         dy = ship.kin.y - t["y"]
-        rng = math.hypot(dx, dy)
+        dz = ship.kin.depth - t.get("depth", 0.0)
+        horiz = math.hypot(dx, dy)
+        rng = math.sqrt(horiz * horiz + dz * dz)  # 3D slant range
         if rng > effective_range:
             continue
         bearing = (math.degrees(math.atan2(dx, dy)) % 360.0)
         off = abs(((bearing - t["heading"] + 540) % 360) - 180)
-        if off <= seeker_cone / 2:
+        elev = abs(math.degrees(math.atan2(dz, max(1e-6, horiz))))  # look up/down angle
+        if off <= seeker_cone / 2 and elev <= seeker_cone / 2:
             # Ship source level approximated by speed (louder = more attractive)
             sl = 120.0 + ship.kin.speed * 1.5  # ~120-165 dB depending on speed
             candidates.append({"type": "ship", "obj": ship, "range": rng, "sl": sl})
@@ -366,12 +414,15 @@ def _nearest_target(t: dict, world, countermeasures: list = None):
                 continue
             dx = cm["x"] - t["x"]
             dy = cm["y"] - t["y"]
-            rng = math.hypot(dx, dy)
+            dz = cm.get("depth", 0.0) - t.get("depth", 0.0)
+            horiz = math.hypot(dx, dy)
+            rng = math.sqrt(horiz * horiz + dz * dz)  # 3D slant range
             if rng > effective_range:
                 continue
             bearing = (math.degrees(math.atan2(dx, dy)) % 360.0)
             off = abs(((bearing - t["heading"] + 540) % 360) - 180)
-            if off <= seeker_cone / 2:
+            elev = abs(math.degrees(math.atan2(dz, max(1e-6, horiz))))
+            if off <= seeker_cone / 2 and elev <= seeker_cone / 2:
                 sl = cm.get("source_level_db", 160.0)  # Very loud!
                 candidates.append({"type": "countermeasure", "obj": cm, "range": rng, "sl": sl})
 

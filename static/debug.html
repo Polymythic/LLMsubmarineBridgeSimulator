@@ -471,7 +471,7 @@
           li.style.borderColor = t.armed ? '#FF4444' : '#FF8888';
           const status = t.armed ? 'ARMED' : 'ENABLING';
           const target = t.target_id || 'SEARCHING';
-          li.textContent = `TORP ${t.name} ${status} hdg ${t.heading.toFixed(0)} spd ${t.speed.toFixed(1)} target: ${target}`;
+          li.textContent = `TORP ${t.name} ${status} hdg ${t.heading.toFixed(0)} spd ${t.speed.toFixed(1)} dpt ${(t.depth||0).toFixed(0)}m→${(t.run_depth||0).toFixed(0)}m target: ${target}`;
           li.title = `Range: ${((t.x - data.ownship.x)**2 + (t.y - data.ownship.y)**2)**0.5.toFixed(0)}m | Run time: ${t.run_time.toFixed(1)}s`;
           list.appendChild(li);
         });

@@ -113,18 +113,32 @@ def test_step_engineering_scram():
 
 
 def test_step_engineering_power_allocation():
-    ship = make_ship()
-    ship.reactor.output_mw = 100.0
-    ship.reactor.max_mw = 100.0
-    ship.power.helm = 0.5
-    ship.power.sonar = 0.2
-    ship.power.weapons = 0.2
-    ship.power.engineering = 0.1
-    step_engineering(ship, dt=1.0)
-    # Weapons reload/flood/doors times should be affected by allocation
-    # With 0.2 allocation, MW_weapons = 20, factor = 20/100 = 0.2
-    # reload = 45 / 0.2 / damage_factor => should be > 45
-    assert ship.weapons.reload_time_s > 45.0
+    # Routed weapons power scales tube timers around a nominal operating point
+    # (WEAP_NOMINAL_MW = 15 MW = a 60 MW reactor at the default 25% split). At
+    # nominal the reload equals its 45 s base; surging weapons power speeds it up,
+    # starving it slows it down.
+    nominal = make_ship()
+    nominal.reactor.output_mw = 60.0
+    nominal.reactor.max_mw = 100.0
+    nominal.power.helm = nominal.power.sonar = nominal.power.weapons = nominal.power.engineering = 0.25
+    step_engineering(nominal, dt=1.0)
+    assert abs(nominal.weapons.reload_time_s - 45.0) < 0.5
+
+    # Surge: 50% of a hot reactor (50 MW) >> nominal -> faster than base.
+    surge = make_ship()
+    surge.reactor.output_mw = 100.0
+    surge.reactor.max_mw = 100.0
+    surge.power.helm, surge.power.sonar, surge.power.weapons, surge.power.engineering = 0.2, 0.2, 0.5, 0.1
+    step_engineering(surge, dt=1.0)
+    assert surge.weapons.reload_time_s < 45.0
+
+    # Starve: 10% of a low reactor (4 MW) << nominal -> slower than base.
+    starve = make_ship()
+    starve.reactor.output_mw = 40.0
+    starve.reactor.max_mw = 100.0
+    starve.power.helm, starve.power.sonar, starve.power.weapons, starve.power.engineering = 0.6, 0.2, 0.1, 0.1
+    step_engineering(starve, dt=1.0)
+    assert starve.weapons.reload_time_s > 45.0
 
 
 def test_step_engineering_battery_drain():

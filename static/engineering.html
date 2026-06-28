@@ -38,6 +38,44 @@
     .pump-indicator.active { border-color: #4ADE80; }
     .pump-indicator .pump-label { font-size: 12px; color: #89B4FA; }
     .pump-indicator .pump-target { font-size: 14px; font-weight: bold; }
+
+    /* Acoustic Signature panel (the engineer's headline gauge) */
+    .sig-panel { border-color:#2A3A6B; }
+    .sig-head { display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; margin-bottom:10px; }
+    .sig-detect { font-size:34px; font-weight:800; line-height:1; }
+    .sig-state { font-size:13px; font-weight:700; letter-spacing:.5px; padding:3px 10px; border-radius:12px; }
+    .sig-state.quiet { color:#8DEB8D; background:rgba(141,235,141,.12); border:1px solid #2f6b3a; }
+    .sig-state.elevated { color:#FACC15; background:rgba(250,204,21,.10); border:1px solid #7a5e10; }
+    .sig-state.detectable { color:#FF6B6B; background:rgba(239,68,68,.14); border:1px solid #7a2530; }
+    .sig-emcon { font-size:12px; font-weight:700; color:#FF6B6B; display:none; }
+    .sig-emcon.on { display:inline; animation:pulse-critical 1s infinite; }
+    /* Signature stacked bar: 0..100 noise budget, EMCON threshold marked */
+    .sig-bar-wrap { position:relative; height:26px; background:#0B1020; border:1px solid #1B2440; border-radius:6px; overflow:hidden; display:flex; }
+    .sig-seg { height:100%; transition:width .25s ease; }
+    .sig-seg.reactor { background:#7C5CFF; }
+    .sig-seg.speed   { background:#4A90E2; }
+    .sig-seg.cav     { background:#EF4444; }
+    .sig-seg.pumps   { background:#F59E0B; }
+    .sig-seg.masts   { background:#10B981; }
+    .sig-threshold { position:absolute; top:-3px; bottom:-3px; width:2px; background:#FFD1D1; box-shadow:0 0 4px #FF6B6B; }
+    .sig-threshold::after { content:"EMCON"; position:absolute; top:-14px; left:-16px; font-size:9px; color:#FFD1D1; }
+    .sig-legend { display:flex; gap:14px; flex-wrap:wrap; margin-top:10px; font-size:12px; }
+    .sig-legend .item { display:flex; align-items:center; gap:6px; }
+    .sig-swatch { width:11px; height:11px; border-radius:2px; display:inline-block; }
+    .sig-legend .val { color:#A8B6D8; }
+
+    /* Power Routing panel */
+    .routes { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:6px; }
+    .route { background:#0F162A; border:1px solid #1B2440; border-radius:8px; padding:10px 12px; }
+    .route-head { display:flex; justify-content:space-between; align-items:baseline; }
+    .route-name { font-size:13px; font-weight:700; color:#89B4FA; }
+    .route-mw { font-size:13px; font-weight:700; }
+    .route-effect { font-size:12px; color:#A8B6D8; margin-top:4px; min-height:16px; }
+    .route-effect.good { color:#8DEB8D; }
+    .route-effect.warn { color:#FACC15; }
+    .route-effect.bad { color:#FF6B6B; }
+    .route-budget { display:flex; gap:14px; align-items:center; margin-top:12px; flex-wrap:wrap; }
+    @media (max-width:680px){ .routes { grid-template-columns:1fr; } }
   </style>
   <link rel="stylesheet" href="/static/css/station-common.css">
   <script src="/static/js/audio.js"></script>
@@ -69,11 +107,37 @@
     </div>
     <div id="toast" style="position:fixed;top:8px;right:8px;background:#2B0F14;color:#FFD1D1;border:1px solid #5F1B25;padding:8px 12px;border-radius:6px;display:none;">Error</div>
     <div title="Reactor output and SCRAM state">Reactor MW <span id="mwv">60</span> / <span id="mwmax">100</span> <span class="pill" id="scramState">SCRAM: OFF</span></div>
+    <div style="font-size:11px;color:#5E6E97;margin:2px 0 4px;">Total power to route <b>and</b> your acoustic baseline — more MW gives the crew more to work with, but makes the boat louder. <span id="mwSigHint" style="color:#A8B6D8;"></span></div>
     <div class="pill">Damage: <span id="hullDamage" class="damage-led normal" title="Hull Damage"></span><span id="flooding" class="damage-led normal" title="Flooding"></span></div>
     <input id="mw" type="range" min="0" max="100" step="1" value="60" title="Adjust reactor power (MW)" />
     <div class="row">
       <button id="set" title="Set reactor power to slider value">Set MW</button>
       <button id="scram" title="Trip reactor SCRAM (emergency shutdown)">Toggle SCRAM</button>
+    </div>
+
+    <!-- Acoustic Signature: the engineer's headline gauge -->
+    <div class="panel sig-panel">
+      <h3>ACOUSTIC SIGNATURE <span style="font-weight:400;color:#5E6E97;font-size:11px;">(how detectable the whole boat is)</span></h3>
+      <div class="sig-head">
+        <span class="sig-detect" id="sigDetect">0%</span>
+        <span class="sig-state quiet" id="sigState">QUIET</span>
+        <span class="sig-emcon" id="sigEmcon">⚠ EMCON ALERT — sustained high noise</span>
+      </div>
+      <div class="sig-bar-wrap" id="sigBar">
+        <div class="sig-seg reactor" id="sigSegReactor" style="width:0%"></div>
+        <div class="sig-seg speed"   id="sigSegSpeed"   style="width:0%"></div>
+        <div class="sig-seg cav"     id="sigSegCav"     style="width:0%"></div>
+        <div class="sig-seg pumps"   id="sigSegPumps"   style="width:0%"></div>
+        <div class="sig-seg masts"   id="sigSegMasts"   style="width:0%"></div>
+        <div class="sig-threshold" id="sigThreshold" style="left:60%"></div>
+      </div>
+      <div class="sig-legend">
+        <div class="item"><span class="sig-swatch" style="background:#7C5CFF"></span>Reactor <span class="val" id="sigValReactor">0</span></div>
+        <div class="item"><span class="sig-swatch" style="background:#4A90E2"></span>Speed <span class="val" id="sigValSpeed">0</span></div>
+        <div class="item"><span class="sig-swatch" style="background:#EF4444"></span>Cavitation <span class="val" id="sigValCav">0</span></div>
+        <div class="item"><span class="sig-swatch" style="background:#F59E0B"></span>Pumps <span class="val" id="sigValPumps">0</span></div>
+        <div class="item"><span class="sig-swatch" style="background:#10B981"></span>Masts <span class="val" id="sigValMasts">0</span></div>
+      </div>
     </div>
 
     <!-- Damage Control Panel -->
@@ -95,30 +159,35 @@
     </div>
 
     <div class="panel">
-      <h3>Current Power Allocation</h3>
-      <div class="row">
-        <div>Helm: <input id="cHelm" type="range" min="0" max="1" step="0.01" value="0.25" disabled /> <span class="pill" id="cHelmPct">25%</span></div>
-        <div>Weapons: <input id="cWeapons" type="range" min="0" max="1" step="0.01" value="0.25" disabled /> <span class="pill" id="cWeaponsPct">25%</span></div>
-        <div>Sonar: <input id="cSonar" type="range" min="0" max="1" step="0.01" value="0.25" disabled /> <span class="pill" id="cSonarPct">25%</span></div>
-        <div>Engineering: <input id="cEng" type="range" min="0" max="1" step="0.01" value="0.25" disabled /> <span class="pill" id="cEngPct">25%</span></div>
+      <h3>POWER ROUTING <span style="font-weight:400;color:#5E6E97;font-size:11px;">(split the reactor's <span id="rTotalMw">60</span> MW across the crew — effects update as you drag)</span></h3>
+      <div class="routes">
+        <div class="route">
+          <div class="route-head"><span class="route-name">⚙ PROPULSION (Helm)</span><span class="route-mw"><span id="pHelmPct">25%</span> · <span id="mwHelm">15</span> MW</span></div>
+          <input id="pHelm" type="range" min="0" max="1" step="0.05" value="0.25" />
+          <div class="route-effect" id="effHelm">—</div>
+        </div>
+        <div class="route">
+          <div class="route-head"><span class="route-name">🎧 SONAR</span><span class="route-mw"><span id="pSonarPct">25%</span> · <span id="mwSonar">15</span> MW</span></div>
+          <input id="pSonar" type="range" min="0" max="1" step="0.05" value="0.25" />
+          <div class="route-effect" id="effSonar">—</div>
+        </div>
+        <div class="route">
+          <div class="route-head"><span class="route-name">🎯 WEAPONS</span><span class="route-mw"><span id="pWeaponsPct">25%</span> · <span id="mwWeapons">15</span> MW</span></div>
+          <input id="pWeapons" type="range" min="0" max="1" step="0.05" value="0.25" />
+          <div class="route-effect" id="effWeapons">—</div>
+        </div>
+        <div class="route">
+          <div class="route-head"><span class="route-name">🔧 ENGINEERING (Repair)</span><span class="route-mw"><span id="pEngPct">25%</span> · <span id="mwEng">15</span> MW</span></div>
+          <input id="pEng" type="range" min="0" max="1" step="0.05" value="0.25" />
+          <div class="route-effect" id="effEng">—</div>
+        </div>
       </div>
-      <div class="row"><div class="pill">Total: <span id="cTotal">100%</span></div></div>
-    </div>
-
-    <div class="panel">
-      <h3>Proposed Power Allocation</h3>
-      <div class="row">
-        <div>Helm: <input id="pHelm" type="range" min="0" max="1" step="0.05" value="0.25" /> <span class="pill" id="pHelmPct">25%</span></div>
-        <div>Weapons: <input id="pWeapons" type="range" min="0" max="1" step="0.05" value="0.25" /> <span class="pill" id="pWeaponsPct">25%</span></div>
-        <div>Sonar: <input id="pSonar" type="range" min="0" max="1" step="0.05" value="0.25" /> <span class="pill" id="pSonarPct">25%</span></div>
-        <div>Engineering: <input id="pEng" type="range" min="0" max="1" step="0.05" value="0.25" /> <span class="pill" id="pEngPct">25%</span></div>
-      </div>
-      <div class="row">
-        <div class="pill">Total: <span id="pTotal">100%</span></div>
-        <div class="pill">Unallocated: <span id="pUnalloc">0%</span></div>
+      <div class="route-budget">
+        <div class="pill">Routed: <span id="pTotal">100%</span></div>
+        <div class="pill">Reserve: <span id="pUnalloc">0%</span></div>
         <span id="pErr" style="color:#FF6B6B"></span>
+        <button id="applyAlloc" style="margin-top:0;" title="Apply power routing (must not exceed 100%)">Apply Routing</button>
       </div>
-    <button id="applyAlloc" title="Apply power allocations (must not exceed 100%)">Apply Allocation</button>
     </div>
     <div class="row">
       <div class="pill">Rudder: <span id="rudderOk">OK</span></div>
@@ -323,15 +392,16 @@
     const pTotal = document.getElementById('pTotal');
     const pErr = document.getElementById('pErr');
     const pUnalloc = document.getElementById('pUnalloc');
-    const cHelm = document.getElementById('cHelm');
-    const cWeapons = document.getElementById('cWeapons');
-    const cSonar = document.getElementById('cSonar');
-    const cEng = document.getElementById('cEng');
-    const cHelmPct = document.getElementById('cHelmPct');
-    const cWeaponsPct = document.getElementById('cWeaponsPct');
-    const cSonarPct = document.getElementById('cSonarPct');
-    const cEngPct = document.getElementById('cEngPct');
-    const cTotal = document.getElementById('cTotal');
+    const mwHelm = document.getElementById('mwHelm');
+    const mwSonar = document.getElementById('mwSonar');
+    const mwWeapons = document.getElementById('mwWeapons');
+    const mwEng = document.getElementById('mwEng');
+    const effHelm = document.getElementById('effHelm');
+    const effSonar = document.getElementById('effSonar');
+    const effWeapons = document.getElementById('effWeapons');
+    const effEng = document.getElementById('effEng');
+    const rTotalMw = document.getElementById('rTotalMw');
+    const mwSigHint = document.getElementById('mwSigHint');
     const rudderOk = document.getElementById('rudderOk');
     const ballastOk = document.getElementById('ballastOk');
     const sonarOk = document.getElementById('sonarOk');
@@ -339,9 +409,50 @@
     const periscopeOk = document.getElementById('periscopeOk');
     const tubesOk = document.getElementById('tubesOk');
 
+    // --- Projection constants (MIRROR of backend sim/power.py) -----------------
+    // Used to show the *projected* effect of a routing/reactor change as the
+    // operator drags, before Apply. Keep these in sync with sim/power.py.
+    const PWR = {
+      HELM_NOMINAL_FRAC: 0.25,
+      SONAR_NOMINAL_MW: 15.0,
+      WEAP_NOMINAL_MW: 15.0,
+      SONAR_SNR_PER_MW: 8.0/15.0, SONAR_SNR_MAX: 8.0, SONAR_SNR_MIN: -10.0,
+      RELOAD_MIN: 0.5, RELOAD_MAX: 3.0,
+      REACTOR_QUIET_MW: 25.0, REACTOR_NOISE_MAX: 20.0,
+      BASE_RELOAD_S: 45.0,
+    };
+    const clamp = (v,lo,hi) => Math.max(lo, Math.min(hi, v));
+
+    // Live plant state from telemetry, used to project routing effects.
+    let liveReactorMw = 60, liveMaxMw = 100, liveMaxSpeedKn = 30;
+
+    function projSpeedCapKn(helmFrac){
+      const propFull = liveMaxMw * PWR.HELM_NOMINAL_FRAC;
+      const propMw = liveReactorMw * helmFrac;
+      return liveMaxSpeedKn * clamp(propMw / Math.max(1e-6, propFull), 0, 1);
+    }
+    function projSonarDb(sonarFrac){
+      const mwv2 = liveReactorMw * sonarFrac;
+      return clamp(PWR.SONAR_SNR_PER_MW * (mwv2 - PWR.SONAR_NOMINAL_MW), PWR.SONAR_SNR_MIN, PWR.SONAR_SNR_MAX);
+    }
+    function projReloadS(weapFrac){
+      const mwv2 = liveReactorMw * weapFrac;
+      const ratio = mwv2 / PWR.WEAP_NOMINAL_MW;
+      const mult = clamp(1.0 / Math.max(1e-6, ratio), PWR.RELOAD_MIN, PWR.RELOAD_MAX);
+      return PWR.BASE_RELOAD_S * mult;
+    }
+    function projReactorNoise(mwVal){
+      const span = Math.max(1, liveMaxMw - PWR.REACTOR_QUIET_MW);
+      const frac = Math.max(0, (mwVal - PWR.REACTOR_QUIET_MW) / span);
+      return clamp(frac * PWR.REACTOR_NOISE_MAX, 0, PWR.REACTOR_NOISE_MAX);
+    }
+
     mw.oninput = () => {
         mwv.textContent = mw.value;
         mw.dataset.userSet = '1';
+        const projN = projReactorNoise(parseFloat(mw.value));
+        mwSigHint.textContent = `→ this setting adds ~${projN.toFixed(0)} signature pts` + (parseFloat(mw.value) <= PWR.REACTOR_QUIET_MW ? ' (ultra-quiet)' : '');
+        updateAllocLabels();
     };
     function showToast(msg){ const t=document.getElementById('toast'); t.textContent = msg; t.style.display='block'; setTimeout(()=>t.style.display='none', 2500); }
 
@@ -382,18 +493,19 @@
       const s = !!d.reactor?.scrammed; scramState.textContent = `SCRAM: ${s ? 'ON' : 'OFF'}`;
       if (d.damage) { updateEngDamageLEDs(d.damage); }
       if (d.compartments) { updateDamageControl(d.compartments, d.pumps); }
+      // Capture live plant state used to project routing effects.
+      liveReactorMw = d.reactor?.output_mw ?? liveReactorMw;
+      liveMaxMw = d.reactor?.max_mw ?? liveMaxMw;
+      if (d.powerRoutes?.helm?.maxSpeedKn) liveMaxSpeedKn = d.powerRoutes.helm.maxSpeedKn;
+      rTotalMw.textContent = liveReactorMw.toFixed(0);
       const p = d.power || {};
-      if (typeof p.helm === 'number') { cHelm.value = p.helm.toFixed(2); cHelmPct.textContent = Math.round(p.helm*100) + '%'; }
-      if (typeof p.weapons === 'number') { cWeapons.value = p.weapons.toFixed(2); cWeaponsPct.textContent = Math.round(p.weapons*100) + '%'; }
-      if (typeof p.sonar === 'number') { cSonar.value = p.sonar.toFixed(2); cSonarPct.textContent = Math.round(p.sonar*100) + '%'; }
-      if (typeof p.engineering === 'number') { cEng.value = p.engineering.toFixed(2); cEngPct.textContent = Math.round(p.engineering*100) + '%'; }
-      const ct = (p.helm||0)+(p.weapons||0)+(p.sonar||0)+(p.engineering||0);
-      cTotal.textContent = Math.round(ct*100) + '%';
+      // Sliders track the *applied* allocation until the operator grabs one.
       if (!pHelm.dataset.userSet) pHelm.value = (p.helm ?? 0.25).toFixed(2);
       if (!pWeapons.dataset.userSet) pWeapons.value = (p.weapons ?? 0.25).toFixed(2);
       if (!pSonar.dataset.userSet) pSonar.value = (p.sonar ?? 0.25).toFixed(2);
       if (!pEng.dataset.userSet) pEng.value = (p.engineering ?? 0.25).toFixed(2);
       updateAllocLabels();
+      updateSignature(d.acoustics || {});
       station.updateNoisePanel(d.noise && d.noise.stations && d.noise.stations.engineering);
       const sys = d.systems || {};
       const setOk = (el, ok) => { el.textContent = ok ? 'OK' : 'FAIL'; el.style.color = ok ? '#8DEB8D' : '#FF6B6B'; };
@@ -411,6 +523,8 @@
     };
     document.getElementById('scram').onclick = () => station.sendCommand('engineering.reactor.scram', {scrammed:true});
 
+    function setEff(el, text, cls){ el.textContent = text; el.className = 'route-effect' + (cls ? ' ' + cls : ''); }
+
     function updateAllocLabels(){
       const helm = parseFloat(pHelm.value);
       const weapons = parseFloat(pWeapons.value);
@@ -425,6 +539,55 @@
       pErr.textContent = total > 1.0 ? 'Exceeds 100% budget' : '';
       const un = Math.max(0, 1.0 - total);
       pUnalloc.textContent = Math.round(un*100) + '%';
+
+      // Per-route MW + projected effect (from current reactor MW + slider %).
+      mwHelm.textContent = (liveReactorMw*helm).toFixed(0);
+      mwSonar.textContent = (liveReactorMw*sonar).toFixed(0);
+      mwWeapons.textContent = (liveReactorMw*weapons).toFixed(0);
+      mwEng.textContent = (liveReactorMw*engineering).toFixed(0);
+
+      const capKn = projSpeedCapKn(helm);
+      if (capKn >= liveMaxSpeedKn - 0.5) setEff(effHelm, `Flank available — full ${liveMaxSpeedKn.toFixed(0)} kn`, 'good');
+      else setEff(effHelm, `Speed limited to ${capKn.toFixed(0)} kn`, capKn < liveMaxSpeedKn*0.5 ? 'bad' : 'warn');
+
+      const db = projSonarDb(sonar);
+      if (db >= 1.0) setEff(effSonar, `+${db.toFixed(1)} dB processing gain — hears farther`, 'good');
+      else if (db <= -1.0) setEff(effSonar, `${db.toFixed(1)} dB — reduced gain, going deaf`, db <= -4 ? 'bad' : 'warn');
+      else setEff(effSonar, `Nominal gain (${db>=0?'+':''}${db.toFixed(1)} dB)`, '');
+
+      const rs = projReloadS(weapons);
+      if (rs <= PWR.BASE_RELOAD_S - 1) setEff(effWeapons, `Fast reload — ${rs.toFixed(0)}s`, 'good');
+      else if (rs >= PWR.BASE_RELOAD_S + 1) setEff(effWeapons, `Slow reload — ${rs.toFixed(0)}s`, rs >= 100 ? 'bad' : 'warn');
+      else setEff(effWeapons, `Nominal reload — ${rs.toFixed(0)}s`, '');
+
+      const engMw = liveReactorMw*engineering;
+      if (engMw < 2) setEff(effEng, `Starved — systems will decay`, 'bad');
+      else if (engMw >= 20) setEff(effEng, `Surged repair — systems recover fast`, 'good');
+      else setEff(effEng, `Holding — systems maintained`, '');
+    }
+
+    // Acoustic Signature panel: whole-ship detectability + source breakdown.
+    function updateSignature(ac){
+      const nb = Math.max(0, Math.min(100, ac.noiseBudget ?? 0));
+      const det = ac.detectability != null ? ac.detectability : nb/100;
+      const thr = ac.emconThreshold ?? 60;
+      const sd = document.getElementById('sigDetect');
+      sd.textContent = Math.round(det*100) + '%';
+      const st = document.getElementById('sigState');
+      let state = 'quiet', label = 'QUIET';
+      if (nb >= thr) { state = 'detectable'; label = 'DETECTABLE'; }
+      else if (nb >= thr*0.6) { state = 'elevated'; label = 'ELEVATED'; }
+      st.className = 'sig-state ' + state; st.textContent = label;
+      sd.style.color = state === 'detectable' ? '#FF6B6B' : state === 'elevated' ? '#FACC15' : '#8DEB8D';
+      document.getElementById('sigEmcon').className = 'sig-emcon' + (ac.emconAlert ? ' on' : '');
+      document.getElementById('sigThreshold').style.left = thr + '%';
+      const src = ac.sources || {};
+      const seg = (id, v) => { document.getElementById(id).style.width = Math.max(0, Math.min(100, v||0)) + '%'; };
+      seg('sigSegReactor', src.reactor); seg('sigSegSpeed', src.speed); seg('sigSegCav', src.cavitation);
+      seg('sigSegPumps', src.pumps); seg('sigSegMasts', src.masts);
+      const val = (id, v) => { document.getElementById(id).textContent = (v||0).toFixed(0); };
+      val('sigValReactor', src.reactor); val('sigValSpeed', src.speed); val('sigValCav', src.cavitation);
+      val('sigValPumps', src.pumps); val('sigValMasts', src.masts);
     }
 
     ;[pHelm, pWeapons, pSonar, pEng].forEach(inp => {

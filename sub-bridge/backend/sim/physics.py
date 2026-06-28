@@ -2,6 +2,7 @@ from __future__ import annotations
 import math
 from typing import Tuple
 from ..models import Ship
+from .power import speed_cap_fraction
 
 
 KNOTS_TO_MPS = 0.514444
@@ -57,7 +58,10 @@ def integrate_kinematics(
     damage_accel_factor = max(0.2, hull_damage_factor)  # Acceleration less affected than top speed
     damage_turn_factor = max(0.3, hull_damage_factor)  # Turning moderately affected
 
-    reactor_cap_speed = hull.max_speed * (ship.reactor.output_mw / max(1.0, ship.reactor.max_mw)) * hull_damage_factor
+    # Top speed is bounded by the propulsion *route*, not just total reactor
+    # output: Engineering must give helm enough MW to reach the ordered bell.
+    # At the default 25% helm allocation this equals output_mw/max_mw (legacy).
+    reactor_cap_speed = hull.max_speed * speed_cap_fraction(ship) * hull_damage_factor
     # Allow an ordered astern bell down to a fraction of the forward cap.
     target_speed = clamp(ordered_speed, -reactor_cap_speed * REVERSE_SPEED_FRACTION, reactor_cap_speed)
 

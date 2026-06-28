@@ -124,8 +124,10 @@ def passive_contacts(
         ambient = 60.0
         # Apply passive SNR penalty from degraded systems
         penalty = getattr(self_ship.acoustics, "passive_snr_penalty_db", 0.0)
+        # Routed sonar power adds/subtracts processing gain (0 at nominal alloc).
+        power_gain = getattr(self_ship.acoustics, "passive_snr_power_db", 0.0)
         # Sonar equation: SNR = SL - TL - NL + AG (array gain from beamforming)
-        snr_db = max(0.0, src_lvl - tl - ambient + ARRAY_GAIN_DB - penalty)
+        snr_db = max(0.0, src_lvl - tl - ambient + ARRAY_GAIN_DB - penalty + power_gain)
         # Detectability soft-knee mapping to 0..1
         detect = max(0.0, min(1.0, snr_db / 30.0))
 

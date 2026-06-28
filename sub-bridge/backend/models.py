@@ -39,6 +39,10 @@ class Acoustics(BaseModel):
     bearing_noise_extra: float = 0.0
     # Task-driven modifiers
     passive_snr_penalty_db: float = 0.0
+    # Signed passive-SNR gain from routed sonar power (set each tick by
+    # step_engineering; 0 at the nominal 25% allocation). Positive = boosted
+    # processing gain (hear farther), negative = starved sonar (going deaf).
+    passive_snr_power_db: float = 0.0
     hydro_bearing_bias_deg: float = 0.0
     active_range_noise_add_m: float = 0.0
     active_bearing_noise_extra: float = 0.0

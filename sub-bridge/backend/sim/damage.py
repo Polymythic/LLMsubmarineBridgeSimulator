@@ -1,5 +1,6 @@
 from __future__ import annotations
 from ..models import Ship, COMPARTMENT_NAMES
+from .power import route_mw, sonar_snr_bonus_db, reload_multiplier, maintenance_rate
 
 # Pump configuration
 PUMP_COUNT = 2  # Number of assignable pumps
@@ -256,13 +257,10 @@ def step_engineering(ship: Ship, dt: float) -> None:
     if ship.reactor.scrammed:
         ship.reactor.output_mw = min(ship.reactor.output_mw, 10.0)
 
-    # Shared power budget allocations (fractions sum ~1.0)
-    alloc = ship.power
-    total_mw = max(0.0, min(ship.reactor.max_mw, ship.reactor.output_mw))
-    mw_propulsion = total_mw * max(0.0, min(1.0, alloc.helm))
-    mw_sensors = total_mw * max(0.0, min(1.0, alloc.sonar))
-    mw_weapons = total_mw * max(0.0, min(1.0, alloc.weapons))
-    mw_engineering = total_mw * max(0.0, min(1.0, alloc.engineering))
+    # Shared power budget: Engineering routes reactor MW across four consumers.
+    # The routing model (sim/power.py) turns each route's MW slice into a concrete
+    # effect; at the default 25% split every term below equals its legacy value.
+    mw_engineering = route_mw(ship)["engineering"]
 
     # Apply hull damage effects to sonar performance
     hull_damage_factor = max(0.1, 1.0 - ship.damage.hull)
@@ -274,17 +272,24 @@ def step_engineering(ship: Ship, dt: float) -> None:
     ship.acoustics.active_range_noise_add_m = max(0.0, ship.acoustics.active_range_noise_add_m + (1.0 - damage_sensors_factor) * 200.0)
     ship.acoustics.active_bearing_noise_extra = max(0.0, ship.acoustics.active_bearing_noise_extra + (1.0 - damage_sensors_factor) * 2.0)
 
+    # Routed sonar power adds/removes passive processing gain (0 dB at nominal).
+    # This is a receive-side gain (no self-noise), so it's a pure "spend MW to
+    # hear" lever that competes with propulsion/weapons for the budget.
+    ship.acoustics.passive_snr_power_db = sonar_snr_bonus_db(ship)
+
     # Apply hull damage effects to weapons performance
     hull_damage_factor = max(0.3, 1.0 - ship.damage.hull)
     damage_weapons_factor = max(0.5, hull_damage_factor)
 
-    ship.weapons.reload_time_s = 45.0 / max(0.2, (mw_weapons / max(1.0, ship.reactor.max_mw))) / damage_weapons_factor
-    ship.weapons.flood_time_s = 8.0 / max(0.2, (mw_weapons / max(1.0, ship.reactor.max_mw))) / damage_weapons_factor
-    ship.weapons.doors_time_s = 3.0 / max(0.2, (mw_weapons / max(1.0, ship.reactor.max_mw))) / damage_weapons_factor
+    # Tube timers scale with routed weapons power (1.0x multiplier at nominal MW).
+    reload_mult = reload_multiplier(ship)
+    ship.weapons.reload_time_s = 45.0 * reload_mult / damage_weapons_factor
+    ship.weapons.flood_time_s = 8.0 * reload_mult / damage_weapons_factor
+    ship.weapons.doors_time_s = 3.0 * reload_mult / damage_weapons_factor
 
-    # Maintenance progression/decay
+    # Maintenance progression/decay (progression scales with routed eng power)
     maint = ship.maintenance.levels
-    prog_rate = (mw_engineering / max(1.0, ship.reactor.max_mw)) * 0.1
+    prog_rate = maintenance_rate(ship)
     decay_rate = 0.01
     for key in list(maint.keys()):
         if mw_engineering > 0.1:

@@ -20,6 +20,7 @@ from .weapons import step_torpedo, step_tubes, try_drop_depth_charges, step_dept
 from .ai_tools import LocalAIStub
 from .ai_orchestrator import AgentsOrchestrator
 from .damage import step_damage, step_engineering
+from .power import route_mw, speed_cap_fraction, sonar_snr_bonus_db, reload_multiplier, maintenance_rate, reactor_noise_points, REACTOR_QUIET_MW
 from .noise import NoiseEngine
 from .waypoints import WaypointTracker
 from .conditions import ConditionEvaluator
@@ -1230,7 +1231,11 @@ class Simulation:
         # Each active pump adds noise
         noise_pumps = 10.0 * len(self._pump_assignments)
         noise_masts = (10.0 if self._periscope_raised else 0.0) + (10.0 if self._radio_raised else 0.0)
-        noise_budget = max(0.0, min(100.0, noise_from_speed + noise_cav + noise_pumps + noise_masts))
+        # The running reactor itself radiates: more MW = more signature. This puts
+        # the ship's baseline detectability in Engineering's hands (drop the reactor
+        # below the quiet floor to rig for ultra-silent).
+        noise_reactor = reactor_noise_points(own)
+        noise_budget = max(0.0, min(100.0, noise_from_speed + noise_cav + noise_pumps + noise_masts + noise_reactor))
         
         # Compute per-station noise dB for UI and dynamic source level
         noise_levels = self._noise.tick(own, self.world, dt, self)
@@ -1483,14 +1488,24 @@ class Simulation:
                 },
             },
             "acoustics": {
-                "noiseBudget": noise_budget, 
-                "detectability": detectability, 
-                "emconRisk": ("high" if noise_budget >= 75 else "med" if noise_budget >= 40 else "low"), 
+                "noiseBudget": noise_budget,
+                "detectability": detectability,
+                "emconRisk": ("high" if noise_budget >= 75 else "med" if noise_budget >= 40 else "low"),
                 "emconAlert": emcon_alert,
+                "emconThreshold": 60.0,
                 "dynamicSourceLevel": dynamic_src_lvl,
                 "baseSourceLevel": base_src_lvl,
                 "noiseContributions": noise_contributions,
-                "stationNoiseContrib": station_noise_contrib
+                "stationNoiseContrib": station_noise_contrib,
+                # Per-source breakdown of the 0..100 noise budget, so Engineering can
+                # see which choices are driving the ship's signature.
+                "sources": {
+                    "reactor": noise_reactor,
+                    "speed": noise_from_speed,
+                    "cavitation": noise_cav,
+                    "pumps": noise_pumps,
+                    "masts": noise_masts,
+                },
             },
             "events": list(self._transient_events),
             "noise": {
@@ -1809,6 +1824,36 @@ class Simulation:
             }
             for i, c in enumerate(own.damage.compartments)
         ]
+        # Per-route MW and the concrete effect each route is buying right now, so
+        # the Engineering station can route to optimize instead of guessing.
+        _rm = route_mw(own)
+        _speed_cap_kn = own.hull.max_speed * speed_cap_fraction(own)
+        power_routes = {
+            "reactorMw": own.reactor.output_mw,
+            "maxMw": own.reactor.max_mw,
+            "totalRoutedMw": sum(_rm.values()),
+            "reactorQuietMw": REACTOR_QUIET_MW,
+            "reactorNoise": noise_reactor,
+            "helm": {
+                "mw": _rm["helm"],
+                "speedCapKn": _speed_cap_kn,
+                "maxSpeedKn": own.hull.max_speed,
+                "limited": _speed_cap_kn < own.hull.max_speed - 0.5,
+            },
+            "sonar": {
+                "mw": _rm["sonar"],
+                "snrDb": sonar_snr_bonus_db(own),
+            },
+            "weapons": {
+                "mw": _rm["weapons"],
+                "reloadMult": reload_multiplier(own),
+                "reloadS": own.weapons.reload_time_s,
+            },
+            "engineering": {
+                "mw": _rm["engineering"],
+                "repairRate": maintenance_rate(own),
+            },
+        }
         tel_engineering = {
             **base,
             "reactor": own.reactor.dict(),
@@ -1816,6 +1861,7 @@ class Simulation:
             "compartments": compartment_data,
             "damage": own.damage.dict(),
             "power": own.power.dict(),
+            "powerRoutes": power_routes,
             "systems": own.systems.dict(),
             "maintenance": own.maintenance.levels,
             "tasks": [t.__dict__ for t in self._active_tasks['engineering']]

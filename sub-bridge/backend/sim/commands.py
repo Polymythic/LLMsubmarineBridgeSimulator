@@ -576,8 +576,31 @@ class CommandDispatcher:
             sim._loading = False
 
     async def _debug_maint_spawns(self, data: Dict) -> Optional[str]:
+        sim = self._sim
         enabled = bool(data.get("enabled", True))
-        self._sim._suppress_maintenance_spawns = (not enabled)
+        sim._suppress_maintenance_spawns = (not enabled)
+        if not enabled:
+            # Turning maintenance OFF disables the whole minigame, not just new
+            # spawns: clear any in-flight tasks and restore maintenance-induced
+            # state so nothing already running escalates into a failure. The
+            # `*_ok` flags are derived from maintenance levels (step_engineering);
+            # combat/flooding effects are a separate path and stay untouched.
+            own = sim.world.get_ship("ownship")
+            for station_name in sim._active_tasks:
+                sim._active_tasks[station_name].clear()
+            if own is not None:
+                if hasattr(own, "maintenance") and hasattr(own.maintenance, "levels"):
+                    for system in own.maintenance.levels:
+                        own.maintenance.levels[system] = 1.0
+                if hasattr(own, "systems"):
+                    own.systems.rudder_ok = True
+                    own.systems.planes_ok = True
+                    own.systems.sonar_ok = True
+                    own.systems.tubes_ok = True
+                    own.systems.ballast_ok = True
+                # Reset task-derived performance penalties (turn rate, noise,
+                # tube timing) now that the task board is empty.
+                sim._recompute_penalties_from_tasks(own)
         return None
 
     async def _debug_visual_player(self, data: Dict) -> Optional[str]:

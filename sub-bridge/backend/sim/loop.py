@@ -751,7 +751,11 @@ class Simulation:
                     ship.maintenance.levels[task.system] = min(1.0, ship.maintenance.levels.get(task.system, 1.0) + 0.1)
                     tasks.remove(task)
                     continue
-                if task.time_remaining_s <= 0.0:
+                # Tasks only escalate toward failure while maintenance is
+                # enabled. With maintenance suppressed (debug "off"), in-flight
+                # tasks freeze instead of degrading systems — "off" must mean
+                # no maintenance-induced failures.
+                if task.time_remaining_s <= 0.0 and not self._suppress_maintenance_spawns:
                     # New escalation: task -> failing -> failed
                     if task.stage == "task":
                         task.stage = "failing"

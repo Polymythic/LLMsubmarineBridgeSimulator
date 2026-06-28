@@ -253,6 +253,16 @@ class SubmarineAudio {
 
     if (!this.initialized) return;
 
+    // On the first processed frame after (re)connect, the server resends a
+    // rolling ~30s window of recent explosions / enemy pings (kept for the
+    // sonar waterfall). Seed the dedupe trackers from this frame WITHOUT
+    // playing anything, so a freshly-loaded or refreshed station doesn't
+    // replay that backlog as a burst of depth-charge / ping sounds on join.
+    if (!this._primed) {
+      this._primeDedupe(data);
+      this._primed = true;
+    }
+
     // === AMBIENT (all stations) ===
     this.startAmbient();
 
@@ -353,6 +363,35 @@ class SubmarineAudio {
     if (this.station === 'sonar') {
       this.processSonarEvents(data);
     }
+  }
+
+  /**
+   * Seed every one-shot dedupe tracker from a telemetry frame WITHOUT playing
+   * anything. Called once on the first frame after (re)connect so a joining or
+   * refreshed station treats the server's recent-event backlog (the rolling
+   * explosion / ping windows) as "already heard" and only sounds genuinely new
+   * events from then on. Ids must match what the per-event handlers compute.
+   */
+  _primeDedupe(data) {
+    this._playedExplosions = this._playedExplosions || new Set();
+    (data.explosions || []).forEach(exp => {
+      this._playedExplosions.add(exp.at || `${exp.bearing}_${Date.now()}`);
+    });
+    this._playedEnemyPings = this._playedEnemyPings || new Set();
+    (data.enemyPings || []).forEach(ping => {
+      this._playedEnemyPings.add(ping.id || ping.at);
+    });
+    this._playedTorpedoExplosions = this._playedTorpedoExplosions || new Set();
+    this._playedTorpedoFires = this._playedTorpedoFires || new Set();
+    (data.events || []).forEach(ev => {
+      if (ev.type === 'torpedo.detonated') {
+        this._playedTorpedoExplosions.add(`torp_${ev.target}_${ev.at || Date.now()}`);
+      } else if (ev.type === 'weapons.fire') {
+        this._playedTorpedoFires.add(ev.at || `fire_${ev.tube}_${Date.now()}`);
+      }
+    });
+    // Friendly ping is tracked by last-seen timestamp, not a set.
+    if (data.lastPingAt) this._lastFriendlyPingAt = data.lastPingAt;
   }
 
   /**

@@ -238,6 +238,10 @@ class Simulation:
         self._last_ping_responses = []
         self._last_ping_at = None
         self.active_ping_state = ActivePingState(cooldown_s=12.0)
+        # Rolling 30s explosion overlay window — must be cleared on (re)load so
+        # explosions from a previous run don't bleed into the new scenario (and
+        # replay as depth-charge audio when a station connects to it).
+        self._sonar_explosions = []
 
         # Visual / periscope contact tracking
         self._visual_contacts = {}

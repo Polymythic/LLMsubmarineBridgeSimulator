@@ -47,6 +47,7 @@ class CommandDispatcher:
             "plot.note.append": self._plot_note_append,
             "plot.clear": self._plot_clear,
             "debug.restart": self._debug_restart,
+            "debug.stop_mission": self._debug_stop_mission,
             "debug.maintenance.spawns": self._debug_maint_spawns,
             "debug.visual.player_100": self._debug_visual_player,
             "debug.visual.enemy_100": self._debug_visual_enemy,
@@ -522,6 +523,12 @@ class CommandDispatcher:
     # ------------------------------------------------------------------
     # Debug
     # ------------------------------------------------------------------
+
+    async def _debug_stop_mission(self, data: Dict) -> Optional[str]:
+        """Stop the active mission: cancel all in-flight AI/LLM work, reset
+        state, and return to idle. The server stays up for the next start."""
+        await self._sim.stop_mission()
+        return None
 
     async def _debug_restart(self, data: Dict) -> Optional[str]:
         sim = self._sim

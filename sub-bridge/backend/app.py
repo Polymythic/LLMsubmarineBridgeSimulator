@@ -228,3 +228,14 @@ async def api_start_mission(mission_id: str) -> JSONResponse:
             return JSONResponse({"ok": False, "error": "Mission not found"}, status_code=404)
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.post("/api/missions/stop")
+async def api_stop_mission() -> JSONResponse:
+    """Stop the active mission: cancel all in-flight AI/LLM work, clean up,
+    and return the simulation to idle. The server stays up."""
+    try:
+        await sim.stop_mission()
+        return JSONResponse({"ok": True})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)

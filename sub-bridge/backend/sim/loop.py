@@ -317,17 +317,11 @@ class Simulation:
 
             # Clear existing world and set to original game state
             self.world = World()
-            # Try to load mission from assets unless a forced default reset is requested
+            # The sim ALWAYS boots idle. A mission is only ever loaded+started
+            # via an explicit start (load_mission / POST .../start) — it is never
+            # auto-started from CONFIG.mission_id. This prevents the server from
+            # silently launching a scenario (and its LLM/AI activity) on boot.
             mission = None
-            if not getattr(self, "_force_default_reset", False):
-                # During tests, ignore external mission selection to ensure deterministic defaults
-                if os.getenv("PYTEST_CURRENT_TEST"):
-                    mission = None
-                else:
-                    # Fresh import so reload_from_env() changes take effect
-                    from ..config import CONFIG as _cfg
-                    mid = getattr(_cfg, "mission_id", "")
-                    mission = load_mission_by_id(mid) if mid else None
             if mission:
                 def _set_mission(brief: dict) -> None:
                     self.mission_brief = brief
@@ -551,6 +545,34 @@ class Simulation:
                 # As a last resort, set a simple attribute; run loop will honor if already stopping
                 self._stop = asyncio.Event()
         self._stop.set()
+
+    async def stop_mission(self) -> None:
+        """Stop the active mission and return to idle WITHOUT killing the run
+        loop (the server stays up, ready for the next start).
+
+        Order matters: raise the loading flag first so tick() stops spawning
+        new AI work, then cancel every in-flight fleet/ship LLM task, then wipe
+        state and the world. _reset_all_state() also resets the AI orchestrator
+        and sets _mission_active = False.
+        """
+        self._loading = True
+        try:
+            await self._cancel_ai_tasks()
+            self._reset_all_state()
+            self.world = World()
+            self._mission_active = False
+            self._mission_id = None
+            try:
+                if hasattr(self, "_plot_board") and self._plot_board is not None:
+                    self._plot_board.clear()
+            except Exception:
+                pass
+            try:
+                insert_event(self.engine, self.run_id, "mission.stopped", json.dumps({}))
+            except Exception:
+                pass
+        finally:
+            self._loading = False
 
     def set_captain_consent(self, consent: bool) -> None:
         self._captain_consent = consent

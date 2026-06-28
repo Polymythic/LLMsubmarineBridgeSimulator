@@ -50,6 +50,7 @@
     <h2>Debug <span class="pill" id="wsStatus" title="WebSocket connection status" style="margin-left: 8px; font-size: 14px; font-weight: normal;">WebSocket: Connecting...</span></h2>
     <div class="row" style="align-items:center">
       <button id="restart" title="Reset mission state to defaults">Restart Mission</button>
+      <button id="stopMission" title="Stop the active mission: cancel all AI/LLM work, clean up, return to idle (server stays up)" style="background:#7F1D1D; color:#FCA5A5; font-weight:bold;">⏹ Stop Mission</button>
       <div class="pill" style="margin-left: 8px;">
         Scenario: <span id="currentMission" style="color: #60A5FA;">Loading...</span>
       </div>
@@ -641,6 +642,10 @@
     };
     document.getElementById('restart').onclick = () => {
       ws.send(JSON.stringify({topic:'debug.restart', data:{}}));
+    };
+    document.getElementById('stopMission').onclick = () => {
+      if (!confirm('Stop the active mission? This cancels all AI/LLM work and returns to idle. The server stays up.')) return;
+      ws.send(JSON.stringify({topic:'debug.stop_mission', data:{}}));
     };
     document.getElementById('toggleMaint').onclick = () => {
       const isOn = (document.getElementById('maintState').textContent || 'ON') === 'ON';
